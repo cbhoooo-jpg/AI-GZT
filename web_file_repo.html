@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件仓库</title>
+    <!-- 引入本地静态资源，支持离线运行 -->
+    <link rel="stylesheet" href="/static/element-ui.min.css">
+    <script src="/static/vue.min.js"></script>
+    <script src="/static/element-ui.min.js"></script>
+    <script src="/static/axios.min.js"></script>
+    <!-- 静态资源加载检测脚本 -->
+    <script>
+        // 检测必须的资源是否加载成功
+        window.addEventListener('load', () => {
+            const errors = []
+            if (typeof Vue === 'undefined') errors.push('vue.min.js 加载失败，请检查static目录下是否存在该文件、路径是否正确')
+            if (typeof ELEMENT === 'undefined') errors.push('element-ui.min.js 加载失败，请检查static目录下是否存在该文件、路径是否正确')
+            if (typeof axios === 'undefined') errors.push('axios.min.js 加载失败，请检查static目录下是否存在该文件、路径是否正确')
+            if (errors.length > 0) {
+                alert('静态资源加载失败，请修复以下问题：\n\n' + errors.join('\n'))
+            }
+        })
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .container {
+            height: 100%;
+            padding: 16px;
+            background-color: #f5f7fa;
+        }
+        .search-bar {
+            margin-bottom: 16px;
+        }
+        .tree-container {
+            background: #fff;
+            border-radius: 4px;
+            padding: 16px;
+            height: calc(100% - 64px);
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .tree-container .el-tree {
+            width: 100%;
+            height: 100%;
+        }
+        .empty-state {
+            color: #909399;
+            text-align: center;
+        }
+        .custom-tree-node {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 14px;
+            padding-right: 8px;
+        }
+        .node-size {
+            color: #909399;
+            font-size: 12px;
+        }
+        /* 右键菜单样式 */
+        .context-menu {
+            position: fixed;
+            z-index: 3000; /* 提高z-index，确保在所有Element UI组件之上 */
+            background: #fff;
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+            padding: 4px 0;
+            min-width: 120px;
+        }
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #606266;
+        }
+        .context-menu-item:hover {
+            background-color: #ecf5ff;
+            color: #409EFF;
+        }
+        .context-menu-item.danger {
+            color: #F56C6C;
+        }
+        .context-menu-item.danger:hover {
+            background-color: #fef0f0;
+        }
+        .search-tip {
+            font-size: 12px;
+            color: #909399;
+            margin-top: 4px;
+        }
+        /* 所有按钮统一主色调 #409EFF */
+        .el-button,
+        .el-button--default,
+        .el-button--primary,
+        .el-button--success,
+        .el-button--warning,
+        .el-button--danger {
+            background-color: #409EFF !important;
+            border-color: #409EFF !important;
+            color: #fff !important;
+        }
+        .el-button:hover,
+        .el-button--default:hover,
+        .el-button--primary:hover,
+        .el-button--success:hover,
+        .el-button--warning:hover,
+        .el-button--danger:hover {
+            background-color: #66b1ff !important;
+            border-color: #66b1ff !important;
+            color: #fff !important;
+        }
+        .el-button:active,
+        .el-button--default:active,
+        .el-button--primary:active,
+        .el-button--success:active,
+        .el-button--warning:active,
+        .el-button--danger:active {
+            background-color: #337ecc !important;
+            border-color: #337ecc !important;
+            color: #fff !important;
+        }
+        .el-button.is-disabled,
+        .el-button[disabled] {
+            background-color: #a0cfff !important;
+            border-color: #a0cfff !important;
+            color: #fff !important;
+            cursor: not-allowed;
+        }
+        /* 输入框尾部按钮样式适配 */
+        .el-input-group__append .el-button {
+            border-radius: 0 4px 4px 0 !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="display: flex; align-items: center; gap: 8px; overflow: visible;"><img src="/logo.png" style="width: 74 px; height: 74px; object-fit: contain; margin: -25px 0;"> 仓库</h3>
+            <div style="display: flex; gap: 8px;">
+                <el-button 
+                    type="success" 
+                    size="small" 
+                    @click="handleRagBuild" 
+                    :loading="ragBuilding"
+                >📚 全库RAG入库</el-button>
+                <el-button 
+                    type="primary" 
+                    size="small" 
+                    @click="loadFileTree" 
+                    :loading="isLoading"
+                >🔄 刷新</el-button>
+            </div>
+        </div>
+        
+        <el-input 
+            class="search-bar"
+            placeholder="搜索已加载的文件/文件夹" 
+            v-model="searchKeyword"
+            clearable
+            @input="filterTree"
+        >
+            <i slot="prefix" class="el-input__icon el-icon-search"></i>
+        </el-input>
+        <div class="search-tip" v-if="searchKeyword">💡 提示：搜索仅对已展开的目录有效</div>
+
+        <!-- ✅ 关键修改：给树容器添加右键点击事件 -->
+        <div class="tree-container" @contextmenu="handleContainerContextmenu">
+            <div class="empty-state" v-if="isLoading">
+                <i class="el-icon-loading" style="font-size: 24px; margin-bottom: 8px;"></i>
+                <p>加载中...</p>
+            </div>
+            <div class="empty-state" v-else-if="treeEmpty">
+                <i class="el-icon-folder-opened" style="font-size: 48px; margin-bottom: 16px; color: #c0c4cc;"></i>
+                <p>文件夹为空</p>
+                <p style="font-size: 12px; margin-top: 8px;">右键点击空白处新建文件或文件夹</p>
+            </div>
+            <el-tree
+                v-else
+                :props="defaultProps"
+                :filter-node-method="filterNode"
+                ref="tree"
+                node-key="path"
+                :expandedKeys.sync="expandedKeys"
+                @node-dblclick="handleNodeDblclick"
+                @node-contextmenu="handleContextMenu"
+                :load="loadNode"
+                lazy
+            >
+                <span class="custom-tree-node" slot-scope="{ node, data }">
+                    <span>
+                        <!-- 用emoji兜底图标，不依赖字体文件100%显示 -->
+                        <span v-if="data.is_dir" style="margin-right: 8px; color: #409EFF;">📁</span>
+                        <span v-else style="margin-right: 8px; color: #67C23A;">📄</span>
+                        {{ node.label }}
+                    </span>
+                    <span class="node-size" v-if="!data.is_dir">{{ formatFileSize(data.size) }}</span>
+                </span>
+            </el-tree>
+        </div>
+
+        <!-- 右键菜单 (改用普通 div 实现) -->
+        <div 
+            v-show="contextMenuVisible"
+            class="context-menu"
+            :style="contextMenuStyle"
+            @click.stop
+        >
+            <!-- 新增：打开文件菜单项 -->
+            <div class="context-menu-item" @click="handleOpenFileFromMenu" v-if="currentNode && !currentData.is_dir">打开文件</div>
+            <div class="context-menu-item" @click="handleNewFile">新建文件</div>
+            <div class="context-menu-item" @click="handleNewFolder">新建文件夹</div>
+            <div class="context-menu-item" @click="handleCreateProjectManual" v-if="!currentNode">创建项目文件夹</div>
+            <div class="context-menu-item" @click="handleRename" v-if="currentNode">重命名</div>
+            <div class="context-menu-item danger" @click="handleDelete" v-if="currentNode">删除</div>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    searchKeyword: '',
+                    // 懒加载树不要直接操作treeData，用一个标记判断是否为空
+                    treeEmpty: false,
+                    defaultProps: {
+                        children: 'children',
+                        label: 'name',
+                        isLeaf: 'leaf'
+                    },
+                    contextMenuVisible: false,
+                    contextMenuLeft: 0,
+                    contextMenuTop: 0,
+                    currentNode: null,
+                    currentData: null,
+                    apiBase: '/api',
+                    isLoading: false,
+                    ragBuilding: false,
+                    backupLoading: false,
+                    // 右键菜单宽高（用于边界检测）
+                    menuWidth: 120,
+                    menuHeight: 160,
+                    // 自动刷新定时器
+                    autoRefreshTimer: null,
+                    // 已展开的节点路径列表，刷新后恢复状态
+                    expandedKeys: [],
+                    // SSE连接实例
+                    sseConnection: null
+                }
+            },
+            computed: {
+                // 右键菜单样式（带边界检测）
+                contextMenuStyle() {
+                    let left = this.contextMenuLeft
+                    let top = this.contextMenuTop
+                    
+                    // 检测右边界
+                    if (left + this.menuWidth > window.innerWidth) {
+                        left = window.innerWidth - this.menuWidth - 10
+                    }
+                    
+                    // 检测下边界
+                    if (top + this.menuHeight > window.innerHeight) {
+                        top = window.innerHeight - this.menuHeight - 10
+                    }
+                    
+                    // 检测左边界和上边界
+                    left = Math.max(10, left)
+                    top = Math.max(10, top)
+                    
+                    return {
+                        left: left + 'px',
+                        top: top + 'px'
+                    }
+                }
+            },
+            mounted() {
+                this.loadFileTree()
+                // 点击空白关闭右键菜单
+                document.addEventListener('click', this.handleDocumentClick)
+                // 窗口大小改变时关闭右键菜单
+                window.addEventListener('resize', () => {
+                    this.contextMenuVisible = false
+                })
+                // 初始化文件变动SSE监听
+                this.initFileChangeSSE()
+                // 页面可见性变化监听，优化资源占用
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) {
+                        // 页面重新可见时立刻刷新一次
+                        this.loadFileTree(true)
+                    }
+                })
+            },
+            beforeDestroy() {
+                // 移除事件监听器，防止内存泄漏
+                document.removeEventListener('click', this.handleDocumentClick)
+                // 清除自动刷新定时器
+                if (this.autoRefreshTimer) {
+                    clearInterval(this.autoRefreshTimer)
+                }
+                // 关闭SSE连接
+                if (this.sseConnection) {
+                    this.sseConnection.close()
+                }
+                document.removeEventListener('visibilitychange', () => {})
+            },
+            methods: {
+                // 格式化文件大小
+                formatFileSize(bytes) {
+                    if (bytes === 0) return '0 B'
+                    const k = 1024
+                    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+                    const i = Math.floor(Math.log(bytes) / Math.log(k))
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+                },
+
+                // 点击空白处关闭菜单
+                handleDocumentClick() {
+                    this.contextMenuVisible = false
+                },
+
+                // 标准的懒加载节点方法，不要给treeData赋值
+                async loadNode(node, resolve) {
+                    try {
+                        // 根节点加载
+                        if (node.level === 0) {
+                            const res = await axios.get(`${this.apiBase}/file/list`, { params: { path: '' } })
+                            if (res.data.code === 200) {
+                                const data = res.data.data.map(item => ({
+                                    ...item,
+                                    leaf: !item.is_dir
+                                }))
+                                // 只通过resolve返回数据，不要修改treeData
+                                this.treeEmpty = data.length === 0
+                                return resolve(data)
+                            }
+                            this.treeEmpty = true
+                            return resolve([])
+                        }
+                        // 子目录节点加载（展开时才加载，避免递归报错）
+                        // 非目录直接返回，避免把文件当成文件夹加载报错
+                        if (!node.data.is_dir) {
+                            return resolve([])
+                        }
+                        const res = await axios.get(`${this.apiBase}/file/list`, { params: { path: node.data.path } })
+                        if (res.data.code === 200) {
+                            return resolve(res.data.data.map(item => ({
+                                ...item,
+                                leaf: !item.is_dir
+                            })))
+                        }
+                        return resolve([])
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message || '加载目录失败'
+                        this.$message.error(`加载目录「${node.label}」失败：${msg}`)
+                        if (node.level === 0) {
+                            this.treeEmpty = true
+                        }
+                        return resolve([])
+                    }
+                },
+
+                // Element UI官方推荐的懒加载树刷新方法
+                async loadFileTree(isAutoRefresh = false) {
+                    // 自动刷新不显示loading，避免干扰用户操作
+                    if (!isAutoRefresh) {
+                        this.isLoading = true
+                    }
+                    this.searchKeyword = ''
+                    this.contextMenuVisible = false
+                    // 清空所有展开状态，刷新后回到根目录
+                    this.expandedKeys = []
+                    
+                    try {
+                        // 使用v-if重新创建树组件，这是最可靠的刷新方式
+                        this.treeEmpty = true
+                        await this.$nextTick()
+                        this.treeEmpty = false
+                        await this.$nextTick()
+                        
+                        // 手动刷新才显示提示
+                        if (!isAutoRefresh) {
+                            this.$message.success('刷新成功')
+                        }
+                    } catch (e) {
+                        // 自动刷新失败不提示
+                        if (!isAutoRefresh) {
+                            this.$message.error('刷新失败：' + e.message)
+                        }
+                    } finally {
+                        if (!isAutoRefresh) {
+                            this.isLoading = false
+                        }
+                    }
+                },
+
+                // 过滤树节点
+                filterTree() {
+                    // 添加防御性检查
+                    if (this.$refs.tree) {
+                        this.$refs.tree.filter(this.searchKeyword)
+                    }
+                },
+                filterNode(value, data) {
+                    if (!value) return true
+                    return data.name.toLowerCase().includes(value.toLowerCase())
+                },
+
+                // 双击节点打开文件
+                handleNodeDblclick(data, node) {
+                    if (!data.is_dir) {
+                        this.openFile(data.path)
+                    }
+                },
+
+                // 通用打开文件方法
+                openFile(path) {
+                    // 修复postMessage安全问题，使用当前源
+                    const targetOrigin = window.location.origin
+                    window.parent.postMessage({ type: 'openFile', path: path }, targetOrigin)
+                },
+
+                // 右键菜单打开文件
+                handleOpenFileFromMenu() {
+                    this.contextMenuVisible = false
+                    this.openFile(this.currentData.path)                    
+                },
+
+                // 节点右键菜单
+                handleContextMenu(event, data, node) {
+                    event.preventDefault()
+                    event.stopPropagation() // 阻止冒泡
+                    this.currentNode = node
+                    this.currentData = data
+                    this.contextMenuLeft = event.clientX
+                    this.contextMenuTop = event.clientY
+                    this.contextMenuVisible = true
+                },
+
+                // ✅ 新增：容器空白区域右键菜单
+                handleContainerContextmenu(event) {
+                    // 阻止浏览器默认右键菜单
+                    event.preventDefault()
+                    event.stopPropagation()
+                    
+                    // 设置为根目录（没有选中任何节点）
+                    this.currentNode = null
+                    this.currentData = null
+                    this.contextMenuLeft = event.clientX
+                    this.contextMenuTop = event.clientY
+                    this.contextMenuVisible = true
+                },
+
+                // 新建文件
+                async handleNewFile() {
+                    this.contextMenuVisible = false
+                    // ✅ 关键修复：当currentData为null时，parentPath为空字符串（根目录）
+                    const parentPath = this.currentData && this.currentData.is_dir ? this.currentData.path : ''
+                    const { value: fileName } = await this.$prompt('请输入文件名', '新建文件', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        inputPattern: /^[^\\/:*?"<>|]+$/,
+                        inputErrorMessage: '文件名包含非法字符'
+                    }).catch(() => {}) //  catch 取消操作，避免报错
+                    
+                    if (fileName) {
+                        this.isLoading = true
+                        try {
+                            // 使用你原来的路径格式
+                            const fullPath = parentPath ? `${parentPath}/${fileName}` : fileName
+                            await axios.post(`${this.apiBase}/file/create`, {
+                                path: fullPath,
+                                is_dir: false
+                            })
+                            this.$message.success('文件创建成功')
+                            await this.loadFileTree()
+                        } catch (e) {
+                            const msg = e.response?.data?.detail || e.message
+                            this.$message.error('创建失败：' + msg)
+                        } finally {
+                            this.isLoading = false
+                        }
+                    }
+                },
+
+                // 新建文件夹
+                async handleNewFolder() {
+                    this.contextMenuVisible = false
+                    // ✅ 关键修复：当currentData为null时，parentPath为空字符串（根目录）
+                    const parentPath = this.currentData && this.currentData.is_dir ? this.currentData.path : ''
+                    const { value: folderName } = await this.$prompt('请输入文件夹名', '新建文件夹', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        inputPattern: /^[^\\/:*?"<>|]+$/,
+                        inputErrorMessage: '文件夹名包含非法字符'
+                    }).catch(() => {})
+
+                    if (folderName) {
+                        this.isLoading = true
+                        try {
+                            // 使用你原来的路径格式
+                            const fullPath = parentPath ? `${parentPath}/${folderName}` : folderName
+                            await axios.post(`${this.apiBase}/file/create`, {
+                                path: fullPath,
+                                is_dir: true
+                            })
+                            this.$message.success('文件夹创建成功')
+                            await this.loadFileTree()
+                        } catch (e) {
+                            const msg = e.response?.data?.detail || e.message
+                            this.$message.error('创建失败：' + msg)
+                        } finally {
+                            this.isLoading = false
+                        }
+                    }
+                },
+
+                // 重命名
+                async handleRename() {
+                    this.contextMenuVisible = false
+                    const oldName = this.currentData.name
+                    const { value: newName } = await this.$prompt('请输入新名称', '重命名', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        inputValue: oldName,
+                        inputPattern: /^[^\\/:*?"<>|]+$/,
+                        inputErrorMessage: '名称包含非法字符'
+                    }).catch(() => {})
+
+                    if (newName && newName !== oldName) {
+                        this.isLoading = true
+                        try {
+                            await axios.post(`${this.apiBase}/file/rename`, {
+                                old_path: this.currentData.path,
+                                new_name: newName
+                            })
+                            this.$message.success('重命名成功')
+                            await this.loadFileTree()
+                        } catch (e) {
+                            const msg = e.response?.data?.detail || e.message
+                            this.$message.error('重命名失败：' + msg)
+                        } finally {
+                            this.isLoading = false
+                        }
+                    }
+                },
+
+                // 删除
+                async handleDelete() {
+                    this.contextMenuVisible = false
+                    await this.$confirm(`确定要删除「${this.currentData.name}」吗？删除后无法恢复！`, '提示', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).catch(() => {})
+
+                    this.isLoading = true
+                    try {
+                        // 判断是否为项目文件夹：文件夹包含以「项目手册.md」结尾的文件（格式：[项目名]项目手册.md）
+                        let isProject = false
+                        if (this.currentData.is_dir) {
+                            try {
+                                const res = await axios.get(`${this.apiBase}/file/list`, { params: { path: this.currentData.path } })
+                                if (res.data.code === 200) {
+                                    isProject = res.data.data.some(item => item.name.endsWith('项目手册.md'))
+                                }
+                            } catch (e) {
+                                // 读取子文件失败按普通文件夹处理
+                            }
+                        }
+
+                        if (isProject) {
+                            // 项目文件夹调用专用删除接口，同步清理所有关联数据
+                            await axios.post(`${this.apiBase}/project/delete`, {
+                                project_name: this.currentData.name,
+                                project_root: this.currentData.path
+                            })
+                            this.$message.success('项目删除成功，所有关联记忆/缓存已同步清理')
+                        } else {
+                            // 普通文件/文件夹走通用删除接口
+                            await axios.post(`${this.apiBase}/file/delete`, {
+                                path: this.currentData.path
+                            })
+                            this.$message.success('删除成功')
+                        }
+                        
+                        await this.loadFileTree()
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message
+                        this.$message.error('删除失败：' + msg)
+                    } finally {
+                        this.isLoading = false
+                    }
+                },
+
+                // 创建项目手册
+                async handleCreateProjectManual() {
+                    this.contextMenuVisible = false
+                    // 获取保存路径：选中文件夹则保存到文件夹下，否则保存到根目录
+                    const savePath = this.currentData && this.currentData.is_dir ? this.currentData.path : ''
+                    const { value: projectName } = await this.$prompt('请输入项目名称', '创建项目手册', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        inputPattern: /^[^\\/:*?"<>|]+$/,
+                        inputErrorMessage: '项目名称包含非法字符'
+                    }).catch(() => {})
+                    
+                    if (projectName) {
+                        this.isLoading = true
+                        try {
+                            const res = await axios.post(`${this.apiBase}/project-manual/create`, {
+                                project_name: projectName,
+                                save_path: savePath
+                            })
+                            if (res.data.code === 200) {
+                                this.$message.success(res.data.msg)
+                                // 自动打开新创建的手册
+                                this.openFile(res.data.path)
+                                await this.loadFileTree()
+                            } else {
+                                this.$message.error(res.data.msg)
+                            }
+                        } catch (e) {
+                            const msg = e.response?.data?.detail || e.message
+                            this.$message.error('创建项目手册失败：' + msg)
+                        } finally {
+                            this.isLoading = false
+                        }
+                    }
+                },
+                // 全库RAG入库
+                async handleRagBuild() {                
+                    this.ragBuilding = true
+                    try {
+                        const res = await axios.get(`${this.apiBase}/rag/build`)
+                        if (res.data.code === 200) {
+                            this.$message.success(res.data.msg)
+                            // 轮询查询状态
+                            const timer = setInterval(async () => {
+                                const statusRes = await axios.get(`${this.apiBase}/rag/build/status`)
+                                if (statusRes.data.status === 'success') {
+                                    clearInterval(timer)
+                                    const result = statusRes.data.result
+                                    this.$message.success(`✅ RAG入库完成！成功：${result.success}个，失败：${result.fail}个，总计：${result.total}个`)
+                                    this.ragBuilding = false
+                                } else if (statusRes.data.status === 'error') {
+                                    clearInterval(timer)
+                                    this.$message.error('❌ RAG入库失败：' + statusRes.data.result.error)
+                                    this.ragBuilding = false
+                                }
+                            }, 1000)
+                        } else {
+                            this.$message.error(res.data.msg)
+                            this.ragBuilding = false
+                        }
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message
+                        this.$message.error('RAG入库启动失败：' + msg)
+                        this.ragBuilding = false
+                    }
+                },
+                // 全库备份
+                async handleRepoBackup() {
+                    this.backupLoading = true
+                    try {
+                        const res = await axios.get(`${this.apiBase}/repo/backup`)
+                        this.$message.success(res.data.msg)
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message
+                        this.$message.error('备份失败：' + msg)
+                    } finally {
+                        this.backupLoading = false
+                    }
+                },
+                // 初始化文件变动SSE监听
+                initFileChangeSSE() {
+                    if (window.EventSource) {
+                        this.sseConnection = new EventSource(`${this.apiBase}/file/change/sse`)
+                        this.sseConnection.onmessage = (event) => {
+                            const data = JSON.parse(event.data)
+                            if (data.type === 'file_change') {
+                                // 收到文件变动事件，静默刷新
+                                this.loadFileTree(true)
+                            }
+                        }
+                        this.sseConnection.onerror = () => {
+                            // 连接断开，5秒后自动重连
+                            setTimeout(() => {
+                                this.initFileChangeSSE()
+                            }, 5000)
+                        }
+                    }
+                }
+            }
+            })
+    </script>
+</body>
+</html>

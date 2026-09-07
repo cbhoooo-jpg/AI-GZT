@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI智能体对话界面</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #f7f7f8; height: 100vh; display: flex; flex-direction: column; }
+        
+        .header { background-color: #fff; padding: 12px 20px; border-bottom: 1px solid #e5e5e5; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 18px; font-weight: 600; color: #111; }
+        .header .action-buttons { display: flex; gap: 10px; align-items: center; }
+        
+        .btn { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background-color: #fff; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+        .btn:hover { background-color: #f5f5f5; }
+        .btn.primary { background-color: #165DFF; color: #fff; border-color: #165DFF; }
+        .btn.primary:hover { background-color: #0f4cd0; }
+        .btn.danger { background-color: #F53F3F; color: #fff; border-color: #F53F3F; }
+        .btn.danger:hover { background-color: #d93636; }
+        .btn.small { padding: 4px 8px; font-size: 12px; border-radius: 4px; background: rgba(255,255,255,0.15); color: inherit; border: none; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        select.btn { appearance: none; padding-right: 28px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
+
+        .chat-container { flex: 1; overflow-y: auto; padding: 20px; max-width: 900px; margin: 0 auto; width: 100%; }
+        .message { margin-bottom: 20px; display: flex; gap: 12px; position: relative; }
+        .message.user { justify-content: flex-end; }
+        .message .avatar { width: 36px; height: 36px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 14px; overflow: hidden; }
+        .message.user .avatar { background-color: #165DFF; order: 2; }
+        .message.assistant .avatar { background-color: transparent; }
+        .message.assistant .avatar img { width: 100%; height: 100%; object-fit: contain; }
+        
+        .message .content { max-width: 85%; padding: 12px 16px; border-radius: 8px; line-height: 1.6; font-size: 15px; white-space: pre-wrap; word-break: break-word; position: relative; transition: max-height 0.3s ease, opacity 0.2s; }
+        .message.user .content { background-color: #165DFF; color: #fff; order: 1; overflow: hidden; }
+        
+        .message.assistant .content { background-color: #fff; color: #333; border: 1px solid #e5e5e5; overflow: hidden; }
+        .message .content.fold { max-height: 4.8em; opacity: 0.85; cursor: pointer; }
+        .message .content.expanded { max-height: none; opacity: 1; }
+        
+        .message-actions { position: absolute; top: 8px; right: 12px; display: flex; gap: 6px; opacity: 0; transition: opacity 0.2s; z-index: 10; }
+        .message:hover .message-actions { opacity: 1; }
+        .message.user .message-actions .btn.small { color: #fff; }
+        
+        .tool-command { background: #f0f7ff; border-left: 3px solid #1677ff; padding: 8px 12px; border-radius: 4px; font-family: monospace; font-size: 13px; margin: 8px 0; color: #1677ff; }
+        .reasoning-content { 
+            background: #f5f5f5; 
+            border-left: 3px solid #999; 
+            padding: 8px 12px; 
+            border-radius: 4px; 
+            margin: 8px 0; 
+            font-size: 13px; 
+            color: #666;
+            transition: max-height 0.3s ease;
+        }
+        /* 思考中状态：固定15行高度，内部滚动，禁止点击 */
+        .reasoning-content.thinking {
+            max-height: calc(15 * 1.5em); /* 精确15行高度，适配任意字体大小 */
+            overflow-y: auto;
+            overscroll-behavior: contain; /* 滚动隔离，避免穿透到聊天主容器 */
+        }
+        .reasoning-content.thinking summary {
+            cursor: not-allowed;
+            opacity: 0.8;
+            pointer-events: none;
+            list-style: none;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .reasoning-content.thinking summary::before {
+            content: "⏳ ";
+            display: inline-block;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+        /* 思考中图标呼吸动画 */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        /* 思考完成-长内容折叠状态：仅显示标题，可点击展开 */
+        .reasoning-content:not(.thinking):not(.auto-expand) summary {
+            cursor: pointer;
+            font-weight: 500;
+            margin-bottom: 0;
+            list-style: revert;
+        }
+        .reasoning-content:not(.thinking):not(.auto-expand) summary::before {
+            content: "💭 ";
+        }
+        .reasoning-content:not(.thinking):not(.auto-expand) summary::-webkit-details-marker {
+            margin-right: 6px;
+            color: #999;
+        }
+        /* 思考完成-长内容展开状态：最大500px高度，内部滚动 */
+        .reasoning-content:not(.thinking):not(.auto-expand)[open] {
+            max-height: 500px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+        .reasoning-content:not(.thinking):not(.auto-expand)[open] summary {
+            margin-bottom: 4px;
+        }
+        /* 思考完成-短内容自动适配：全量显示，禁止折叠 */
+        .reasoning-content.auto-expand {
+            max-height: none !important;
+            overflow: visible !important;
+        }
+        .reasoning-content.auto-expand summary {
+            cursor: default;
+            font-weight: 500;
+            margin-bottom: 4px;
+            list-style: none;
+            pointer-events: none;
+        }
+        .reasoning-content.auto-expand summary::before {
+            content: "💭 ";
+        }
+        .reasoning-content.auto-expand summary::-webkit-details-marker {
+            display: none;
+        }
+        
+        .message .memory-tag { font-size: 12px; color: #888; margin-top: 6px; }
+
+        .input-area { background-color: #fff; padding: 16px 20px; border-top: 1px solid #e5e5e5; max-width: 900px; margin: 0 auto; width: 100%; }
+        .system-prompt { margin-bottom: 12px; }
+        .system-prompt textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; outline: none; resize: vertical; min-height: 40px; max-height: 120px; }
+        .input-row { display: flex; gap: 10px; }
+        .input-row textarea { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; resize: none; min-height: 50px; max-height: 200px; outline: none; }
+        .input-row textarea:focus { border-color: #165DFF; }
+        /* 输入框工具栏样式 */
+        .input-toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+        .input-toolbar .btn { font-size: 13px; padding: 6px 12px; }
+        #fileInput { display: none; }
+        /* 附件预览区样式 */
+        .attachment-preview { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+        .attachment-item { position: relative; width: 96px; height: 96px; border: 1px solid #eee; border-radius: 8px; overflow: hidden; background: #f9f9f9; }
+        .attachment-item img { width: 100%; height: 100%; object-fit: cover; }
+        .attachment-item .file-icon { width: 100%; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        .attachment-item .file-name { padding: 2px 4px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; background: #fff; }
+        .attachment-item .del-btn { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: none; font-size: 12px; line-height: 18px; text-align: center; cursor: pointer; padding: 0; }
+        /* 聊天消息附件样式 */
+        .msg-attachments { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+        .msg-attachments .img-item { max-width: 200px; max-height: 200px; border-radius: 8px; object-fit: cover; cursor: pointer; }
+        .msg-attachments .file-card { padding: 8px 12px; background: rgba(255,255,255,0.1); border-radius: 8px; display: flex; align-items: center; gap: 8px; min-width: 180px; }
+        .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #165DFF; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 9999; }
+        .modal.show { display: flex; }
+        .modal-content { background-color: #fff; padding: 24px; border-radius: 8px; width: 90%; max-width: 600px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .modal-content h3 { margin-bottom: 16px; font-size: 16px; }
+        .modal-content textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; min-height: 120px; font-size: 14px; margin-bottom: 16px; resize: vertical; outline: none; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 8px; }
+/* 全局复制成功蓝色提示气泡 */
+.copy-toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #165DFF;
+    color: #fff;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    max-width: 85%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
+}
+.copy-toast.show {
+    opacity: 1;
+    visibility: visible;
+    top: 30px;
+}
+/* 模板选择弹窗自适应高度：完全根据模板数量自动适配，防溢出 */
+#tplSelectModal .modal-content {
+    height: auto !important; /* 完全由内容撑开高度，模板有多少就显示多高 */
+    max-height: 90vh !important; /* 最多占屏幕高度90%，避免溢出屏幕 */
+    overflow-y: auto !important; /* 模板过多时内部滚动，不破坏布局 */
+    overflow-x: hidden !important;
+}
+/* 进程风险告警弹窗样式 */
+#processAlertModal .modal-content {
+    max-width: 520px;
+}
+.risk-level {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-left: 8px;
+}
+.risk-level.high {
+    background: #fff1f0;
+    color: #cf1322;
+    border: 1px solid #ffa39e;
+}
+.risk-level.medium {
+    background: #fff7e6;
+    color: #d46b08;
+    border: 1px solid #ffd591;
+}
+.risk-level.low {
+    background: #f6ffed;
+    color: #389e0d;
+    border: 1px solid #b7eb8f;
+}
+.proc-info {
+    background: #fafafa;
+    padding: 12px;
+    border-radius: 6px;
+    margin: 12px 0;
+    font-size: 14px;
+    line-height: 1.8;
+}
+.proc-info .label {
+    color: #666;
+    width: 80px;
+    display: inline-block;
+}
+.countdown-text {
+    color: #F53F3F;
+    font-weight: 500;
+    font-size: 15px;
+    text-align: center;
+    margin: 12px 0;
+}
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+</head>
+<body>
+    <div class="header">
+        <h1 style="display: flex; align-items: center; gap: 8px; overflow: visible;"><img src="/logo.png" style="width: 74px; height: 74px; object-fit: contain; margin: -25px 0;"></h1>
+        <div class="action-buttons">
+            <select id="projectSelector" class="btn">
+                <option value="">（全局）请选择项目</option>
+            </select>
+            <select id="promptSelector" class="btn"></select>
+            <button id="sampleManageBtn" class="btn primary">记忆</button>
+        </div>
+    </div>
+
+    <div class="chat-container" id="chatContainer"></div>
+
+    <div class="input-area">
+        <div class="system-prompt" style="display: none;">
+            <textarea id="systemPromptInput" placeholder="自定义系统提示词（可选，默认:你是一个简洁友好的AI助手，回答准确精炼。）"></textarea>
+        </div>
+        <div class="input-toolbar">
+            <button id="screenshotBtn" class="btn primary">截图</button>
+            <button id="selectFileBtn" class="btn primary">选择文件</button>
+            <button id="pluginManageBtn" class="btn primary">插件管理</button>
+            <input type="file" id="fileInput" multiple accept="image/*,.pdf,.docx,.xlsx,.txt,.md,.mp3,.mp4,.wav,.py,.js,.html,.css,.sql,.yml,.yaml,.go,.java,.cpp,.c,.sh,.json,.zip,.rar">
+        </div>
+        <!-- 附件预览区 -->
+        <div id="attachmentPreview" class="attachment-preview"></div>
+        <div class="input-row">
+<textarea id="messageInput" placeholder="输入消息，按Enter发送，Shift+Enter换行" ime-mode="active"></textarea>
+            <button id="sendBtn" class="btn primary">发送</button>
+            <button id="stopBtn" class="btn danger" style="display:none;">停止输出</button>
+        </div>
+    </div>
+
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <h3>系统设置</h3>
+            <p style="margin-bottom:12px;font-size:14px;color:#666;">修改全局默认系统提示词：</p>
+            <textarea id="globalSystemPrompt" placeholder="请输入全局默认系统提示词" style="min-height: 150px;"></textarea>
+            <div class="modal-footer">
+                <button id="cancelSettingsBtn" class="btn">取消</button>
+                <button id="saveSettingsBtn" class="btn primary">保存设置</button>       
+            </div>
+        </div>
+    </div>
+    <!-- 模板选择弹窗 -->
+    <div class="modal" id="tplSelectModal">
+        <div class="modal-content">
+            <span class="close" style="float:right;font-size:20px;font-weight:bold;cursor:pointer;">&times;</span>
+            <h3>选择要编辑的模板</h3>
+            <div id="tplList" style="display:flex;flex-direction:column;gap:10px;margin:10px 0;"></div>
+        </div>
+    </div>
+    <!-- 模板编辑弹窗 -->
+    <div class="modal" id="tplEditModal">
+        <div class="modal-content">
+            <span class="close" style="float:right;font-size:20px;font-weight:bold;cursor:pointer;">&times;</span>
+            <h3 id="tplEditTitle">编辑模板</h3>
+            <textarea id="tplEditContent" rows="8" placeholder="输入模板内容"></textarea>
+            <div class="modal-footer">
+                <button id="saveTplBtn" class="btn primary">保存</button>
+            </div>
+        </div>
+    </div>
+    <!-- 进程风险告警确认弹窗 -->
+    <div class="modal" id="processAlertModal">
+        <div class="modal-content">
+            <h3>⚠️ 检测到风险进程 <span id="alertRiskLevel" class="risk-level high">高危</span></h3>
+            <div class="proc-info">
+                <div><span class="label">进程名称:</span><span id="alertProcName"></span></div>
+                <div><span class="label">进程PID:</span><span id="alertPid"></span></div>
+                <div><span class="label">进程路径:</span><span id="alertExePath" style="word-break: break-all;"></span></div>
+                <div style="margin-top:8px;"><span class="label">风险原因:</span><span id="alertReason" style="color:#cf1322;"></span></div>
+            </div>
+            <div class="countdown-text" id="alertCountdown">⏳ 30秒后将自动终止进程，请尽快确认</div>
+            <div class="modal-footer">
+                <button id="alertAllowBtn" class="btn primary">允许运行（加入白名单）</button>
+                <button id="alertTerminateBtn" class="btn danger">立即终止进程</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    let chatSessionId = '';
+    let currentSelectedProject = null;
+    let currentProjectPrompt = '';
+    let currentLastUserQuery = '';
+    let currentStreamMsg = null;
+    let currentReasoningMsg = null; // 专门维护流式思考消息，避免每个片段新建消息刷屏
+    const globalPageManager = new Map();
+
+    // 提前获取核心DOM元素，避免后续代码引用未定义变量导致脚本中断
+    const chatContainer = document.getElementById('chatContainer');
+    const messageInput = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const systemPromptInput = document.getElementById('systemPromptInput');
+    const projectSelector = document.getElementById('projectSelector');
+    const settingsModal = document.getElementById('settingsModal');
+    let isUserAtBottom = true;
+    const SCROLL_THRESHOLD = 60;
+
+    // 进程告警弹窗相关变量
+    let currentAlertPid = null;
+    let alertCountdownTimer = null;
+    let remainingSeconds = 0;
+    let alertQueue = []; // 告警队列，用户忙碌时缓存中低危告警
+    let userIdleTimer = null; // 用户空闲检测定时器
+    const processAlertModal = document.getElementById('processAlertModal');
+    const alertRiskLevel = document.getElementById('alertRiskLevel');
+    const alertProcName = document.getElementById('alertProcName');
+    const alertPid = document.getElementById('alertPid');
+    const alertExePath = document.getElementById('alertExePath');
+    const alertReason = document.getElementById('alertReason');
+    const alertCountdown = document.getElementById('alertCountdown');
+    const alertAllowBtn = document.getElementById('alertAllowBtn');
+    const alertTerminateBtn = document.getElementById('alertTerminateBtn');
+
+    /**
+     * 检查用户当前是否忙碌（正在输入/正在接收AI回复）
+     * @returns {boolean} 是否忙碌
+     */
+    function isUserBusy() {
+        // 正在流式输出AI回复
+        if (currentStreamMsg) return true;
+        // 输入框有内容且正在输入（5秒内有输入动作）
+        if (messageInput.value.trim().length > 0) return true;
+        return false;
+    }
+
+    /**
+     * 检查告警队列，空闲时弹出下一个告警
+     */
+    function checkAlertQueue() {
+        // 已有弹窗在显示，不处理
+        if (currentAlertPid) return;
+        // 用户忙碌，不处理
+        if (isUserBusy()) return;
+        // 队列为空，不处理
+        if (alertQueue.length === 0) return;
+        // 取出队列第一个告警弹出
+        const nextAlert = alertQueue.shift();
+        showProcessAlert(nextAlert);
+    }
+
+    // 监听输入框输入事件，重置空闲定时器
+    messageInput.addEventListener('input', () => {
+        if (userIdleTimer) clearTimeout(userIdleTimer);
+        // 用户停止输入5秒后视为空闲，检查队列
+        userIdleTimer = setTimeout(checkAlertQueue, 5000);
+    });
+    /**
+     * 显示进程风险告警弹窗，支持智能排队
+     * @param {Object} data 告警数据:pid, process_name, risk_level, reason, exe_path, timeout
+     */
+    function showProcessAlert(data) {
+        // 高危告警立即弹出，不进入队列（但不抢焦点）
+        if (data.risk_level === 'high') {
+            // 如果已有弹窗在显示，先关闭之前的
+            if (currentAlertPid) closeAlert();
+        } else {
+            // 中低危告警:用户忙碌时进入队列，空闲时再弹出
+            if (isUserBusy() || currentAlertPid) {
+                alertQueue.push(data);
+                addMessage('system', `🟡 检测到${data.risk_level === 'medium' ? '中危' : '低危'}进程 [${data.process_name}]，当前忙碌已加入告警队列，空闲后自动弹出`);
+                updateMessageFoldStates();
+                return;
+            }
+        }
+        
+        currentAlertPid = data.pid;
+        remainingSeconds = data.timeout || 30;
+        
+        // 填充弹窗内容
+        alertProcName.textContent = data.process_name;
+        alertPid.textContent = data.pid;
+        alertExePath.textContent = data.exe_path || 'N/A';
+        alertReason.textContent = data.reason;
+        
+        // 设置风险等级样式
+        alertRiskLevel.className = `risk-level ${data.risk_level}`;
+        alertRiskLevel.textContent = data.risk_level === 'high' ? '高危' : data.risk_level === 'medium' ? '中危' : '低危';
+        
+        // 更新倒计时显示
+        updateCountdown();
+        
+        // 启动倒计时定时器
+        alertCountdownTimer = setInterval(() => {
+            remainingSeconds--;
+            updateCountdown();
+            if (remainingSeconds <= 0) closeAlert();
+        }, 1000);
+        
+        // 显示弹窗，不抢输入焦点
+        processAlertModal.classList.add('show');
+        // 弹窗弹出时不强制聚焦，用户可以继续输入
+        messageInput.focus();
+        
+        // 绑定按钮一次性事件
+        alertAllowBtn.onclick = async () => {
+            try {
+                const res = await fetch('/api/plugin/call', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        plugin_id: 'process_monitor',
+                        params: { action: 'confirm_allow', pid: currentAlertPid }
+                    })
+                });
+                const result = await res.json();
+                if (result.code === 200) {
+                    addMessage('system', `✅ 已允许进程 ${data.process_name} 运行，已自动加入白名单`);
+                    updateMessageFoldStates();
+                } else {
+                    addMessage('system', `❌ 操作失败:${result.msg}`);
+                    updateMessageFoldStates();
+                }
+            } catch (e) {
+                addMessage('system', `❌ 操作失败:网络错误`);
+                updateMessageFoldStates();
+            } finally {
+                closeAlert();
+            }
+        };
+        
+        alertTerminateBtn.onclick = async () => {
+            try {
+                const res = await fetch('/api/plugin/call', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        plugin_id: 'process_monitor',
+                        params: { action: 'confirm_terminate', pid: currentAlertPid }
+                    })
+                });
+                const result = await res.json();
+                if (result.code === 200) {
+                    addMessage('system', `✅ 已终止进程 ${data.process_name}，处置结果:${result.data.result}`);
+                    updateMessageFoldStates();
+                } else {
+                    addMessage('system', `❌ 操作失败:${result.msg}`);
+                    updateMessageFoldStates();
+                }
+            } catch (e) {
+                addMessage('system', `❌ 操作失败:网络错误`);
+                updateMessageFoldStates();
+            } finally {
+                closeAlert();
+            }
+        };
+    }
+
+    /**
+     * 更新倒计时显示
+     */
+    function updateCountdown() {
+        alertCountdown.textContent = `⏳ ${remainingSeconds}秒后将自动终止进程，请尽快确认`;
+    }
+
+    /**
+     * 关闭告警弹窗，清理定时器，自动检查队列中下一个告警
+     */
+    function closeAlert() {
+        if (alertCountdownTimer) {
+            clearInterval(alertCountdownTimer);
+            alertCountdownTimer = null;
+        }
+        processAlertModal.classList.remove('show');
+        currentAlertPid = null;
+        // 重置按钮事件
+        alertAllowBtn.onclick = null;
+        alertTerminateBtn.onclick = null;
+        // 弹窗关闭后延迟1秒检查队列，避免连续弹窗骚扰
+        setTimeout(checkAlertQueue, 1000);
+    }
+
+    // 点击弹窗外部关闭
+    processAlertModal.addEventListener('click', (e) => {
+        if (e.target === processAlertModal) closeAlert();
+    });
+    
+    chatContainer.addEventListener('scroll', () => {
+        const scrollBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
+        isUserAtBottom = scrollBottom < SCROLL_THRESHOLD;
+    });
+
+    function scrollToBottomIfNeeded() {
+        if (isUserAtBottom) chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // 智能折叠管理器：最新展开，历史折叠，正在流式输出的消息始终展开不折叠
+    function updateMessageFoldStates() {
+        const messages = chatContainer.querySelectorAll('.message');
+        if (messages.length === 0) return;
+
+        const lastMsg = messages[messages.length - 1];
+
+        messages.forEach(msg => {
+            const content = msg.querySelector('.content');
+            const btn = msg.querySelector('.msg-toggle-btn');
+            if (!content) return;
+
+            // 思考消息自身用details标签控制展开收起，不需要外层折叠限制高度，永久保持展开状态
+            if (msg.classList.contains('reasoning-msg')) {
+                content.classList.remove('fold');
+                content.classList.add('expanded');
+                return;
+            }
+
+            // 正在流式输出的消息强制展开，禁止折叠，避免长内容/代码被截断
+            if (content.classList.contains('streaming')) {
+                content.classList.remove('fold');
+                content.classList.add('expanded');
+                if (btn) btn.textContent = '👆 收起';
+                return;
+            }
+
+            if (msg === lastMsg) {
+                content.classList.remove('fold');
+                content.classList.add('expanded');
+                if (btn) btn.textContent = '👆 收起';
+            } else {
+                content.classList.remove('expanded');
+                content.classList.add('fold');
+                if (btn) btn.textContent = '👇 展开';
+            }
+        });
+    }
+
+    // 显示复制成功蓝色气泡
+    function showCopyToast(content) {
+        const toast = document.getElementById('copyToast');
+        // 内容过长自动截断避免气泡过宽
+        const showContent = content.length > 35 ? content.substring(0, 35) + '...' : content;
+        toast.innerText = `✅ 已复制：${showContent}`;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    // 复制消息内容到剪贴板（兼容HTTP/HTTPS/QtWebView全环境，直接读取原始返回内容，100%无差异）
+    function handleCopy(btn, text) {
+        // 直接读取存储在message-actions中的原始AI返回内容，完全不依赖DOM渲染结果，100%和原始内容一致
+        const pureContent = (text || btn.closest('.message-actions').dataset.response || '').trim();
+        
+        // 优先使用同步复制方案，无异步卡住问题，全环境兼容
+        const tempTextarea = document.createElement('textarea');
+        tempTextarea.value = pureContent;
+        tempTextarea.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0;';
+        document.body.appendChild(tempTextarea);
+        tempTextarea.select();
+        
+        let copySuccess = false;
+        try {
+            copySuccess = document.execCommand('copy');
+            if (copySuccess) {
+                btn.innerText = '✅ 复制成功';
+                showCopyToast(pureContent);
+            } else {
+                // 同步方案失败再试HTTPS异步兜底
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(pureContent).then(() => {
+                        copySuccess = true;
+                        btn.innerText = '✅ 复制成功';
+                        showCopyToast(pureContent);
+                    }).catch(() => {
+                        btn.innerText = '❌ 复制失败';
+                    });
+                } else {
+                    btn.innerText = '❌ 复制失败';
+                }
+            }
+        } catch (e) {
+            btn.innerText = '❌ 复制失败';
+        }
+        document.body.removeChild(tempTextarea);
+        setTimeout(() => btn.innerText = '📋 复制', 1500);
+    }
+
+    // 统一事件委托（彻底解决动态按钮点击失效）
+    chatContainer.addEventListener('click', (e) => {
+        const toggleBtn = e.target.closest('.msg-toggle-btn');
+        const copyBtn = e.target.closest('.msg-copy-btn');
+
+        if (toggleBtn) {
+            e.preventDefault();
+            const content = toggleBtn.closest('.content');
+            if (content.classList.contains('fold')) {
+                content.classList.remove('fold');
+                content.classList.add('expanded');
+                toggleBtn.textContent = '👆 收起';
+            } else {
+                content.classList.remove('expanded');
+                content.classList.add('fold');
+                toggleBtn.textContent = '👇 展开';
+            }
+            // 触发滚动检查
+            setTimeout(scrollToBottomIfNeeded, 310);
+        } 
+        else if (copyBtn) {
+            e.preventDefault();
+            const text = copyBtn.closest('.message-actions').dataset.response || copyBtn.closest('.content').innerText.trim();
+            handleCopy(copyBtn, text);
+        }
+    });
+    // 项目与发送逻辑
+    projectSelector.addEventListener('focus', loadProjectList);
+    projectSelector.addEventListener('change', switchProject);
+    // document.getElementById('refreshProjectBtn').addEventListener('click', loadProjectList);
+    sendBtn.addEventListener('click', sendMessage);
+    document.getElementById('stopBtn').addEventListener('click', stopChat);
+
+    async function stopChat() {
+        try {
+            await fetch('/api/chat/stop', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ session_id: chatSessionId })
+            });
+        } catch (e) {} finally {
+            // 停止生成时自动收尾思考消息
+            if (currentReasoningMsg) {
+                const details = currentReasoningMsg.root.querySelector('details');
+                if (details) details.removeAttribute('open');
+                currentReasoningMsg = null;
+            }
+            if (currentStreamMsg) {
+                currentStreamMsg.content.innerHTML += `<br><span style="color:#666;font-size:0.9em">⏹️ 已停止生成</span>`;
+                currentStreamMsg.content.classList.remove('streaming');
+                currentStreamMsg = null;
+            }
+            // 切换按钮状态
+            document.getElementById('stopBtn').style.display = 'none';
+            document.getElementById('sendBtn').style.display = 'block';
+            sendBtn.disabled = false;
+            sendBtn.textContent = '发送';
+            updateMessageFoldStates();
+        }
+    }
+    // IME输入法状态标记
+    let isComposing = false;
+    // 监听输入法组合事件
+    messageInput.addEventListener('compositionstart', () => {
+        isComposing = true;
+    });
+    messageInput.addEventListener('compositionupdate', () => {
+        isComposing = true;
+    });
+    messageInput.addEventListener('compositionend', () => {
+        isComposing = false;
+    });
+    messageInput.addEventListener('keydown', (e) => {
+        // 输入法组合状态下不响应Enter发送，避免打断候选词上屏
+        if (e.key === 'Enter' && !e.shiftKey && !isComposing) { e.preventDefault(); sendMessage(); }
+    });
+    // ========== 工具栏功能实现 ==========
+    const screenshotBtn = document.getElementById('screenshotBtn');
+    const selectFileBtn = document.getElementById('selectFileBtn');
+    const fileInput = document.getElementById('fileInput');
+    const attachmentPreview = document.getElementById('attachmentPreview');
+    // 全局附件存储数组
+    let chatAttachments = [];
+
+    // 渲染附件预览
+    function renderAttachments() {
+        attachmentPreview.innerHTML = '';
+        chatAttachments.forEach((item, index) => {
+            const itemEl = document.createElement('div');
+            itemEl.className = 'attachment-item';
+            if (item.file_type === 'image') {
+                itemEl.innerHTML = `<img src="${item.url}" alt="${item.original_name}"><button class="del-btn" data-index="${index}">×</button>`;
+            } else {
+                itemEl.innerHTML = `<div class="file-icon">📄</div><div class="file-name">${item.original_name}</div><button class="del-btn" data-index="${index}">×</button>`;
+            }
+            attachmentPreview.appendChild(itemEl);
+        });
+        // 绑定删除按钮事件
+        document.querySelectorAll('.del-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt(e.target.dataset.index);
+                chatAttachments.splice(index, 1);
+                renderAttachments();
+            });
+        });
+    }
+
+    // 通用文件上传函数，对接通用上传接口
+    async function uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        try {
+            const res = await fetch('/api/chat/upload_file', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (data.code === 200) {
+                // 加入附件数组，不插入输入框
+                chatAttachments.push(data.data);
+                renderAttachments();
+            } else {
+                alert(`❌ 上传失败：${data.msg}`);
+            }
+        } catch (e) {
+            alert('❌ 上传失败：网络错误');
+        }
+    }
+
+    // 全局系统级截图（完全绕过浏览器限制，支持多屏幕/任意缩放）
+    screenshotBtn.addEventListener('click', async () => {
+        try {
+            screenshotBtn.disabled = true;
+            const origText = screenshotBtn.textContent;
+            screenshotBtn.innerHTML = '<span class="loading"></span> 截图中...';
+            
+            const res = await fetch('/api/screenshot/trigger', { method: 'POST' });
+            const data = await res.json();
+            
+            if (data.code === 200) {
+                // 直接加入附件数组，和上传文件逻辑完全一致
+                chatAttachments.push(data.data);
+                renderAttachments();
+            } else if (data.code !== 400) {
+                // 400是用户取消，不用提示
+                alert(data.msg);
+            }
+        } catch (err) {
+            alert('截图失败：' + err.message);
+        } finally {
+            screenshotBtn.disabled = false;
+            screenshotBtn.textContent = '截图';
+        }
+    });
+
+    // 选择文件按钮点击触发文件选择器
+    selectFileBtn.addEventListener('click', () => fileInput.click());
+
+    // 文件选择后自动上传
+    fileInput.addEventListener('change', async (e) => {
+        const files = e.target.files;
+        if (!files.length) return;
+        
+        // 多文件批量上传
+        for (let file of files) {
+            await uploadFile(file);
+        }
+        fileInput.value = ''; // 重置，允许重复选择相同文件
+    });
+
+    async function loadProjectList() {
+        try {
+            const res = await fetch('/api/project/list');
+            const data = await res.json();
+            if (data.code === 200) {
+                const selected = projectSelector.value;
+                projectSelector.innerHTML = '<option value="">（全局）请选择项目</option>';
+                data.data.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = JSON.stringify(p);
+                    opt.textContent = p.project_name;
+                    projectSelector.appendChild(opt);
+                });
+                if (selected) projectSelector.value = selected;
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    // 监听跨页面项目切换同步
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'current_selected_project' && e.newValue) {
+            const newProj = JSON.parse(e.newValue);
+            // 避免重复触发
+            if (JSON.stringify(currentSelectedProject) === e.newValue) return;
+            currentSelectedProject = newProj;
+            if (newProj.project_name === 'default') {
+                currentProjectPrompt = ``;
+                projectSelector.value = "";
+            } else {
+                // 刷新项目文件列表
+                fetch('/api/project/file_list?project_id=' + newProj.project_id)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.code === 200) {
+                            currentProjectPrompt = ``;
+                        }
+                    });
+                projectSelector.value = JSON.stringify(newProj);
+            }
+        }
+    });
+
+    async function switchProject() {
+        const sel = projectSelector.value;
+        try {
+            if (!sel) {
+                // 选择"（全局）请选择项目"，切换到全局default项目
+                const proj = {
+                    project_name: "default",
+                    project_root: "",
+                    manual_path: ""
+                };
+                const res = await fetch('/api/project/switch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(proj) });
+                const data = await res.json();
+                if (data.code === 200) {
+                    currentSelectedProject = proj;
+                    currentProjectPrompt = ``;
+                    projectSelector.value = "";
+                    // 同步到localStorage实现跨页面同步
+                    localStorage.setItem('current_selected_project', JSON.stringify(currentSelectedProject));
+                }
+                return;
+            }
+            const proj = JSON.parse(sel);
+            const res = await fetch('/api/project/switch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(proj) });
+            const data = await res.json();
+            if (data.code === 200) {
+                currentSelectedProject = proj;
+                currentProjectPrompt = ``;
+                projectSelector.value = JSON.stringify(proj);
+                // 同步到localStorage实现跨页面同步
+                localStorage.setItem('current_selected_project', JSON.stringify(currentSelectedProject));
+            }
+        } catch (e) { alert('切换失败'); }
+    }
+
+    async function sendMessage() {
+        if (sendBtn.disabled) return;
+        // 发送新消息自动终止上一个任务
+        await stopChat();
+        const query = messageInput.value.trim();
+        // 只要有文字 或者 有附件，都允许发送
+        if (!query && chatAttachments.length === 0) return;
+
+        messageInput.value = '';
+        addMessage('user', query, null, chatAttachments);
+        currentLastUserQuery = query;
+        updateMessageFoldStates(); // 新增消息后触发折叠逻辑
+
+        // 切换为停止按钮状态
+        sendBtn.style.display = 'none';
+        document.getElementById('stopBtn').style.display = 'block';
+
+        try {
+            const sys = systemPromptInput.value.trim() || "你是一个简洁友好的AI助手，回答准确精炼。";
+            
+            const subRes = await fetch(`/api/task/submit?session_id=${chatSessionId}`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ task_type: "chat", params: { query, system_prompt: sys + currentProjectPrompt, attachments: chatAttachments } })
+            });
+            // 发送成功清空附件
+            chatAttachments = [];
+            renderAttachments();
+            const subData = await subRes.json();
+            if (subData.code !== 200) { addMessage('assistant', `❌ 任务提交失败：${subData.msg}`); updateMessageFoldStates(); return; }
+            if (subData.session_id) chatSessionId = subData.session_id;
+
+            const tid = subData.task_id;
+            const tId = `task_${tid}`;
+            addTempMessage(tId, "🔄 任务排队中...");
+
+            const poll = setInterval(async () => {
+                try {
+                    const r = await fetch(`/api/task/status?task_id=${tid}`);
+                    const d = await r.json();
+                    if (d.code !== 200) { updateTempMessage(tId, `❌ 查询失败`); clearInterval(poll); return; }
+                    const task = d.data;
+                    updateTempMessage(tId, task.progress);
+                    if (task.status === "success" || task.status === "failed") {
+                        clearInterval(poll);
+                        if (task.status === "failed") updateTempMessage(tId, `❌ ${task.progress}`);
+                        else document.getElementById(tId)?.remove();
+                        // 按钮状态由SSE流结束事件控制，这里不重复切换，避免提前切回导致无法停止
+                    }
+                } catch (e) { updateTempMessage(tId, "❌ 网络错误"); clearInterval(poll); }
+            }, 1000);
+        } catch (e) { addMessage('assistant', '❌ 网络错误'); updateMessageFoldStates(); }
+    }
+
+    function addTempMessage(id, txt) {
+        const div = document.createElement('div');
+        div.className = 'message assistant';
+        div.id = id;
+        div.innerHTML = `<div class="avatar"><img src="/logo.png" alt="AI助手"></div><div class="content fold">${txt}</div>`;
+        chatContainer.appendChild(div);
+        scrollToBottomIfNeeded();
+    }
+
+    function updateTempMessage(id, txt) {
+        const el = document.getElementById(id);
+        if (el) el.querySelector('.content').textContent = txt;
+        scrollToBottomIfNeeded();
+    }
+
+    function addMessage(role, content, memoryCount = null, attachments = []) {
+        const msg = document.createElement('div');
+        msg.className = `message ${role}`;
+        
+        const av = document.createElement('div');
+        av.className = 'avatar';
+        if (role === 'user') {
+            av.textContent = '你';
+        } else {
+            av.innerHTML = '<img src="/logo.png" alt="AI助手">';
+        }
+
+        const cont = document.createElement('div');
+        cont.className = 'content'; // 移除默认折叠类，由 updateMessageFoldStates 统一管理状态
+        if (role === 'user') {
+            // 100%纯文本展示，和AI输出逻辑完全对齐，不解析任何HTML/Markdown格式
+            cont.textContent = content;
+        } else {
+            // 100%纯文本展示，完全不解析任何markdown/HTML格式，escapeHtml转义后innerHTML输出，100%保留原始符号
+            cont.innerHTML = escapeHtml(decodeEscapeChars(autoCloseToolBlocks(content)));
+        }
+
+        if (memoryCount) {
+            const tag = document.createElement('div');
+            tag.className = 'memory-tag';
+            tag.textContent = `召回记忆：${memoryCount}条`;
+            cont.appendChild(tag);
+        }
+
+        // 渲染附件
+        if (attachments.length > 0) {
+            const attachmentsEl = document.createElement('div');
+            attachmentsEl.className = 'msg-attachments';
+            attachments.forEach(item => {
+                if (item.file_type === 'image') {
+                    attachmentsEl.innerHTML += `<img src="${item.url}" alt="${item.original_name}" class="img-item" title="${item.original_name}" onclick="window.open('${item.url}')">`;
+                } else {
+                    attachmentsEl.innerHTML += `<div class="file-card"><span>📄</span><span>${item.original_name}</span><a href="${item.url}" target="_blank" style="color:#165DFF;margin-left:auto;">下载</a></div>`;
+                }
+            });
+            cont.appendChild(attachmentsEl);
+        }
+
+        const acts = document.createElement('div');
+        acts.className = 'message-actions';
+        acts.innerHTML = `
+            <button class="btn small msg-toggle-btn">👇 展开</button>
+            <button class="btn small msg-copy-btn">📋 复制</button>
+        `;
+        acts.dataset.response = content;
+        cont.appendChild(acts);
+
+        msg.appendChild(av);
+        msg.appendChild(cont);
+        chatContainer.appendChild(msg);
+        scrollToBottomIfNeeded();
+    }
+
+// 全局配置marked，移除已废弃的sanitize参数
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+  mangle: false,
+  headerIds: false
+});
+
+// HTML特殊字符转义函数，彻底避免代码块内HTML被渲染为DOM
+function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+}
+
+// ✅ 转义逻辑修复：JSON.parse已经自动还原了所有传输层转义，无需二次替换，100%保留代码原始内容
+// 仅做代码块未闭合自动补全，不修改任何内容字符
+function decodeEscapeChars(str) {
+    // 不做任何转义替换，直接返回原始内容，避免破坏代码里的\n\t等字面量
+    return str;
+}
+
+// 自动补全未闭合的代码块，避免格式错乱
+function autoCloseToolBlocks(str) {
+    // 检测是否有未闭合的代码块，自动补全
+    const codeOpenCount = (str.match(/```/g) || []).length;
+    if (codeOpenCount % 2 !== 0) {
+        return str + '\n```';
+    }
+    return str;
+}
+
+function renderMarkdown(txt) {
+    const decodedTxt = decodeEscapeChars(txt);
+    const closedTxt = autoCloseToolBlocks(decodedTxt);
+    // 移除所有指令块的特殊样式包裹，完全以普通markdown代码文本展示
+    return marked.parse(closedTxt);
+}
+
+    // 全局模板变量
+    let TPL_NAMES = {};
+    let PROMPT_TEMPLATES = {};
+    // 生成当前界面唯一会话ID，避免和悬浮窗冲突
+    const SESSION_ID = localStorage.getItem('chat_ui_session_id') || `ui_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    localStorage.setItem('chat_ui_session_id', SESSION_ID);
+    
+    // 从服务端加载模板列表
+    async function loadPromptTemplates() {
+        try {
+            const res = await fetch('/api/prompt/templates');
+            const data = await res.json();
+            if (data.code === 200) {
+                const tpls = [...data.data.system_templates, ...data.data.custom_templates];
+                TPL_NAMES = {};
+                PROMPT_TEMPLATES = {};
+                // 清空原有模板选项
+                const selector = document.getElementById('promptSelector');
+                selector.innerHTML = '';
+                // 先渲染所有模板选项
+                tpls.forEach(tpl => {
+                    TPL_NAMES[tpl.id] = tpl.name;
+                    PROMPT_TEMPLATES[tpl.id] = tpl.content;
+                    const opt = document.createElement('option');
+                    opt.value = tpl.id;
+                    opt.textContent = tpl.name;
+                    selector.appendChild(opt);
+                });
+                // 最后追加编辑模板选项，放在列表最后
+                const editOpt = document.createElement('option');
+                editOpt.value = 'edit_tpl';
+                editOpt.textContent = '编辑现有模版';
+                selector.appendChild(editOpt);
+                // 默认选中第一个模板，无需手动选择即可使用
+                if (tpls.length > 0) {
+                    selector.value = tpls[0].id;
+                    systemPromptInput.value = PROMPT_TEMPLATES[tpls[0].id];
+                }
+                // 兼容原有本地自定义模板，自动同步到服务端（仅第一次执行）
+                const localCustom = localStorage.getItem('custom_prompt_templates');
+                if (localCustom) {
+                    const localTpls = JSON.parse(localCustom);
+                    for (const [key, content] of Object.entries(localTpls)) {
+                        await fetch('/api/prompt/save', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({tpl_id: key, content})
+                        });
+                    }
+                    localStorage.removeItem('custom_prompt_templates');
+                    // 重新加载模板
+                    await loadPromptTemplates();
+                }
+            }
+        } catch (e) {
+            console.error('模板加载失败', e);
+        }
+    }
+    // 全局编辑状态
+    let currentEditTplKey = '';
+    // 弹窗元素
+    const tplSelectModal = document.getElementById('tplSelectModal');
+    const tplEditModal = document.getElementById('tplEditModal');
+    const tplList = document.getElementById('tplList');
+    const tplEditTitle = document.getElementById('tplEditTitle');
+    const tplEditContent = document.getElementById('tplEditContent');
+    
+    // Prompt模板切换事件
+    document.getElementById('promptSelector').addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (!val) return;
+        if (val === 'custom') {
+            document.getElementById('globalSystemPrompt').value = systemPromptInput.value;
+            settingsModal.classList.add('show');
+            e.target.value = '';
+            return;
+        }
+        if (val === 'edit_tpl') {
+            // 渲染模板列表
+            tplList.innerHTML = '';
+            Object.keys(TPL_NAMES).forEach(key => {
+                const btn = document.createElement('button');
+                btn.className = 'btn primary';
+                btn.style.textAlign = 'left';
+                btn.textContent = TPL_NAMES[key];
+                btn.addEventListener('click', () => {
+                    currentEditTplKey = key;
+                    tplEditTitle.textContent = `编辑【${TPL_NAMES[key]}】Prompt模板`;
+                    tplEditContent.value = PROMPT_TEMPLATES[key];
+                    tplSelectModal.classList.remove('show');
+                    tplEditModal.classList.add('show');
+                });
+                tplList.appendChild(btn);
+            });
+            tplSelectModal.classList.add('show');
+            e.target.value = '';
+            return;
+        }
+        // 普通模板：自动赋值到系统提示词，保留选中状态显示在下拉框
+        systemPromptInput.value = PROMPT_TEMPLATES[val];
+    });
+
+    // 保存模板
+    document.getElementById('saveTplBtn').addEventListener('click', async () => {
+        const content = tplEditContent.value.trim();
+        if (!content) return alert('模板内容不能为空');
+        try {
+            const res = await fetch('/api/prompt/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({tpl_id: currentEditTplKey, content})
+            });
+            const data = await res.json();
+            if (data.code === 200) {
+                // 重新加载模板，更新下拉列表
+                await loadPromptTemplates();
+                tplEditModal.classList.remove('show');
+                alert('模板保存成功，全局生效');
+            } else {
+                alert(`保存失败：${data.msg}`);
+            }
+        } catch (e) {
+            alert('保存失败：网络错误');
+        }
+    });
+
+    // 弹窗关闭事件
+    tplSelectModal.querySelector('.close').addEventListener('click', () => tplSelectModal.classList.remove('show'));
+    tplEditModal.querySelector('.close').addEventListener('click', () => tplEditModal.classList.remove('show'));
+    window.addEventListener('click', (e) => {
+        if (e.target === tplSelectModal) tplSelectModal.classList.remove('show');
+        if (e.target === tplEditModal) tplEditModal.classList.remove('show');
+    });
+    document.getElementById('cancelSettingsBtn').addEventListener('click', () => settingsModal.classList.remove('show'));
+    settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.classList.remove('show'); });
+    document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
+        const v = document.getElementById('globalSystemPrompt').value.trim();
+        if (!v) { alert('不能为空'); return; }
+        try {
+            await fetch('/api/config/system_prompt', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ prompt: v }) });
+            systemPromptInput.value = v;
+            settingsModal.classList.remove('show');
+            alert('✅ 已更新');
+        } catch (e) { alert('❌ 保存失败'); }
+    });
+
+    function openPage(url, id) {
+        // 直接调用Python侧浏览器的open_page接口，直接开新标签，完全不会覆盖工作台
+        if (window.pywebview && window.pywebview.api) {
+            window.pywebview.api.open_page(url, id);
+        } else {
+            // 降级方案：给链接加target="_blank"强制新标签
+            const a = document.createElement('a');
+            a.href = url;
+            a.target = '_blank';
+            a.click();
+        }
+    }
+    document.getElementById('sampleManageBtn').addEventListener('click', () => openPage('/sample', 'sample'));    
+    document.getElementById('pluginManageBtn').addEventListener('click', () => openPage('/web_plugin_market.html', 'plugin_market'));
+
+    // SSE 流式接收
+    window.addEventListener('load', async () => {
+        try {
+            const r = await fetch('/api/config/system_prompt');
+            const d = await r.json();
+            if (d.code === 200) { systemPromptInput.value = d.data; document.getElementById('globalSystemPrompt').value = d.data; }
+            await loadProjectList();
+            // 优先读取localStorage的已选项目，实现跨页面状态同步
+            const savedProj = localStorage.getItem('current_selected_project');
+            if (savedProj) {
+                currentSelectedProject = JSON.parse(savedProj);
+                if (currentSelectedProject.project_name === 'default') {
+                    currentProjectPrompt = `\n\n⚠️ 当前为全局记忆状态:
+1. 你能进行全项目操作，并且能使用工具查询、读取、修改仓库外部的电脑文件
+2. 如果需要执行特定项目的开发、修复、调试操作，可提醒用户先选择对应的开发项目
+3. 全局对话记忆独立存储，不会和任何项目记忆混淆`;
+                    projectSelector.value = "";
+                    // 同步切换后端项目状态
+                    await fetch('/api/project/switch', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: savedProj 
+                    });
+                } else {
+                    // 已选具体项目，同步切换后端状态并加载文件列表
+                    const switchRes = await fetch('/api/project/switch', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: savedProj 
+                    });
+                    const switchData = await switchRes.json();
+                    if (switchData.code === 200) {
+                        currentProjectPrompt = `\n\n当前开发项目:${currentSelectedProject.project_name}\n项目文件清单:\n${switchData.file_list.join('\n')}`;
+                    }
+                    projectSelector.value = savedProj;
+                }
+            } else {
+                // 没有保存的项目，自动切换到default
+                await switchProject();
+            }
+            // 加载Prompt模板
+            await loadPromptTemplates();
+        } catch (e) { console.error(e); }
+        messageInput.focus();
+
+        // 复用持久化的会话ID，重启/刷新页面不会丢失历史对话
+        chatSessionId = SESSION_ID;
+        let reconnectCount = 0;
+        const MAX_RECONNECT = 5;
+        let es = null;
+        
+        // SSE连接初始化函数，支持指数退避重连
+        function initSSE() {
+            es = new EventSource(`/api/chat/stream/${chatSessionId}`);
+            
+            // 渲染节流配置:每帧（16ms/60fps）最多执行一次DOM更新，避免高频SSE分片导致重排卡顿
+            let pendingReasoningDelta = '';
+            let pendingStreamDelta = '';
+            let domUpdateScheduled = false;
+            function flushDomUpdates() {
+                domUpdateScheduled = false;
+                // 增量追加思考内容:使用TextNode.appendData原生增量API，避免全量重渲染，O(1)复杂度
+                if (pendingReasoningDelta && currentReasoningMsg) {
+                    currentReasoningMsg.textNode.appendData(pendingReasoningDelta);
+                    pendingReasoningDelta = '';
+                }
+                // 增量追加正式回复内容:同样使用增量API，避免每次拼接全量文本重渲染
+                if (pendingStreamDelta && currentStreamMsg) {
+                    currentStreamMsg.text += pendingStreamDelta;
+                    currentStreamMsg.textNode.appendData(pendingStreamDelta);
+                    pendingStreamDelta = '';
+                }
+                // 每帧仅执行一次滚动，减少布局计算
+                scrollToBottomIfNeeded();
+            }
+            
+            es.onmessage = (ev) => {
+                try {
+                    let raw = ev.data.trim();
+                    if (raw.startsWith('data: ')) raw = raw.slice(6).trim();
+                    const data = JSON.parse(raw);
+                    
+                    // 忽略心跳包
+                    if (data.type === 'heartbeat') {
+                        reconnectCount = 0; // 连接正常重置重连计数
+                        return;
+                    }
+                    
+                    // 处理进程监控告警消息
+                    if (data.type === 'process_monitor_alert') {
+                        showProcessAlert(data.data);
+                        reconnectCount = 0;
+                        return;
+                    }
+                    
+                    if (data.type === 'ai_reasoning') {
+                        // 思考内容流式追加到同一个气泡，避免每个片段新建消息刷屏
+                        const safeDelta = escapeHtml(data.content);
+                        if (!currentReasoningMsg) {
+                            // 首次收到思考内容，仅新建1次思考消息容器
+                            const div = document.createElement('div');
+                            div.className = 'message assistant reasoning-msg';
+                            const c = document.createElement('div');
+                            c.className = 'content expanded'; // 思考容器默认永久展开，自身用details控制折叠，避免外层高度截断内容
+                            c.innerHTML = `<details class="reasoning-content thinking" open><summary>💭 AI思考过程</summary><span class="reasoning-text"></span></details>`;
+                            div.innerHTML = `<div class="avatar"><img src="/logo.png" alt="AI助手"></div>`;
+                            div.appendChild(c);
+                            // 在span内部创建独立原生TextNode，确保appendData方法可用，兼容QtWebView老内核
+                            const reasoningTextSpan = c.querySelector('.reasoning-text');
+                            const reasoningTextNode = document.createTextNode('');
+                            reasoningTextSpan.appendChild(reasoningTextNode);
+                            currentReasoningMsg = { root: div, textNode: reasoningTextNode };
+                            // 【关键修复】遗漏的DOM插入操作:将思考消息元素添加到聊天容器，否则元素仅存在于JS内存中无法渲染显示
+                            chatContainer.appendChild(div);
+                        }
+                        // 增量追加思考内容到待更新队列，通过帧节流批量更新DOM，避免高频重排
+                        pendingReasoningDelta += data.content;
+                        if (!domUpdateScheduled) {
+                            domUpdateScheduled = true;
+                            requestAnimationFrame(flushDomUpdates);
+                        }
+                    } else if (data.type === 'ai_output_stream') {
+                        // 正式回复开始输出，自动折叠思考内容，不占用屏幕空间
+                        if (currentReasoningMsg) {
+                            const details = currentReasoningMsg.root.querySelector('details');
+                            if (details) {
+                                details.classList.remove('thinking'); // 思考结束移除thinking类，启用折叠规则
+                                details.removeAttribute('open');
+                            }
+                            // 渲染剩余待更新的思考内容，避免最后分片丢失
+                            if (pendingReasoningDelta) {
+                                currentReasoningMsg.textNode.appendData(pendingReasoningDelta);
+                                pendingReasoningDelta = '';
+                            }
+                            updateMessageFoldStates();
+                            currentReasoningMsg = null;
+                        }
+                    if (!currentStreamMsg) {
+                        const div = document.createElement('div');
+                        div.className = 'message assistant';
+                        const c = document.createElement('div');
+                        c.className = 'content expanded streaming'; // 流式输出中默认展开，添加streaming标记禁止折叠
+                        div.innerHTML = `<div class="avatar"><img src="/logo.png" alt="AI助手"></div>`;
+                        div.appendChild(c);
+                        // 创建独立文本节点，避免innerHTML高频重解析导致浏览器卡死
+                        const textNode = document.createTextNode('');
+                        c.appendChild(textNode);
+                        chatContainer.appendChild(div);
+                        currentStreamMsg = { root: div, content: c, textNode: textNode, text: '' };
+                    }
+                        // 增量追加正式回复内容到待更新队列，通过帧节流批量更新DOM
+                        pendingStreamDelta += data.content;
+                        if (!domUpdateScheduled) {
+                            domUpdateScheduled = true;
+                            requestAnimationFrame(flushDomUpdates);
+                        }
+                    } else if (data.type === 'ai_output') {
+                        // 流结束先渲染所有待更新的分片，避免最后几个分片丢失
+                        if (domUpdateScheduled || pendingReasoningDelta || pendingStreamDelta) {
+                            cancelAnimationFrame(flushDomUpdates);
+                            flushDomUpdates();
+                        }
+                        // 流结束自动收尾思考消息
+                        if (currentReasoningMsg) {
+                            const details = currentReasoningMsg.root.querySelector('details');
+                            const reasoningText = currentReasoningMsg.textNode.textContent;
+                            if (details) {
+                                details.classList.remove('thinking'); // 思考结束移除thinking类，启用折叠规则
+                                // 短思考内容（<200字）自动展开无需折叠，优化体验
+                                if (reasoningText.length < 200) {
+                                    details.classList.add('auto-expand');
+                                    details.setAttribute('open', '');
+                                } else {
+                                    details.removeAttribute('open');
+                                }
+                            }
+                            currentReasoningMsg = null;
+                        }
+                        if (currentStreamMsg) {
+                            // 流结束仅补全未闭合代码块，不修改任何原始内容
+                            currentStreamMsg.content.innerHTML = escapeHtml(autoCloseToolBlocks(currentStreamMsg.text));
+                            const acts = document.createElement('div');
+                            acts.className = 'message-actions';
+                            acts.innerHTML = `
+                                <button class="btn small msg-toggle-btn">👆 收起</button>
+                                <button class="btn small msg-copy-btn">📋 复制</button>
+                            `;
+                            acts.dataset.response = data.content;
+                            currentStreamMsg.content.appendChild(acts);
+                            // 流结束移除streaming标记，允许正常参与折叠逻辑
+                            currentStreamMsg.content.classList.remove('streaming');
+                            currentStreamMsg = null;
+                        } else {
+                            addMessage('assistant', data.content);
+                        }
+                        updateMessageFoldStates(); // 流结束触发折叠逻辑
+                        scrollToBottomIfNeeded();
+                        // 切换回发送按钮状态
+                        document.getElementById('stopBtn').style.display = 'none';
+                        document.getElementById('sendBtn').style.display = 'block';
+                        // AI回复结束，用户空闲，检查告警队列
+                        setTimeout(checkAlertQueue, 1000);
+                    }
+                    // 错误消息处理
+                    else if (data.type === 'error') {
+                        // 出错时先渲染所有待更新分片，避免内容丢失
+                        if (domUpdateScheduled || pendingReasoningDelta || pendingStreamDelta) {
+                            cancelAnimationFrame(flushDomUpdates);
+                            flushDomUpdates();
+                        }
+                        // 出错时自动收尾思考消息
+                        if (currentReasoningMsg) {
+                            const details = currentReasoningMsg.root.querySelector('details');
+                            if (details) {
+                                details.classList.remove('thinking');
+                                details.removeAttribute('open');
+                            }
+                            currentReasoningMsg = null;
+                        }
+                        if (currentStreamMsg) currentStreamMsg.content.innerHTML += `<br><span style="color:#F53F3F">❌ ${data.content}</span>`;
+                        else addMessage('system', `❌ ${data.content}`);
+                        document.getElementById('stopBtn').style.display = 'none';
+                        document.getElementById('sendBtn').style.display = 'block';
+                        currentStreamMsg = null;
+                        updateMessageFoldStates();
+                    }
+                    reconnectCount = 0; // 连接正常重置重连计数
+                } catch (e) { console.error('SSE解析失败', e); }
+            };
+            
+            es.onerror = () => { 
+                es.close();
+                if (reconnectCount < MAX_RECONNECT) {
+                    reconnectCount++;
+                    console.log(`SSE连接断开，第${reconnectCount}次重连（指数退避）...`);
+                    setTimeout(initSSE, 1000 * reconnectCount); // 1/2/3/4/5秒退避重连
+                } else {
+                    // 多次重连失败才刷新页面
+                    window.location.reload();
+                }
+            };
+        }
+        
+        // 初始化SSE连接
+        initSSE();
+        
+        // 监听页面唤醒/网络恢复事件，自动重建连接
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                console.log('页面从休眠唤醒，重建SSE连接');
+                es.close();
+                reconnectCount = 0;
+                initSSE();
+            }
+        });
+        window.addEventListener('online', () => {
+            console.log('网络恢复，重建SSE连接');
+            es.close();
+            reconnectCount = 0;
+            initSSE();
+        });
+    });
+});
+</script>
+<div class="copy-toast" id="copyToast"></div>
+</body>
+</html>

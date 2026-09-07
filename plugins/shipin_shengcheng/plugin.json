@@ -1,0 +1,95 @@
+{
+  "plugin_id": "shipin_shengcheng",
+  "name": "视频生成插件",
+  "description": "调用AI模型生成视频，支持传入本地图片",
+  "version": "1.0.0",
+  "author": "AI助手",
+  "trigger_keyword": "视频生成",
+  "entry": "main.py",
+  "permissions": [
+    "network",
+    "write_file",
+    "read_file"
+  ],
+  "enabled": true,
+  "config": [
+    {
+      "key": "api_key",
+      "label": "火山方舟API密钥",
+      "type": "password",
+      "default": "",
+      "placeholder": "从火山方舟对应应用控制台密钥管理处获取",
+      "required": true
+    },
+    {
+      "key": "api_url",
+      "label": "API接口地址",
+      "type": "input",
+      "default": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+      "placeholder": "第三方AI视频生成服务的API请求地址",
+      "required": true
+    },
+    {
+      "key": "model_id",
+      "label": "模型ID",
+      "type": "input",
+      "default": "doubao-seedance-2-0-260128",
+      "placeholder": "火山方舟视频生成模型ID，默认Seedance 2.0 Pro版（请勿使用fast版本，当前账号未开通fast权限）",
+      "required": true
+    },
+    {
+      "key": "save_path",
+      "label": "文件保存路径",
+      "type": "input",
+      "default": "D:/AI仓库文件夹/文件生成/视频生成/",
+      "placeholder": "生成的视频文件保存的本地目录",
+      "required": false
+    },
+    {
+      "key": "open_volc_ark", 
+      "label": "前往开通模型", 
+      "type": "button", 
+      "action": "openUrl", 
+      "url": "https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement", 
+      "description": "点击直达火山方舟控制台，可开通Seedream生图模型、获取API密钥、复制模型ID", 
+      "default": "", "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "prompt",
+      "description": "视频生成描述提示词，越详细生成效果越好",
+      "required": true
+    },
+    {
+      "name": "size",
+      "description": "视频尺寸，支持1024x1024/1280x720/720x1280",
+      "required": true
+    },
+    {
+      "name": "duration",
+      "description": "视频时长，单位秒，支持5/10/15/30",
+      "required": true
+    },
+    {
+      "name": "images",
+      "description": "参考图片，支持本地文件路径/公网URL/列表/单字符串，图生视频时传入，用户提供参考图/本地卡片路径时必须优先使用该素材，禁止重新生成",
+      "required": false
+    },
+    {
+      "name": "reference_video",
+      "description": "参考视频URL，视频生视频时传入",
+      "required": false
+    },
+    {
+      "name": "reference_audio",
+      "description": "参考音频URL，自定义背景音乐/配音时传入",
+      "required": false
+    },
+    {
+      "name": "generate_audio",
+      "description": "是否自动生成音频，默认true",
+      "required": false
+    }
+  ]
+}

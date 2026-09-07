@@ -1,0 +1,139 @@
+{
+  "plugin_id": "channel_wecom",
+  "name": "企业微信远程通道",
+  "version": "1.0.0",
+  "author": "AI智能助手官方",
+  "description": "基于企业微信自建应用实现远程双向消息桥接，无需公网IP即可通过手机远程操作本地AI助手，复用所有本地插件能力",
+  "trigger_words": ["企业微信", "远程控制", "发消息到企业微信", "通道状态"],
+  "permissions": ["network", "file_read", "file_write"],
+  "entry": "main.py",
+  "run_mode": "daemon",
+  "auto_start": false,
+  "enabled": true,
+  "icon": "",
+  "min_system_version": "1.0.0",
+  "parameters": [
+    {
+      "name": "action",
+      "type": "string",
+      "required": true,
+      "description": "操作类型:test_connection(测试连接)/get_status(获取通道状态)/send_message(发送消息)/get_audit_logs(获取审计日志)"
+    },
+    {
+      "name": "user_id",
+      "type": "string",
+      "required": false,
+      "description": "目标企业微信用户ID，send_message操作时必填"
+    },
+    {
+      "name": "content",
+      "type": "string",
+      "required": false,
+      "description": "要发送的消息内容，send_message操作时必填"
+    },
+    {
+      "name": "limit",
+      "type": "int",
+      "required": false,
+      "description": "获取审计日志的条数，默认100"
+    }
+  ],
+  "config": [
+    {
+      "key": "corp_id",
+      "label": "企业ID(CorpID)",
+      "type": "input",
+      "default": "",
+      "placeholder": "请输入企业微信我的企业页面中的CorpID",
+      "required": true
+    },
+    {
+      "key": "agent_id",
+      "label": "应用AgentID",
+      "type": "input",
+      "default": "",
+      "placeholder": "请输入自建应用详情页的AgentID",
+      "required": true
+    },
+    {
+      "key": "corp_secret",
+      "label": "应用Secret",
+      "type": "password",
+      "default": "",
+      "placeholder": "请输入自建应用的Secret，仅创建时显示一次",
+      "required": true
+    },
+    {
+      "key": "allowed_users",
+      "label": "允许使用的用户ID列表",
+      "type": "array",
+      "default": [],
+      "placeholder": "输入企业微信用户ID，按回车添加，多个用户支持共用",
+      "required": true
+    },
+    {
+      "key": "api_base_url",
+      "label": "API接口地址",
+      "type": "string",
+      "default": "https://qyapi.weixin.qq.com/cgi-bin/",
+      "required": false
+    },
+    {
+      "key": "poll_interval",
+      "label": "消息轮询间隔(秒)",
+      "type": "number",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "required": false
+    },
+    {
+      "key": "stream_output",
+      "label": "开启流式消息输出",
+      "type": "boolean",
+      "default": true,
+      "required": false
+    },
+    {
+      "key": "enable_remote_file_read",
+      "label": "允许远程读取本地文件",
+      "type": "boolean",
+      "default": true,
+      "required": false
+    },
+    {
+      "key": "rate_limit_per_minute",
+      "label": "单用户每分钟最大请求数",
+      "type": "number",
+      "default": 20,
+      "min": 1,
+      "max": 30,
+      "required": false
+    },
+    {
+      "key": "high_risk_requires_local_confirm",
+      "label": "高危操作需本地二次确认",
+      "type": "boolean",
+      "default": true,
+      "required": false
+    },
+    {
+      "key": "callback_mode",
+      "label": "使用回调模式(需公网IP)",
+      "type": "boolean",
+      "default": false,
+      "required": false
+    },
+    {
+      "key": "callback_port",
+      "label": "回调模式监听端口",
+      "type": "number",
+      "default": 8900,
+      "min": 1024,
+      "max": 65535,
+      "required": false
+    }
+  ],
+  "config_page": true,
+  "support_test": true
+}

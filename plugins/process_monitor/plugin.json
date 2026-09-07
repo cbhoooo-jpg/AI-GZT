@@ -1,0 +1,133 @@
+{
+  "plugin_id": "process_monitor",
+  "enabled": true,
+  "name": "本地进程监控",
+  "version": "1.0.0",
+  "description": "本地进程监控插件:监控后台进程，AI识别恶意程序并分级处置",
+  "author": "AI助手",
+  "entry": "main.py",
+  "permissions": [
+    "read_process",
+    "terminate_process"
+  ],
+  "trigger_words": [
+    "进程监控",
+    "监控进程",
+    "恶意程序检测"
+  ],
+  "min_system_version": "1.0.0",
+  "config": [
+    {
+      "key": "scan_interval",
+      "label": "扫描间隔(秒)",
+      "type": "number",
+      "default": 5,
+      "description": "进程扫描的时间间隔，单位为秒"
+    },
+    {
+      "key": "enabled",
+      "label": "是否启用监控",
+      "type": "boolean",
+      "default": true,
+      "description": "是否启用进程监控功能"
+    },
+    {
+      "key": "auto_start",
+      "label": "自动启动",
+      "type": "boolean",
+      "default": true,
+      "description": "插件加载后是否自动开始监控"
+    },
+    {
+      "key": "scan_mode",
+      "label": "扫描模式",
+      "type": "select",
+      "options": ["monitor", "full"],
+      "default": "monitor",
+      "description": "进程扫描模式:monitor=监控模式(仅返回可疑进程,过滤白名单/系统进程), full=全量扫描(返回所有进程)"
+    },
+    {
+      "key": "whitelist",
+      "label": "白名单进程列表",
+      "type": "array",
+      "default": ["chrome.exe", "code.exe", "python.exe", "pycharm64.exe", "wechat.exe"],
+      "description": "不受监控的进程名称列表"
+    },
+    {
+      "key": "high_risk_action",
+      "label": "高风险处置策略",
+      "type": "select",
+      "options": ["user_confirm", "auto_terminate", "notify_only", "allow"],
+      "default": "user_confirm",
+      "description": "检测到高风险进程时的处置方式:user_confirm=弹窗等待用户确认（推荐），auto_terminate=自动终止，notify_only=仅通知，allow=直接放行"
+    },
+    {
+      "key": "medium_risk_action",
+      "label": "中风险处置策略",
+      "type": "select",
+      "options": ["auto_terminate", "notify_only", "allow"],
+      "default": "notify_only"
+    },
+    {
+      "key": "low_risk_action",
+      "label": "低风险处置策略",
+      "type": "select",
+      "options": ["auto_terminate", "notify_only", "allow"],
+      "default": "allow",
+      "description": "检测到低风险进程时的处置方式"
+    },
+    {
+      "key": "session_id",
+      "label": "AI会话ID",
+      "type": "string",
+      "default": "process_monitor",
+      "description": "AI识别恶意程序使用的会话ID"
+    },
+    {
+      "key": "system_prompt",
+      "label": "AI系统提示词",
+      "type": "text",
+      "default": "你收到了一条进程监控告警，请根据进程信息判断是否为恶意程序，并返回JSON格式结果:{\"risk_level\": \"high/medium/low\", \"reason\": \"判断原因\"}",
+      "description": "AI识别恶意程序的系统提示词"
+    },
+    {
+      "key": "cooldown_seconds",
+      "label": "告警冷却时间(秒)",
+      "type": "number",
+      "default": 300,
+      "description": "相同进程告警的冷却时间，单位为秒"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "action",
+      "type": "string",
+      "required": true,
+      "description": "操作类型，必填，可选值: add_whitelist(添加进程到白名单，需传process_names)/remove_whitelist(从白名单移除进程，需传process_names)/scan(扫描运行中进程，可选传mode)/clear_whitelist(清空全部白名单，无需其他参数)/list_whitelist(查询当前白名单列表，无需其他参数，别名get_whitelist)/start(启动后台监控，无需其他参数)/stop(停止后台监控，无需其他参数)/terminate_process(终止可疑进程，支持传pid或process_names)"
+    },
+    {
+      "name": "process_names",
+      "type": "list",
+      "required": false,
+      "description": "进程名称列表，add_whitelist/remove_whitelist操作优先使用此参数，直接传入纯进程名字符串数组，例如[\"wechat.exe\", \"chrome.exe\", \"MemCompression\"]，禁止传入描述性文字、路径、PID、操作步骤等非进程名内容"
+    },
+    {
+      "name": "query",
+      "type": "string",
+      "required": false,
+      "description": "自然语言查询内容，仅当无法使用process_names参数时使用，只能填写纯进程名（多个用逗号/换行分隔），禁止写入操作步骤、说明文字、PID、路径、思考过程等非进程名内容"
+    },
+    {
+      "name": "mode",
+      "type": "string",
+      "required": false,
+      "description": "扫描模式，scan操作可选，可选值: monitor(默认，仅返回可疑风险进程)/full(返回所有运行中进程)"
+    },
+    {
+      "name": "pid",
+      "type": "int",
+      "required": false,
+      "description": "进程PID，仅前端弹窗确认操作（confirm_allow/confirm_terminate）内部使用，普通调用无需传参"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+requests>=2.31.0
+newspaper3k>=0.2.8
+lxml>=4.9.3
+beautifulsoup4>=4.12.2
+chardet>=5.2.0

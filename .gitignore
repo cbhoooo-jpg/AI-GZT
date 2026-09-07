@@ -1,0 +1,37 @@
+# ===== 运行时配置（含API密钥等敏感信息，禁止提交） =====
+config.json
+rsa_keys.json
+memory_config.json
+
+# ===== 运行时数据与索引 =====
+code_rag/
+backup/
+logs/
+*.log
+__pycache__/
+*.pyc
+*.pyo
+
+# ===== 用户生成内容（个人数据，不随源码分发） =====
+搜索报告/
+文件生成/
+
+# ===== 打包与构建产物 =====
+build/
+dist/
+*.spec.bak
+Output/
+
+# ===== Python虚拟环境（一键打包脚本自动创建，体积约3.5G，禁止提交） =====
+.venv/
+venv/
+env/
+
+# ===== 模型大文件（按需单独发布，不进git） =====
+gte-small-zh/pytorch_model.bin
+
+# ===== 临时/备份文件 =====
+*.tmp
+*.bak
+LICENSE_part2.txt
+_oss_path_cleanup.py

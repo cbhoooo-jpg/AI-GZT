@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI工作台</title>
+    <link rel="stylesheet" href="/static/element-ui.min.css">
+    <link rel="stylesheet" href="/static/github.min.css">
+    <script src="/static/vue.min.js"></script>
+    <script src="/static/element-ui.min.js"></script>
+    <script src="/static/axios.min.js"></script>
+    <script src="/static/highlight.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html, #app {
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            overflow: hidden;
+        }
+        /* 整体布局 */
+        .workspace-layout {
+            display: flex;
+            height: 100%;
+        }
+        /* 左侧侧边栏 占窗口55%宽度 符合需求 */
+        .sidebar {
+            width: 55%;
+            border-right: 1px solid #e4e7ed;
+            background: #f5f7fa;
+            display: flex;
+            flex-direction: column;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+        /* 侧边栏收起状态：保留60px宽侧边+提示 */
+        .sidebar.collapsed {
+            width: 60px !important;
+            overflow: hidden;
+        }
+        /* 侧边栏收起提示文字区 */
+        .sidebar-collapse-tip {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-90deg); /* 文字竖排 */
+            white-space: nowrap;
+            color: #606266;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        .sidebar-collapse-tip:hover {
+            color: #165DFF;
+            background: rgba(22, 93, 255, 0.1);
+        }
+        .sidebar.collapsed .sidebar-collapse-tip {
+            display: block;
+        }
+        .sidebar.collapsed .tabs, .sidebar.collapsed .tab-content {
+            display: none; /* 收起时隐藏原有内容 */
+        }
+
+        /* 右侧工作区 */
+        .workspace-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .tab-container {
+            flex: 1;
+            overflow: hidden;
+        }
+        /* 文件编辑器样式 */
+        .editor-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .editor-toolbar {
+            height: 48px;
+            padding: 0 16px;
+            border-bottom: 1px solid #e4e7ed;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #fff;
+        }
+        .editor-content {
+            flex: 1;
+            padding: 16px;
+            overflow: auto;
+            background: #fafafa;
+        }
+        .code-editor {
+            width: 100%;
+            height: 100%;
+            border: none;
+            outline: none;
+            font-family: Consolas, Monaco, 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            background: transparent;
+            resize: none;
+            tab-size: 4;
+        }
+        /* 隐藏第一个标签的关闭按钮 */
+        .el-tabs__item:first-child .el-icon-close {
+            display: none !important;
+        }
+        /* 原生Tab导航 与样本管理页样式完全一致 */
+        .tab-nav {
+            background-color: #fff;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .tab-item {
+            padding: 12px 24px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            user-select: none;
+        }
+        .tab-item.active {
+            color: #165DFF;
+            border-bottom-color: #165DFF;
+            background-color: #f8faff;
+        }
+        .tab-item:hover {
+            background-color: #f5f5f5;
+        }
+        .tab-content {
+            flex: 1;
+            display: none;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        /* 整体等比缩放容器:缩放原点设为左上角，配合JS实现同比缩放无错位 */
+        .workspace-layout {
+            transform-origin: top left;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="app" class="workspace-layout">
+        <!-- 左侧侧边栏 -->
+        <div class="sidebar">
+            <!-- 顶部原生标签，和样本管理页样式完全一致 -->
+            <div class="tab-nav">
+                <div class="tab-item active" onclick="switchSidebarTab('file')">仓库</div>
+                <div class="tab-item" onclick="switchSidebarTab('edit')">文件预览</div>
+                <div class="tab-item" onclick="switchSidebarTab('settings')">配置</div>
+                <div class="tab-item" onclick="switchSidebarTab('backup')">备份</div>
+                <div class="tab-item" onclick="switchSidebarTab('log')">日志</div>
+                <div class="tab-item" onclick="switchSidebarTab('scheduler')">任务</div>
+                <div class="tab-item" onclick="switchSidebarTab('about')">关于</div>
+                <!-- 侧边栏切换按钮，和现有tab样式完全统一，自动靠右对齐 -->
+                <div class="tab-item" id="sidebarToggleBtn" onclick="toggleSidebar()" style="margin-left: auto;">收起 «</div>
+            </div>
+            <!-- Tab内容区域 -->
+            <div class="tab-content active" id="tab-file">
+                <iframe data-src="/web_file_repo.html" frameborder="0"></iframe>
+            </div>
+            <div class="tab-content" id="tab-edit">
+                <iframe id="editIframe" data-src="/file_editor.html" frameborder="0"></iframe>
+            </div>
+            <div class="tab-content" id="tab-settings">
+                <iframe data-src="/web_settings.html" frameborder="0"></iframe>
+            </div>
+            <div class="tab-content" id="tab-backup">
+                <iframe data-src="/web_backup.html" frameborder="0"></iframe>
+            </div>
+            <div class="tab-content" id="tab-log">
+                <iframe data-src="/web_log.html" frameborder="0"></iframe>
+            </div>
+            <div class="tab-content" id="tab-scheduler">
+                <iframe data-src="/web_scheduler.html" frameborder="0"></iframe>
+            </div>
+            <div class="tab-content" id="tab-about">
+                <iframe data-src="/web_about.html" frameborder="0"></iframe>
+            </div>
+            <!-- 侧边栏收起提示 -->
+            <div class="sidebar-collapse-tip" onclick="toggleSidebar()">点击展开功能区</div>
+        </div>
+
+        <!-- 右侧工作区 -->
+        <div class="workspace-content">
+            <el-tabs 
+                class="tab-container"
+                v-model="activeTab"
+                type="card"
+                closable
+                @tab-remove="removeTab"
+            >
+                <el-tab-pane 
+                    v-for="tab in tabs" 
+                    :key="tab.name" 
+                    :label="tab.title" 
+                    :name="tab.name"
+                >
+                    <!-- 对话页面 -->
+                    <div v-if="tab.type === 'chat'" style="height: 100%;">
+                        <iframe src="/chat_ui.html" frameborder="0"></iframe>
+                    </div>
+                    <!-- 文件编辑页面 -->
+                    <div v-else-if="tab.type === 'file'" class="editor-container">
+                        <div class="editor-toolbar">
+                            <span style="color: #666; font-size: 14px;">路径：{{ tab.path }}</span>
+                            <el-button 
+                                type="primary" 
+                                size="small" 
+                                @click="saveFile(tab)"
+                                :loading="tab.saving"
+                                :disabled="!tab.modified"
+                            >
+                                保存
+                            </el-button>
+                        </div>
+                        <div class="editor-content">
+                            <textarea 
+                                v-model="tab.content" 
+                                class="code-editor"
+                                @input="tab.modified = true"
+                            ></textarea>
+                        </div>
+                    </div>
+                </el-tab-pane>
+            </el-tabs>
+        </div>
+    </div>
+
+    <script>
+        // 注册语法高亮语言
+        hljs.registerLanguage('python', window.hljs.getLanguage('python'));
+        hljs.registerLanguage('json', window.hljs.getLanguage('json'));
+        hljs.registerLanguage('markdown', window.hljs.getLanguage('markdown'));
+
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    activeSidebarTab: 'file',
+                    activeTab: 'chat',
+                    currentEditFilePath: '', // 正在编辑的文件路径
+                    tabs: [
+                        {
+                            name: 'chat',
+                            title: '💬 对话页面',
+                            type: 'chat'
+                        }
+                    ],
+                    apiBase: '/api',
+                    tabIndex: 1,
+                    // 图片后缀列表
+                    imageExts: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']
+                }
+            },
+            mounted() {
+                // 监听子页面打开文件的消息
+                window.addEventListener('message', async (e) => {
+                    if (e.data?.type === 'openFile' && e.data?.path) {
+                        await this.openFile(e.data.path)
+                    }
+                })
+            },
+            methods: {
+                // 打开文件
+                async openFile(filePath) {
+                    // 自动切换到左侧文件编辑标签，传递文件路径
+                    this.currentEditFilePath = filePath
+                    this.activeSidebarTab = 'edit'
+                    
+                    // 检查文件是否已经打开
+                    const existTab = this.tabs.find(tab => tab.type === 'file' && tab.path === filePath)
+                    if (existTab) {
+                        this.activeTab = existTab.name
+                        return
+                    }
+
+                    // 加载文件内容
+                    try {
+                        const res = await axios.get(`${this.apiBase}/file/read`, { params: { path: filePath } })
+                        if (res.data.code === 200) {
+                            const fileName = filePath.split('/').pop()
+                            const newTab = {
+                                name: `file_${this.tabIndex++}`,
+                                title: `📄 ${fileName}`,
+                                type: 'file',
+                                path: filePath,
+                                content: res.data.data,
+                                modified: false,
+                                saving: false
+                            }
+                            this.tabs.push(newTab)
+                            this.activeTab = newTab.name
+                        }
+                    } catch (e) {
+                        this.$message.error('打开文件失败：' + (e.response?.data?.detail || e.message))
+                    }
+                },
+
+                // 关闭标签
+                removeTab(targetName) {
+                    // 第一个对话标签不允许关闭
+                    if (targetName === 'chat') return
+
+                    const targetTab = this.tabs.find(tab => tab.name === targetName)
+                    if (!targetTab) return
+
+                    // 有未保存修改的文件二次确认
+                    if (targetTab.type === 'file' && targetTab.modified) {
+                        this.$confirm('文件有未保存的修改，是否继续关闭？', '提示', {
+                            confirmButtonText: '确定',
+                            cancelButtonText: '取消',
+                            type: 'warning'
+                        }).then(() => {
+                            this.doRemoveTab(targetName)
+                        }).catch(() => {})
+                    } else {
+                        this.doRemoveTab(targetName)
+                    }
+                },
+                // 执行删除标签
+                doRemoveTab(targetName) {
+                    this.tabs = this.tabs.filter(tab => tab.name !== targetName)
+                    if (this.activeTab === targetName) {
+                        this.activeTab = this.tabs[this.tabs.length - 1].name
+                    }
+                },
+                // 保存文件
+                async saveFile(tab) {
+                    tab.saving = true
+                    try {
+                        await axios.post(`${this.apiBase}/file/write`, {
+                            path: tab.path,
+                            content: tab.content
+                        })
+                        tab.modified = false
+                        this.$message.success('保存成功！')
+                    } catch (e) {
+                        this.$message.error('保存失败：' + (e.response?.data?.detail || e.message))
+                    } finally {
+                        tab.saving = false
+                    }
+                }
+            }
+        })
+    </script>
+<!-- 原生侧边栏切换函数 完全脱离Vue 100%生效 -->
+<script>
+function switchSidebarTab(tabName) {
+    // 切换标签激活态
+    document.querySelectorAll('.tab-item').forEach(item => item.classList.remove('active'));
+    // 兼容非点击调用场景，自动找到对应标签激活
+    document.querySelector(`.tab-item[onclick="switchSidebarTab('${tabName}')"]`).classList.add('active');
+    // 切换内容显示
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    const activeContent = document.getElementById(`tab-${tabName}`);
+    activeContent.classList.add('active');
+    // 懒加载:如果当前激活的标签内有iframe且未加载，则动态赋值src加载内容
+    const iframe = activeContent.querySelector('iframe');
+    if (iframe && !iframe.src) {
+        iframe.src = iframe.dataset.src;
+    }
+    // 同步Vue变量，保证双击跳转功能正常
+    if(window.app) window.app.activeSidebarTab = tabName;
+}
+// 监听子iframe的打开文件消息（来自文件仓库页双击事件）
+window.addEventListener('message', function(e) {
+    if(e.data && e.data.type === 'openFile' && e.data.path) {
+        // 1. 自动切换到文件编辑标签
+        switchSidebarTab('edit');
+        // 2. 加载对应文件到编辑器
+        const editIframe = document.getElementById('editIframe');
+        editIframe.src = `/file_editor.html?path=${encodeURIComponent(e.data.path)}`;
+        // 3. 同步Vue变量
+        if(window.app) window.app.currentEditFilePath = e.data.path;
+    }
+})
+// 侧边栏展开/收起切换功能
+function toggleSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const toggleBtn = document.getElementById('sidebarToggleBtn');
+    sidebar.classList.toggle('collapsed');
+    const isCollapsed = sidebar.classList.contains('collapsed');
+    toggleBtn.innerText = isCollapsed ? '展开侧边栏 »' : '收起 «';
+    // 存储状态到本地存储，刷新保持
+    localStorage.setItem('sidebarCollapsed', isCollapsed ? '1' : '0');
+}
+
+// 窗口等比缩放逻辑:基准宽度1200px，最小缩放0.8，最大1.5，所有元素同比缩放无错位
+function updateWorkspaceScale() {
+    const layout = document.querySelector('.workspace-layout');
+    if (!layout) return;
+    // 设计稿基准宽度
+    const BASE_WIDTH = 1200;
+    // 最小/最大缩放比例:窗口放大时固定1倍不拉伸，缩小时等比缩小
+    const MIN_SCALE = 0.65;
+    const MAX_SCALE = 1.0;
+    // 计算当前窗口可用宽度的缩放比例
+    let scale = window.innerWidth / BASE_WIDTH;
+    // 限制缩放范围
+    scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+    // 应用缩放
+    layout.style.transform = `scale(${scale})`;
+    // 缩放后容器实际占用尺寸调整，避免留白/溢出
+    layout.style.width = `${100 / scale}%`;
+    layout.style.height = `${100 / scale}%`;
+}
+
+// 页面加载完成后挂载Vue实例到window，初始化侧边栏状态
+window.onload = function() {
+    window.app = app;
+    // 读取本地存储的侧边栏状态
+    const isCollapsed = localStorage.getItem('sidebarCollapsed') === '1';
+    const sidebar = document.querySelector('.sidebar');
+    const toggleBtn = document.getElementById('sidebarToggleBtn');
+    if (isCollapsed) {
+        sidebar.classList.add('collapsed');
+        toggleBtn.innerText = '展开侧边栏 »';
+    }
+    // 初始化等比缩放
+    updateWorkspaceScale();
+    // 监听窗口大小变化，自动调整缩放比例
+    window.addEventListener('resize', updateWorkspaceScale);
+    // 页面加载完成后，自动加载默认激活的第一个标签的iframe内容
+    const activeTabContent = document.querySelector('.tab-content.active');
+    if (activeTabContent) {
+        const iframe = activeTabContent.querySelector('iframe');
+        if (iframe && !iframe.src) {
+            iframe.src = iframe.dataset.src;
+        }
+    }
+}
+</script>
+</body>
+</html>

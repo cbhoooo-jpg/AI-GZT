@@ -1,0 +1,120 @@
+{
+  "plugin_id": "info_collector",
+  "name": "AI助手网页功能操作",
+  "description": "AI助手执行网页功能操作，联网搜索采集指定主题的实时信息，智能整理结构化内容并自动保存到本地，支持财经、新闻、时政、行业动态等各类信息采集",
+  "version": "2.0.0",
+  "author": "AI助手",
+  "trigger_keyword": ["打开网页进行操作", "收集", "采集", "搜索资料", "自主查找信息"],
+  "entry": "main.py",
+  "permissions": [
+    "network",
+    "write_file",
+    "read_file"
+  ],
+  "enabled": true,
+  "config": [
+    {
+      "key": "default_extract_mode",
+      "label": "默认提取模式",
+      "type": "select",
+      "default": "structured",
+      "options": [
+        {"label": "结构化模式（正文+可操作入口）", "value": "structured"},
+        {"label": "纯文本模式（仅正文）", "value": "pure_text"},
+        {"label": "原始HTML模式（完整页面结构）", "value": "raw"}
+      ],
+      "required": true
+    },
+    {
+      "key": "default_save_path",
+      "label": "采集结果保存路径",
+      "type": "input",
+      "default": "D:/AI仓库文件夹/搜索报告/",
+      "placeholder": "采集报告保存的本地目录",
+      "required": false
+    },
+    {
+      "key": "request_timeout",
+      "label": "请求超时时间（秒）",
+      "type": "input",
+      "default": "30",
+      "placeholder": "单页面采集的最长等待时间",
+      "required": true
+    },
+    {
+      "key": "default_result_count",
+      "label": "默认采集条数",
+      "type": "input",
+      "default": "10",
+      "placeholder": "每次采集返回的最大结果数量",
+      "required": true
+    },
+    {
+      "key": "auto_save",
+      "label": "自动保存到本地",
+      "type": "select",
+      "default": "true",
+      "options": [
+        {"label": "是", "value": "true"},
+        {"label": "否", "value": "false"}
+      ],
+      "required": false
+    },
+    {
+      "key": "collect_mode",
+      "label": "采集模式",
+      "type": "select",
+      "default": "browser",
+      "options": [
+        {"label": "普通爬虫模式（速度快，兼容性一般）", "value": "normal"},
+        {"label": "浏览器引擎模式（速度慢，兼容性强，支持动态页面）", "value": "browser"}
+      ],
+      "required": true
+    },
+    {
+      "key": "redundant_keywords",
+      "label": "冗余内容过滤关键词",
+      "type": "textarea",
+      "default": "关于我们\n联系方式\n版权所有\n友情链接\n网站地图\n备案号\n免责声明\n广告\n登录\n注册\n评论\n分享\n收藏\n点赞\n下载APP\n关注公众号\n扫一扫\n返回顶部\n更多",
+      "placeholder": "每行一个关键词，包含这些关键词的行将被自动过滤",
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "query",
+      "description": "采集关键词/目标URL，支持关键词搜索或指定页面URL",
+      "required": true
+    },
+    {
+      "name": "time_range",
+      "description": "信息时间范围，支持1天/1周/1月/1年/不限",
+      "required": false
+    },
+    {
+      "name": "extract_mode",
+      "description": "提取模式，覆盖默认配置，支持pure_text/structured/raw",
+      "required": false
+    },
+    {
+      "name": "save_path",
+      "description": "自定义保存子目录名（仅目录名，非完整路径）",
+      "required": false
+    },
+    {
+      "name": "action",
+      "description": "操作类型:search(搜索)/open(打开页面)/click(点击元素)/input(输入内容)/extract(提取信息)/finish(完成整理)",
+      "required": false
+    },
+    {
+      "name": "selector",
+      "description": "操作目标元素的选择器，用于click/input操作，格式: xpath:xxx 或 css:xxx",
+      "required": false
+    },
+    {
+      "name": "value",
+      "description": "输入内容，用于input操作",
+      "required": false
+    }
+  ]
+} 

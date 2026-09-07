@@ -1,0 +1,64 @@
+{
+  "plugin_id": "safe_file_editor",
+  "enabled": true,
+  "name": "文件编辑补充插件",
+  "version": "1.0.0",
+  "description": "补充文件编辑工具，解决编辑时因内容包含content:/target_block:等参数关键词导致的截断错改问题，仅作为原生edit_file的补充使用",
+  "author": "AI助手",
+  "entry": "main.py",
+  "permissions": [
+    "read_file",
+    "write_file"
+  ],
+  "trigger_words": [
+    "安全编辑",
+    "防截断编辑",
+    "修复编辑错误",
+    "编辑包含content的文件",
+    "文件编辑截断修复"
+  ],
+  "min_system_version": "1.0.0",
+  "config": [
+    {
+      "key": "auto_detect_truncation",
+      "label": "自动检测截断风险",
+      "type": "boolean",
+      "default": false,
+      "description": "编辑前自动检测锚点/内容中是否包含易触发截断的关键词，检测到风险自动使用安全通道编辑"
+    },
+    {
+      "key": "auto_backup",
+      "label": "修改前自动备份",
+      "type": "boolean",
+      "default": false,
+      "description": "执行修改前自动备份原文件，支持一键回滚"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "edit_file_path",
+      "type": "string",
+      "required": true,
+      "description": "要修改的文件相对/绝对路径，对应原生edit_file的file_name参数"
+    },
+    {
+      "name": "op_type",
+      "type": "string",
+      "required": true,
+      "description": "操作类型，支持replace/insert_before/insert_after/delete，对应原生edit_file的operation参数"
+    },
+    {
+      "name": "anchor_text",
+      "type": "string",
+      "required": false,
+      "description": "定位锚点内容，3-5行连续上下文，支持任意特殊字符/参数关键词，不会被截断，对应原生edit_file的target_block参数，delete操作可不传"
+    },
+    {
+      "name": "replace_text",
+      "type": "string",
+      "required": false,
+      "description": "要替换/插入的新内容，支持任意长度/特殊字符/参数关键词，不会被截断，对应原生edit_file的content参数，delete操作可不传"
+    }
+  ],
+  "tool_usage_guide": "✅ 必须调用本插件的场景:1.待修改的锚点/替换内容中包含顶格书写的参数名关键词（如content:/target_block:/file_name:等），容易触发原生工具截断时；2.使用原生edit_file出现内容截断、锚点匹配错误、错改文件等问题，需要修复时。❌ 不需要调用本插件的场景:普通无特殊关键词的文件编辑，优先用原生edit_file即可。"
+}

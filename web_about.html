@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>关于 - AI工作台</title>
+    <link rel="stylesheet" href="/static/element-ui.min.css">
+    <link rel="stylesheet" href="/static/fonts/element-icons.woff">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background-color: #f5f7fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 24px;
+            color: #303133;
+        }
+        .about-container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .header-card {
+            text-align: center;
+            padding: 40px 20px;
+            margin-bottom: 24px;
+        }
+        .app-logo {
+            width: 96px;
+            height: 96px;
+            margin-bottom: 16px;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .app-name {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #303133;
+        }
+        .app-version {
+            font-size: 14px;
+            color: #909399;
+            margin-bottom: 20px;
+        }
+        .section-card {
+            margin-bottom: 24px;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            padding-left: 12px;
+            border-left: 4px solid #409EFF;
+            color: #303133;
+        }
+        .feature-list {
+            list-style: none;
+        }
+        .feature-list li {
+            padding: 8px 0;
+            color: #606266;
+            line-height: 1.6;
+        }
+        .feature-list li i {
+            color: #67C23A;
+            margin-right: 8px;
+        }
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .tech-tag {
+            padding: 4px 12px;
+            background-color: #ecf5ff;
+            color: #409EFF;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .copyright {
+            text-align: center;
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 1px solid #ebeef5;
+            color: #909399;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="about-container">
+        <el-card class="header-card" shadow="hover">
+            <img src="/logo.png" alt="AI智能助手" class="app-logo" onerror="this.src='/static/favicon.ico'">
+            <div class="app-name">AI智能助手桌面软件</div>
+            <div class="app-version">版本 v1.0</div>
+            <el-tag type="success" size="small">Windows 版本</el-tag>
+        </el-card>
+
+        <el-card class="section-card" shadow="hover">
+            <div class="section-title">工作台介绍</div>
+            <p style="line-height: 1.8; color: #606266; margin-bottom: 16px;">
+                AI工作台是一款本地化AI生产力辅助工具，集成大语言模型对话、本地代码知识库检索、多项目文件管理、插件扩展生态、定时任务调度等核心能力，所有数据均存储在本地，充分保障数据隐私安全。
+            </p>
+            <ul class="feature-list">
+                <li><i class="el-icon-check"></i> 多轮AI对话，支持上下文记忆、文件上传解析、多模态能力扩展</li>
+                <li><i class="el-icon-check"></i> 本地RAG代码检索，基于gte-small-zh向量模型，精准定位项目代码片段</li>
+                <li><i class="el-icon-check"></i> 内置智能文件编辑器，支持上百种开发格式、自动备份、AI辅助编辑</li>
+                <li><i class="el-icon-check"></i> 插件扩展生态，支持图片生成、视频生成、信息采集、进程监控等扩展能力</li>
+                <li><i class="el-icon-check"></i> 定时任务调度，支持周期性执行自定义任务、脚本、AI工作流</li>
+                <li><i class="el-icon-check"></i> 内置浏览器、截图工具等实用工具，一站式提升开发效率</li>
+            </ul>
+        </el-card>
+
+        <el-card class="section-card" shadow="hover">
+            <div class="section-title">合规与帮助</div>
+            <div class="btn-group">
+                <el-button type="primary" icon="el-icon-document" @click="window.open('/docs/third_party_licenses', '_blank')">
+                    查看第三方开源声明
+                </el-button>
+                <el-button type="success" icon="el-icon-reading" @click="window.open('/docs/user_guide', '_blank')">
+                    查看使用说明
+                </el-button>
+                <el-button icon="el-icon-link" @click="window.open('https://github.com/', '_blank')">
+                    项目官网
+                </el-button>
+            </div>
+        </el-card>
+
+        <el-card class="section-card" shadow="hover">
+            <div class="section-title">技术栈</div>
+            <div class="tech-stack">
+                <span class="tech-tag">Python 3.11</span>
+                <span class="tech-tag">PySide6</span>
+                <span class="tech-tag">FastAPI</span>
+                <span class="tech-tag">Vue 2</span>
+                <span class="tech-tag">Element UI</span>
+                <span class="tech-tag">Transformers</span>
+                <span class="tech-tag">Sentence-Transformers</span>
+                <span class="tech-tag">FAISS</span>
+                <span class="tech-tag">PyInstaller</span>
+                <span class="tech-tag">Inno Setup</span>
+                <span class="tech-tag">SQLite</span>
+                <span class="tech-tag">APScheduler</span>
+            </div>
+        </el-card>
+
+        <div class="copyright">
+            <p>Copyright © 2026 AI工作台开发团队</p>
+            <p>本产品遵循相关开源许可证协议，所有第三方组件版权均归原作者所有</p>
+        </div>
+    </div>
+
+    <script src="/static/vue.min.js"></script>
+    <script src="/static/element-ui.min.js"></script>
+    <script src="/static/axios.min.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            methods: {
+
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件预览</title>
+    <!-- 引入本地静态资源，支持离线运行 -->
+    <link rel="stylesheet" href="/static/element-ui.min.css">
+    <script src="/static/vue.min.js"></script>
+    <script src="/static/element-ui.min.js"></script>
+        <script src="/static/axios.min.js"></script>
+        <script>
+            // 全局设置axios超时时间30秒，解决大文件同步超时告警
+            axios.defaults.timeout = 30000
+        </script>
+    <!-- 代码高亮依赖 -->
+    <script src="/static/highlight.min.js"></script>
+    <link rel="stylesheet" href="/static/github.min.css">
+    <!-- CodeMirror专业编辑器本地依赖 -->
+    <link rel="stylesheet" href="/static/codemirror.min.css">
+    <link rel="stylesheet" href="/static/foldgutter.min.css">
+    <style>
+        /* 统一CodeMirror高度样式 */
+        .CodeMirror { 
+            height: 100% !important; 
+            font-family: Consolas, Monaco, monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+    </style>
+    <script src="/static/codemirror.min.js"></script>
+    <script src="/static/python.min.js"></script>
+    <script src="/static/htmlmixed.min.js"></script>
+    <script src="/static/javascript.min.js"></script>
+    <script src="/static/css.min.js"></script>
+    <script src="/static/clike.min.js"></script>
+    <script src="/static/sql.min.js"></script>
+    <!-- Office离线解析库 -->
+    <script src="/static/xlsx.full.min.js"></script>
+    <script src="/static/docx-preview.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f7fa;
+        }
+        #app {
+            height: 100%;
+            padding: 16px;
+        }
+        .empty-state {
+            height: 100%;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 120px;
+            color: #606266;
+            font-size: 16px;
+            font-weight: 500;
+            /* 自定义图片背景，通过文件预览接口加载，离线可用 */
+            background-image: url("/api/file/preview?path=editor_empty_bg.png");
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: 90% auto;
+            background-color: #f5f7fa;
+        }
+        .empty-state-text {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 16px 32px;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+        }
+        .editor-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            background: #fff;
+            border-radius: 4px;
+            border: 1px solid #e4e7ed;
+        }
+        .path-text {
+            color: #666;
+            font-size: 13px;
+        }
+        .code-editor-container {
+            flex: 1;
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .image-preview {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .image-content {
+            flex: 1;
+            background: #fff;
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+            padding: 16px;
+        }
+        .image-content img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .hex-preview {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .hex-content {
+            flex: 1;
+            background: #fff;
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            padding: 16px;
+            overflow: auto;
+            font-family: Consolas, Monaco, monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre;
+        }
+        .hex-line {
+            display: flex;
+            gap: 24px;
+        }
+        .hex-offset {
+            color: #909399;
+            width: 80px;
+        }
+        .hex-bytes {
+            color: #303133;
+            width: 380px;
+            letter-spacing: 1px;
+        }
+        .hex-ascii {
+            color: #606266;
+        }
+        /* PDF预览样式 */
+        .pdf-preview {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .pdf-content {
+            flex: 1;
+            background: #fff;
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .pdf-content iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        /* 音视频预览样式 */
+        .media-preview {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .media-content {
+            flex: 1;
+            background: #000;
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .media-content video, .media-content audio {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        /* Office预览样式 */
+        .office-preview {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .office-content {
+            flex: 1;
+            background: #fff;
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            overflow: auto;
+            padding: 20px;
+        }
+        .excel-sheet-title {
+            margin: 20px 0 10px 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        /* Excel表格线框样式 */
+        .office-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+            border: 1px solid #d1d5db;
+        }
+        .office-content th, .office-content td {
+            border: 1px solid #d1d5db;
+            padding: 6px 10px;
+            font-size: 14px;
+            background: #fff;
+        }
+        .office-content th {
+            background: #f5f7fa;
+            font-weight: 600;
+        }
+        /* 表格交互和显示效果 */
+        .office-content tr:hover td {
+            background: #f0f7ff;
+        }
+        .office-content td:empty {
+            min-height: 24px;
+        }
+        .office-content td {
+            word-break: break-all;
+            word-wrap: break-word;
+        }
+        .preview-loading {
+            text-align: center;
+            padding: 100px 0;
+            color: #6b7280;
+        }
+        /* docx文档样式优化 */
+        .docx-preview {
+            line-height: 1.6;
+            color: #333;
+        }
+        .docx-preview p {
+            margin: 10px 0;
+        }
+        .docx-preview h1, .docx-preview h2, .docx-preview h3 {
+            margin: 20px 0 10px 0;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 空状态 -->
+        <div v-if="!filePath" class="empty-state">
+            <div class="empty-state-text">
+                📁 请在仓库文件中点击文件进行预览/编辑
+            </div>
+        </div>
+
+        <!-- 图片预览 -->
+        <div v-else-if="isImage" class="image-preview">
+            <div class="toolbar">
+                <span class="path-text">路径：{{ filePath }}</span>
+                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+            </div>
+            <div class="image-content">
+                <img :src="previewUrl" alt="预览图片">
+            </div>
+        </div>
+        <!-- 十六进制预览（二进制/EXE等文件） -->
+        <div v-else-if="isHex" class="hex-preview">
+            <div class="toolbar">
+                <span class="path-text">路径：{{ filePath }} | 总大小：{{ (hexData?.total_size / 1024 / 1024).toFixed(2) }} MB</span>
+                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+            </div>
+            <div class="hex-content">
+                <div class="hex-line" v-for="(line, idx) in hexData.hex_lines" :key="idx">
+                    <span class="hex-offset">{{ (hexData.offset + idx*16).toString(16).padStart(8, '0') }}</span>
+                    <span class="hex-bytes">{{ line }}</span>
+                    <span class="hex-ascii">{{ hexData.ascii_lines[idx] }}</span>
+                </div>
+                <div v-if="hexData.read_size < hexData.total_size" style="color: #909399; margin-top: 16px;">
+                    仅显示前16KB内容，完整内容请下载后查看
+                </div>
+            </div>
+        </div>
+        <!-- PDF预览 -->
+        <div v-else-if="isPdf" class="pdf-preview">
+            <div class="toolbar">
+                <span class="path-text">路径：{{ filePath }}</span>
+                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+            </div>
+            <div class="pdf-content">
+                <iframe :src="previewUrl" type="application/pdf"></iframe>
+            </div>
+        </div>
+        <!-- 音视频预览 -->
+        <div v-else-if="isMedia" class="media-preview">
+            <div class="toolbar">
+                <span class="path-text">路径：{{ filePath }}</span>
+                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+            </div>
+                <div class="media-content">
+                    <video v-if="mediaType === 'video'" :src="previewUrl" controls autoplay muted></video>
+                    <audio v-else :src="previewUrl" controls autoplay></audio>
+                </div>
+        </div>
+        <!-- Office文档预览 -->
+        <div v-else-if="isOffice" class="office-preview">
+            <div class="toolbar">
+                <span class="path-text">路径：{{ filePath }}</span>
+                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+            </div>
+            <div class="office-content" id="office-preview-container">
+                <div class="preview-loading">
+                    <i class="el-icon-loading" style="font-size: 24px; margin-bottom: 8px;"></i>
+                    <p>正在加载文档...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 文本编辑器（CodeMirror专业版） -->
+        <div v-else class="editor-container">
+            <div class="toolbar">
+                <span class="path-text">路径：{{ filePath }} {{ modified ? ' *' : '' }}</span>
+                <div style="display: flex; gap: 8px;">
+                    <el-button 
+                        type="primary" 
+                        size="small" 
+                        @click="saveFile"
+                        :loading="saving"
+                        :disabled="!modified"
+                    >
+                        保存 (Ctrl+S)
+                    </el-button>
+                </div>
+            </div>
+            <div id="code-editor-container" class="code-editor-container"></div>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    filePath: '',
+                    content: '',
+                    isImage: false,
+                    previewUrl: '',
+                    modified: false,
+                    saving: false,
+                    apiBase: '/api',
+                    // 完善的文件后缀列表
+                    imageExts: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'tiff', 'tif'],
+                    hexExts: ['exe', 'dll', 'bin', 'zip', 'rar', '7z', 'iso', 'msi', 'pkg', 'deb', 'rpm', 'tar', 'gz', 'bz2', 'xz'],
+                    pdfExts: ['pdf'],
+                    mediaExts: ['mp3', 'mp4', 'webm', 'ogg', 'wav', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'aac', 'wma', 'm4a'],
+                    officeExts: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'],
+                    isHex: false,
+                    hexData: null,
+                    isPdf: false,
+                    isMedia: false,
+                    isOffice: false,
+                    mediaType: 'video',
+                    fileExt: '',
+                    editor: null, // CodeMirror编辑器实例
+                    maxTextFileSize: 10 * 1024 * 1024, // 大文件限制(10MB)
+                    generating: false, // 生成项目文件loading状态
+                    syncing: false // 同步文件信息loading状态
+                }
+            },
+            computed: {
+                // 自动判断当前打开的是否是项目手册
+                isProjectManual() {
+                    return this.filePath && this.filePath.endsWith('项目手册.md')
+                }
+            },
+            mounted() {
+                // 初始化语法高亮
+                if (window.hljs) {
+                    hljs.configure({
+                        tabReplace: '  ',
+                        useBR: false
+                    })
+                }
+                
+                // Ctrl+S保存快捷键
+                document.addEventListener('keydown', this.handleKeydown)
+                
+                // 未保存提示
+                window.addEventListener('beforeunload', this.handleBeforeUnload)
+                
+                // 从URL参数加载文件
+                const params = new URLSearchParams(window.location.search)
+                this.filePath = params.get('path') || ''
+                if (this.filePath) this.loadFile()
+            },
+            beforeDestroy() {
+                // 清理事件监听器和编辑器实例
+                document.removeEventListener('keydown', this.handleKeydown)
+                window.removeEventListener('beforeunload', this.handleBeforeUnload)
+                this.destroyEditor()
+            },
+            methods: {
+                // 键盘事件处理
+                handleKeydown(e) {
+                    // Ctrl+S 保存
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        e.preventDefault()
+                        if (this.modified && !this.saving) {
+                            this.saveFile()
+                        }
+                    }
+                },
+                
+                // 未保存提示
+                handleBeforeUnload(e) {
+                    if (this.modified) {
+                        e.preventDefault()
+                        e.returnValue = '您有未保存的更改，确定要离开吗？'
+                        return e.returnValue
+                    }
+                },
+                
+                // 销毁编辑器实例
+                destroyEditor() {
+                    if (this.editor && typeof this.editor.toTextArea === 'function') {
+                        this.editor.toTextArea()
+                        this.editor = null
+                    }
+                },
+
+                async loadFile() {
+                    try {
+                        // 重置所有状态
+                        this.isImage = false
+                        this.isHex = false
+                        this.isPdf = false
+                        this.isMedia = false
+                        this.isOffice = false
+                        this.modified = false
+                        this.destroyEditor()
+                        
+                        const fileName = this.filePath.split('/').pop()
+                        const ext = fileName.split('.').pop().toLowerCase()
+                        this.fileExt = ext
+                        this.previewUrl = `${this.apiBase}/file/preview?path=${encodeURIComponent(this.filePath)}`
+                        
+                        // 判断文件类型
+                        this.isImage = this.imageExts.includes(ext)
+                        this.isHex = this.hexExts.includes(ext)
+                        this.isPdf = this.pdfExts.includes(ext)
+                        this.isMedia = this.mediaExts.includes(ext)
+                        this.isOffice = this.officeExts.includes(ext)
+                        
+                        if (this.isImage) {
+                            // 图片预览
+                        } else if (this.isHex) {
+                            // 二进制文件十六进制预览
+                            const res = await axios.get(`${this.apiBase}/file/hex_read`, { params: { path: this.filePath } })
+                            if (res.data.code === 200) this.hexData = res.data.data
+                        } else if (this.isPdf) {
+                            // PDF预览
+                        } else if (this.isMedia) {
+                            // 音视频预览
+                            this.mediaType = ['mp3', 'wav', 'ogg', 'aac', 'wma', 'm4a'].includes(ext) ? 'audio' : 'video'
+                        } else if (this.isOffice) {
+                            // Office文档离线预览
+                            this.$nextTick(() => this.renderOfficeFile(ext))
+                        } else {
+                            // 文本文件/代码文件
+                            const res = await axios.get(`${this.apiBase}/file/read`, { params: { path: this.filePath } })
+                            if (res.data.code === 200) {
+                                this.content = res.data.data
+                                
+                                // 大文件提示
+                                if (this.content.length > this.maxTextFileSize) {
+                                    this.$message.warning('文件过大，可能导致编辑器卡顿，建议下载后查看')
+                                }
+                                
+                                // 初始化CodeMirror编辑器
+                                this.$nextTick(() => {
+                                    this.initEditor()
+                                })
+                            }
+                        }
+
+                    } catch (e) {
+                        this.$message.error('加载文件失败：' + (e.response?.data?.detail || e.message))
+                    }
+                },
+                
+                // CodeMirror初始化
+                initEditor() {
+                    // 后缀到CodeMirror模式映射表
+                    const extModeMap = {
+                        'py': 'python', 'python': 'python',
+                        'html': 'htmlmixed', 'htm': 'htmlmixed', 'vue': 'htmlmixed',
+                        'js': 'javascript', 'jsx': 'javascript', 'json': 'javascript',
+                        'ts': 'javascript', 'tsx': 'javascript',
+                        'css': 'css', 'scss': 'css', 'less': 'css',
+                        'java': 'text/x-java', 'c': 'text/x-c', 'cpp': 'text/x-c++',
+                        'go': 'text/x-go', 'php': 'text/x-php', 'sql': 'sql',
+                        'md': 'markdown', 'txt': 'text'
+                    }
+                    
+                    const mode = extModeMap[this.fileExt] || 'text'
+                    
+                    this.editor = CodeMirror(document.getElementById('code-editor-container'), {
+                        value: this.content || '',
+                        mode: mode,
+                        lineNumbers: true,
+                        lineWrapping: false,
+                        indentUnit: 4,
+                        tabSize: 4,
+                        indentWithTabs: false,
+                        matchBrackets: true,
+                        autoCloseBrackets: true,
+                        foldGutter: true,
+                        gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+                        theme: 'default',
+                        readOnly: false
+                    })
+                    
+                    // 内容变更事件
+                    this.editor.on('change', () => {
+                        this.content = this.editor.getValue()
+                        this.modified = true
+                    })
+                    
+                    // 自动聚焦
+                    this.editor.focus()
+                },
+
+                async saveFile() {
+                    this.saving = true
+                    try {
+                        await axios.post(`${this.apiBase}/file/write`, { 
+                            path: this.filePath, 
+                            content: this.content 
+                        })
+                        this.modified = false
+                        this.$message.success('保存成功！')
+                    } catch (e) {
+                        this.$message.error('保存失败：' + (e.response?.data?.detail || e.message))
+                    } finally {
+                        this.saving = false
+                    }
+                },
+                async openExternal() {
+                    try {
+                        const res = await axios.get(`${this.apiBase}/file/open_external`, { params: { path: this.filePath } })
+                        if (res.data.code === 200) {
+                            this.$message.success('已调用系统程序打开文件')
+                        }
+                    } catch (e) {
+                        this.$message.error('打开失败：' + (e.response?.data?.detail || e.message))
+                    }
+                },                
+                // 生成项目文件（仅项目手册可用）
+                async handleGenerateFiles() {
+                    this.generating = true
+                    try {
+                        const res = await axios.post(`${this.apiBase}/project-manual/generate-files`, {
+                            manual_path: this.filePath
+                        })
+                        if (res.data.code === 200) {
+                            this.$message.success(`✅ 生成完成！新增：${res.data.success}个，已存在：${res.data.exists}个，失败：${res.data.fail}个`)
+                            // 重新加载文件内容，查看更新后的明细
+                            await this.loadFile()
+                        } else {
+                            this.$message.error(res.data.msg)
+                        }
+                    } catch (e) {
+                        this.$message.error('生成失败：' + (e.response?.data?.detail || e.message))
+                    } finally {
+                        this.generating = false
+                    }
+                },
+                // 同步文件明细（仅项目手册可用）
+                async handleSyncDetail() {
+                    this.syncing = true
+                    try {
+                        const res = await axios.post(`${this.apiBase}/project-manual/sync-detail`, {
+                            manual_path: this.filePath
+                        })
+                        if (res.data.code === 200) {
+                            this.$message.success(`✅ 同步完成！更新：${res.data.update_count}个，新增：${res.data.add_count}个`)
+                            // 重新加载更新后的手册内容
+                            await this.loadFile()
+                        } else {
+                            this.$message.error(res.data.msg)
+                        }
+                    } catch (e) {
+                        this.$message.error('同步失败：' + (e.response?.data?.detail || e.message))
+                    } finally {
+                        this.syncing = false
+                    }
+                },
+                
+                // ✅ 终极修复：自动检测docx-preview版本，兼容所有API
+                async renderOfficeFile(ext) {
+                    const container = document.getElementById('office-preview-container')
+                    if (!container) return
+                    
+                    try {
+                        // 加载文件内容
+                        const res = await axios.get(this.previewUrl, { responseType: 'arraybuffer' })
+                        container.innerHTML = ''
+                        
+                        // 渲染Word文档
+                        if (ext === 'docx' || ext === 'doc') {
+                            // 自动检测库版本
+                            if (window.docx) {
+                                // 新版本(1.x+) API
+                                if (typeof docx.loadAsync === 'function') {
+                                    const doc = await docx.loadAsync(res.data)
+                                    const html = doc.render()
+                                    container.innerHTML = `<div class="docx-preview">${html}</div>`
+                                }
+                                // 旧版本(0.1.x) API
+                                else if (typeof docx.renderAsync === 'function') {
+                                    await docx.renderAsync(res.data, container)
+                                }
+                                // 未知版本，降级到纯文本预览
+                                else {
+                                    throw new Error('不支持的docx-preview版本')
+                                }
+                            } else {
+                                throw new Error('docx预览库未正确加载')
+                            }
+                        }
+                        // 渲染Excel表格
+                        else if (ext === 'xlsx' || ext === 'xls') {
+                            const workbook = XLSX.read(res.data, { type: 'array' })
+                            workbook.SheetNames.forEach(sheetName => {
+                                const sheet = workbook.Sheets[sheetName]
+                                const html = XLSX.utils.sheet_to_html(sheet)
+                                const sheetDiv = document.createElement('div')
+                                sheetDiv.innerHTML = `<div class="excel-sheet-title">📋 ${sheetName}</div>${html}`
+                                container.appendChild(sheetDiv)
+                            })
+                        }
+                        // 渲染PowerPoint演示文稿
+                        else if (ext === 'pptx' || ext === 'ppt') {
+                            container.innerHTML = `
+                                <div class="preview-loading">
+                                    <p>⚠️ PPT预览功能需要额外的库支持</p>
+                                    <p>请点击上方下载按钮查看完整内容</p>
+                                </div>
+                            `
+                        }
+                    } catch (e) {
+                        const errorMsg = e.response?.data?.detail || e.message
+                        container.innerHTML = `
+                            <div class="preview-loading" style="color:#ef4444;">
+                                <p>加载失败：${errorMsg}</p>
+                                <p style="margin-top: 16px;">请点击上方下载按钮查看完整内容</p>
+                            </div>
+                        `
+                        this.$message.error('预览失败：' + errorMsg)
+                    }
+                }
+            }
+        })
+    </script>
+</body>
+</html>

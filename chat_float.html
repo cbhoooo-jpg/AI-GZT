@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI悬浮助手</title>
+    <!-- 引入markdown解析库，不影响任何样式 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>   
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        body { background: #ffffff; height: 100vh; display: flex; flex-direction: column; }
+
+        /* 顶部标题栏 */
+        .header { background: #ffffff; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 16px; font-weight: 600; color: #111; }
+        .header .btns { display: flex; gap: 8px; }
+        .btn { padding: 5px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+        .btn:hover { background-color: #ffffff; }
+        .btn.primary { background: #165DFF; color: #fff; border-color: #165DFF; }
+        .btn.primary:hover { background-color: #0f4cd0; }
+        .btn.small { padding: 2px 6px; font-size: 10px; border-radius: 4px; background: rgba(255,255,255,0.15); color: inherit; border: none; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        /* 项目选择器样式（对齐chat_ui，适配悬浮窗尺寸） */
+        select.btn { appearance: none; padding-right: 24px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; }
+        #projectSelector { min-width: 150px; max-width: 175px; font-size: 15px; padding: 4px 25px 4px 10px; }
+        #projectSelector option { min-width: 150px; padding: 4px 10px; }
+        /* 消息附件样式（完全对齐chat_ui） */
+        .msg-attachments { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+        .msg-attachments .img-item { max-width: 120px; max-height: 120px; border-radius: 6px; object-fit: cover; cursor: pointer; }
+        .msg-attachments .file-card { padding: 6px 8px; background: rgba(255,255,255,0.1); border-radius: 6px; display: flex; align-items: center; gap: 6px; min-width: 160px; font-size: 12px; }
+        .msg.ai .msg-attachments .file-card { background: rgba(0,0,0,0.03); }
+
+        /* 对话区（100%照搬chat_ui规则，适配悬浮窗尺寸缩放） */
+        .chat-area { flex: 1; overflow-y: auto; padding: 12px; }
+        .msg { margin-bottom: 16px; display: flex; gap: 10px; position: relative; }
+        .msg.user { justify-content: flex-end; }
+        /* 头像完全对齐chat_ui样式，仅缩小尺寸适配悬浮窗 */
+        .msg .avatar { width: 30px; height: 30px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 12px; overflow: hidden; }
+        .msg.user .avatar { background-color: #165DFF; order: 2; }
+        .msg.ai .avatar { background-color: transparent; }
+        .msg.ai .avatar img { width: 100%; height: 100%; object-fit: contain; }
+        /* 气泡样式100%照搬chat_ui，仅缩小padding适配悬浮窗 */
+        .msg .content { 
+            max-width: 80%; 
+            padding: 5px 14px; /* 完全和chat_ui比例一致，仅缩小2px适配悬浮窗 */
+            border-radius: 6px; 
+            line-height: 0.2; /* 这个参数和对话气泡高度强相关*/
+            font-size: 14px; /* 文字大小参数 */
+            white-space: pre-wrap; 
+            word-break: break-word; 
+            position: relative;
+            transition: max-height 0.3s ease, opacity 0.2s; 
+            overflow: hidden; 
+        }
+        /* 新增下面这段样式，专门控制文字行距，和外层容器行高解耦 */
+        .content * {
+            line-height: 1.3 !important; /* 这个参数是对话气泡中的文字行距，不会影响气泡高度 */
+            margin: 0 0 2px 0 !important; /* 段落间距也可以在这里调整，不影响外层高度 */
+        }
+        .content *:last-child {
+            margin-bottom: 0 !important;
+        }
+        .msg.user .content { background-color: #165DFF; color: #fff; order: 1; }
+        .msg.ai .content { background-color: #fff; color: #333; border: 1px solid #e5e5e5; }
+        .msg .content.fold { max-height: 4.8em; opacity: 0.85; cursor: pointer; }
+        .msg .content.expanded { max-height: none; opacity: 1; }
+        /* 操作按钮完全对齐chat_ui，悬浮在右上角hover显示，不占用文本空间 */
+        .msg-actions {
+            position: absolute;
+            top: 1px;
+            right: 12px;
+            display: flex;
+            gap: 6px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 10;
+        }
+        .msg:hover .msg-actions { opacity: 1; }
+        .msg-actions button {
+            font-size: 12px;
+            padding: 2px 6px;
+            border: none;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+            cursor: pointer;
+        }
+        .msg.ai .msg-actions button {
+            background: rgba(0,0,0,0.1);
+            color: #333;
+        }
+        /* markdown样式100%照搬chat_ui */
+        .content p { margin: 0 0 2px 0; }
+        .content p:last-child { margin: 0; }
+
+        /* 附件相关样式 */
+        #fileInput { display: none; }
+        .attachment-preview { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+        .attachment-item { position: relative; width: 60px; height: 60px; border: 1px solid #eee; border-radius: 6px; overflow: hidden; background: #f9f9f9; }
+        .attachment-item img { width: 100%; height: 100%; object-fit: cover; }
+        .attachment-item .file-icon { width: 100%; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .attachment-item .file-name { padding: 1px 2px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; background: #fff; }
+        .attachment-item .del-btn { position: absolute; top: 1px; right: 1px; width: 16px; height: 16px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: none; font-size: 10px; line-height: 16px; text-align: center; cursor: pointer; padding: 0; }
+        /* 加载动画 */
+        .loading { display: inline-block; width: 12px; height: 12px; border: 2px solid #ddd; border-top-color: #165DFF; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        /* 复制成功提示 */
+        .copy-toast {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #165DFF;
+            color: #fff;
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            max-width: 85%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
+        }
+        .copy-toast.show {
+            opacity: 1;
+            visibility: visible;
+            top: 20px;
+        }
+/* 模板选择下拉框蓝底白字样式 */
+.prompt-select {
+    background-color: #165DFF !important;
+    color: #fff !important;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+}
+/* 下拉选项保持白底黑字，提升可读性 */
+.prompt-select option {
+    background-color: #fff;
+    color: #333;
+}
+
+        /* 输入区 */
+        .input-area { background: #ffffff; padding: 12px 16px; }
+        .input-toolbar { display: flex; gap: 6px; margin-bottom: 10px; }
+        .input-row { display: flex; gap: 8px; }
+        .input-row textarea { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; resize: none; min-height: 45px; outline: none; }
+        .input-row textarea:focus { border-color: #165DFF; }
+        /* 下拉菜单样式（适配悬浮窗尺寸） */
+        .dropdown { position: relative; display: inline-block; }
+        .dropdown-menu {
+            position: absolute;
+            right: 0;
+            top: 100%;
+            min-width: 160px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            z-index: 999;
+            display: none;
+            padding: 4px 0;
+        }
+        .dropdown-menu.show { display: block; }
+        .dropdown-item {
+            width: 100%;
+            padding: 6px 12px;
+            text-align: left;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .dropdown-item:hover { background: #f5f5f5; }
+    </style>
+</head>
+<body>
+
+    <!-- 顶部栏（对齐chat_ui项目选择功能） -->
+    <div class="header">
+        <div class="btns" style="gap:4px;">
+            <select id="projectSelector" class="btn">
+                <option value="">（全局）请选择项目</option>
+            </select>
+
+        </div>
+        <div class="btns">
+            <select id="promptSelector" class="btn prompt-select"></select>
+        </div>
+    </div>
+
+    <!-- 对话区域 -->
+    <div class="chat-area">
+
+    </div>
+
+    <!-- 输入区域 -->
+    <div class="input-area">
+        <div class="input-toolbar">
+            <button id="screenshotBtn" class="btn primary">截图</button>
+            <button id="selectFileBtn" class="btn primary">上传文件</button>
+            <button id="openWorkbenchBtn" class="btn primary">打开工作台</button>
+            <input type="file" id="fileInput" multiple accept="image/*,.pdf,.docx,.xlsx,.txt,.md,.mp3,.mp4,.wav,.py,.js,.html,.css,.sql,.yml,.yaml,.go,.java,.cpp,.c,.sh,.json,.zip,.rar">
+        </div>
+        <!-- 附件预览区 -->
+        <div id="attachmentPreview" class="attachment-preview"></div>
+        <div class="input-row">
+<textarea id="messageInput" placeholder="输入消息，按Enter发送" ime-mode="active"></textarea>
+            <button id="sendBtn" class="btn primary">发送</button>
+        </div>
+    </div>
+    <!-- 全局提示 -->
+    <div class="copy-toast" id="copyToast"></div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            let chatAttachments = [];
+            let currentSelectedProject = null;
+            let currentProjectPrompt = '';
+            // 复用主界面全局持久化会话ID，历史跨页面互通，上下文完全对齐
+            const SESSION_ID = localStorage.getItem('chat_ui_session_id') || `float_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+            let currentSelectedPrompt = ''; // 全局选中的Prompt模板
+            const chatArea = document.querySelector('.chat-area');
+            const messageInput = document.getElementById('messageInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const screenshotBtn = document.getElementById('screenshotBtn');
+            const selectFileBtn = document.getElementById('selectFileBtn');
+            const fileInput = document.getElementById('fileInput');
+            const attachmentPreview = document.getElementById('attachmentPreview');
+            const openWorkbenchBtn = document.getElementById('openWorkbenchBtn');
+            const copyToast = document.getElementById('copyToast');
+            const projectSelector = document.getElementById('projectSelector');
+
+            // 加载项目列表（对齐chat_ui）
+            async function loadProjectList() {
+                try {
+                    const res = await fetch('/api/project/list');
+                    const data = await res.json();
+                    if (data.code === 200) {
+                        const selected = projectSelector.value;
+                        projectSelector.innerHTML = '<option value="">（全局）请选择项目</option>';
+                        data.data.forEach(p => {
+                            const opt = document.createElement('option');
+                            opt.value = JSON.stringify(p);
+                            opt.textContent = p.project_name;
+                            projectSelector.appendChild(opt);
+                        });
+                        if (selected) projectSelector.value = selected;
+                    }
+                } catch (e) { console.error(e); }
+            }
+            // 监听跨页面项目切换同步
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'current_selected_project' && e.newValue) {
+                    const newProj = JSON.parse(e.newValue);
+                    // 避免重复触发
+                    if (JSON.stringify(currentSelectedProject) === e.newValue) return;
+                    currentSelectedProject = newProj;
+                    if (newProj.project_name === 'default') {
+                        currentProjectPrompt = `\n\n⚠️ 当前为全局记忆状态:
+1. 你能进行全项目操作，并且能使用工具查询、读取、修改仓库外部的电脑文件
+2. 如果需要执行特定项目的开发、修复、调试操作，可提醒用户先选择对应的开发项目
+3. 全局对话记忆独立存储，不会和任何项目记忆混淆`;
+                        projectSelector.value = "";
+                    } else {
+                        // 刷新项目文件列表
+                        fetch('/api/project/file_list?project_id=' + newProj.project_id)
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data.code === 200) {
+                                    currentProjectPrompt = `\n\n当前开发项目：${newProj.project_name}\n项目文件清单：\n${data.data.join('\n')}`;
+                                }
+                            });
+                        projectSelector.value = JSON.stringify(newProj);
+                    }
+                }
+            });
+
+            // 切换项目（对齐chat_ui）
+            async function switchProject() {
+                const sel = projectSelector.value;
+                try {
+                    if (!sel) {
+                        // 选择"（全局）请选择项目"，切换到全局default项目
+                        const proj = {
+                            project_name: "default",
+                            project_root: "",
+                            manual_path: ""
+                        };
+                        const res = await fetch('/api/project/switch', { 
+                            method: 'POST', 
+                            headers: {'Content-Type':'application/json'}, 
+                            body: JSON.stringify(proj) 
+                        });
+                        const data = await res.json();
+                        if (data.code === 200) {
+                            currentSelectedProject = proj;
+                            currentProjectPrompt = `\n\n⚠️ 当前为全局记忆状态:
+1. 你能进行全项目操作，并且能使用工具查询、读取、修改仓库外部的电脑文件
+2. 如果需要执行特定项目的开发、修复、调试操作，可提醒用户先选择对应的开发项目
+3. 全局对话记忆独立存储，不会和任何项目记忆混淆`;
+                            projectSelector.value = "";
+                            // 同步到localStorage实现跨页面同步
+                            localStorage.setItem('current_selected_project', JSON.stringify(currentSelectedProject));
+                        }
+                        return;
+                    }
+                    const proj = JSON.parse(sel);
+                    const res = await fetch('/api/project/switch', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: JSON.stringify(proj) 
+                    });
+                    const data = await res.json();
+                    if (data.code === 200) {
+                        currentSelectedProject = proj;
+                        currentProjectPrompt = `\n\n当前开发项目:${proj.project_name}\n项目文件清单:\n${data.file_list.join('\n')}`;
+                        projectSelector.value = JSON.stringify(proj);
+                        // 同步到localStorage实现跨页面同步
+                        localStorage.setItem('current_selected_project', JSON.stringify(currentSelectedProject));
+                    }
+                } catch (e) { alert('切换项目失败'); }
+            }
+            // 存储模板ID对应内容
+            let TPL_CONTENT = {};
+            // 加载Prompt模板（和主界面全局同步）
+            async function loadPromptTemplates() {
+                try {
+                    const res = await fetch('/api/prompt/templates');
+                    const data = await res.json();
+                    if (data.code === 200) {
+                        const selector = document.getElementById('promptSelector');
+                        selector.innerHTML = '';
+                        TPL_CONTENT = {};
+                        // 渲染所有系统+自定义模板
+                        const tpls = [...data.data.system_templates, ...data.data.custom_templates];
+                        tpls.forEach(tpl => {
+                            TPL_CONTENT[tpl.id] = tpl.content;
+                            const opt = document.createElement('option');
+                            opt.value = tpl.id;
+                            opt.textContent = tpl.name;
+                            selector.appendChild(opt);
+                        });
+                        // 默认选中第一个模板，无需手动选择即可使用
+                        if (tpls.length > 0) {
+                            selector.value = tpls[0].id;
+                            currentSelectedPrompt = tpls[0].content;
+                        }
+                    }
+                } catch (e) { console.error('模板加载失败', e); }
+            }
+
+            // 模板选择事件绑定
+            document.getElementById('promptSelector').addEventListener('change', (e) => {
+                const val = e.target.value;
+                if (!val) return;
+                currentSelectedPrompt = TPL_CONTENT[val];
+                showCopyToast(`✅ 已选中【${e.target.options[e.target.selectedIndex].text}】`);
+            });
+
+            // 通用文件上传函数（对齐chat_ui，对接后端接口）
+            async function uploadFile(file) {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                try {
+                    const res = await fetch('/api/chat/upload_file', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+                    if (data.code === 200) {
+                        chatAttachments.push(data.data);
+                        renderAttachments();
+                    } else {
+                        alert(`❌ 上传失败：${data.msg}`);
+                    }
+                } catch (e) {
+                    alert('❌ 上传失败：网络错误');
+                }
+            }
+
+            // 全局配置marked，移除已废弃的sanitize参数
+            marked.setOptions({
+              breaks: true,
+              gfm: true,
+              mangle: false,
+              headerIds: false
+            });
+
+            // HTML特殊字符转义函数，彻底避免代码块内HTML被渲染为DOM
+            function escapeHtml(str) {
+                return str.replace(/&/g, '&amp;')
+                          .replace(/</g, '&lt;')
+                          .replace(/>/g, '&gt;')
+                          .replace(/"/g, '&quot;')
+                          .replace(/'/g, '&#039;');
+            }
+
+            // 统一转义符解码，区分代码块内外转义逻辑
+            function decodeEscapeChars(str) {
+                // 第一步：先提取所有代码块，单独处理内部转义，保留代码字面量，正则区分语言标识和内容
+                str = str.replace(/```([a-z]*)\n([\s\S]*?)```/g, (match, lang, codeContent) => {
+                    // 代码块内转义规则：仅保留\n、\t等字面量不转成实际控制符，HTML转义交给marked自动处理
+                    const escaped = codeContent
+                        .replace(/\\\\n/g, '\\n')
+                        .replace(/\\\\t/g, '\\t')
+                        .replace(/\\\\r/g, '\\r')
+                        .replace(/\\"/g, '"')
+                        .replace(/\\\\/g, '\\');
+                    return '```' + lang + '\n' + escaped + '```';
+                });
+                
+                // 第二步：处理代码块外的普通文本转义，正常转成换行等控制符
+                return str.replace(/\\n/g, '\n')
+                          .replace(/\\t/g, '\t')
+                          .replace(/\\"/g, '"')
+                          .replace(/\\\\/g, '\\');
+            }
+
+            // 自动补全未闭合的工具调用块，同时处理所有代码块内部的反引号避免提前闭合
+            function autoCloseToolBlocks(str) {
+                // 第一步：提取所有```开头的代码块，把块内部的```转义为HTML实体，避免提前闭合
+                str = str.replace(/```([a-z]*)([\s\S]*?)(```|$)/g, (match, lang, content, close) => {
+                    const escapedContent = content.replace(/```/g, '&#96;&#96;&#96;');
+                    return '```' + lang + escapedContent + (close || '\n```');
+                });
+
+                // 第二步：检测是否有未闭合的块，自动补全
+                const codeOpenCount = (str.match(/```[a-z]*/g) || []).length;
+                const codeCloseCount = (str.match(/```/g) || []).length - codeOpenCount;
+                if (codeOpenCount > codeCloseCount) {
+                    return str + '\n```';
+                }
+                return str;
+            }
+
+            // markdown渲染函数，和chat_ui完全对齐
+            function renderMarkdown(txt) {
+                const decodedTxt = decodeEscapeChars(txt);
+                const closedTxt = autoCloseToolBlocks(decodedTxt);
+                // 移除所有指令块的特殊样式包裹，完全以普通markdown代码文本展示
+                return marked.parse(closedTxt);
+            }
+
+            // 滚动到底部
+            function scrollToBottom() {
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }
+
+            // 全局通用提示
+            function showCopyToast(content) {
+                const showContent = content.length > 35 ? content.substring(0, 35) + '...' : content;
+                copyToast.innerText = showContent;
+                copyToast.classList.add('show');
+                setTimeout(() => copyToast.classList.remove('show'), 2000);
+            }
+
+            // 渲染附件预览（100%对齐chat_ui）
+            function renderAttachments() {
+                attachmentPreview.innerHTML = '';
+                chatAttachments.forEach((item, index) => {
+                    const itemEl = document.createElement('div');
+                    itemEl.className = 'attachment-item';
+                    if (item.file_type === 'image') {
+                        itemEl.innerHTML = `<img src="${item.url}" alt="${item.original_name}"><button class="del-btn" data-index="${index}">×</button>`;
+                    } else {
+                        itemEl.innerHTML = `<div class="file-icon">📄</div><div class="file-name">${item.original_name}</div><button class="del-btn" data-index="${index}">×</button>`;
+                    }
+                    attachmentPreview.appendChild(itemEl);
+                });
+                // 删除附件
+                document.querySelectorAll('.del-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const index = parseInt(e.target.dataset.index);
+                        chatAttachments.splice(index, 1);
+                        renderAttachments();
+                    });
+                });
+            }
+
+            // 复制功能（直接读取原始返回内容，100%无差异）
+            function handleCopy(btn) {
+                // 直接读取存储在msg-actions中的原始AI返回内容，完全不依赖DOM渲染结果
+                const pureContent = decodeURIComponent(btn.closest('.msg-actions').dataset.response || '').trim();
+                const tempTextarea = document.createElement('textarea');
+                tempTextarea.value = pureContent;
+                tempTextarea.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0;';
+                document.body.appendChild(tempTextarea);
+                tempTextarea.select();
+                try {
+                    document.execCommand('copy');
+                    btn.innerText = '✅ 成功';
+                    showCopyToast(pureContent);
+                } catch (e) {
+                    btn.innerText = '❌ 失败';
+                }
+                document.body.removeChild(tempTextarea);
+                setTimeout(() => btn.innerText = '📋 复制', 1500);
+            }
+
+            // 消息折叠/展开 + 复制事件委托
+            chatArea.addEventListener('click', (e) => {
+                const toggleBtn = e.target.closest('.msg-toggle-btn');
+                const copyBtn = e.target.closest('.msg-copy-btn');
+                if (toggleBtn) {
+                    const content = toggleBtn.closest('.msg').querySelector('.content');
+                    if (content.classList.contains('fold')) {
+                        content.classList.remove('fold');
+                        content.classList.add('expanded');
+                        toggleBtn.textContent = '👆 收起';
+                    } else {
+                        content.classList.remove('expanded');
+                        content.classList.add('fold');
+                        toggleBtn.textContent = '👇 展开';
+                    }
+                    setTimeout(scrollToBottom, 310);
+                } else if (copyBtn) {
+                    handleCopy(copyBtn);
+                }
+            });
+
+            // 上传文件（对齐chat_ui批量上传）
+            selectFileBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', async (e) => {
+                const files = Array.from(e.target.files);
+                if (!files.length) return;
+                for (let file of files) {
+                    await uploadFile(file);
+                }
+                fileInput.value = '';
+            });
+
+            // 截图功能（对齐chat_ui，对接后端接口）
+            screenshotBtn.addEventListener('click', async () => {
+                try {
+                    screenshotBtn.disabled = true;
+                    const origText = screenshotBtn.textContent;
+                    screenshotBtn.innerHTML = '<span class="loading"></span> 截图中';
+                    
+                    const res = await fetch('/api/screenshot/trigger', { method: 'POST' });
+                    const data = await res.json();
+                    
+                    if (data.code === 200) {
+                        chatAttachments.push(data.data);
+                        renderAttachments();
+                    } else if (data.code !== 400) {
+                        alert(data.msg);
+                    }
+                } catch (err) {
+                    // 降级使用pywebview本地截图
+                    if (window.pywebview) {
+                        await pywebview.api.trigger_screenshot();
+                        showCopyToast('✅ 截图成功');
+                    } else {
+                        showCopyToast('⚠️ 截图功能需在客户端环境使用');
+                    }
+                } finally {
+                    screenshotBtn.disabled = false;
+                    screenshotBtn.textContent = '截图';
+                }
+            });
+
+            // 项目选择事件绑定
+            projectSelector.addEventListener('focus', loadProjectList);
+            projectSelector.addEventListener('change', switchProject);
+
+            // 打开工作台：直接调用Qt原生API打开内置浏览器，加1秒防抖避免重复调用
+            let workbenchClickLock = false;
+            openWorkbenchBtn.addEventListener('click', (e) => {
+                // 阻止所有默认行为和事件冒泡，从源头避免双重触发
+                e.preventDefault();
+                e.stopPropagation();
+                if (workbenchClickLock) return;
+                workbenchClickLock = true;
+                setTimeout(() => workbenchClickLock = false, 1000);
+                // 优先调用Qt原生API，完全禁用降级逻辑，避免新窗口生成
+                // 用隐藏iframe触发自定义协议，完全不会触发页面刷新，不丢失对话记录
+                console.log('触发打开工作台');
+                const iframe = document.createElement('iframe');
+                iframe.src = 'local://open-ai-workbench';
+                iframe.style.display = 'none';
+                document.body.appendChild(iframe);
+                setTimeout(() => document.body.removeChild(iframe), 100);
+            });
+
+            // 全局SSE流连接对象
+            let sseSource = null;
+
+            // 对齐chat_ui流式输出逻辑：存储当前正在流式输出的消息对象
+            let currentStreamMsg = null;
+            // 初始化SSE流式消息监听，接收后端AI回复
+            function initSSE() {
+                if (sseSource) sseSource.close();
+                sseSource = new EventSource(`/api/chat/stream/${SESSION_ID}`);
+                sseSource.onmessage = (event) => {
+                    try {
+                        let rawData = event.data.trim();
+                        // 去掉后端返回的多余data:前缀
+                        rawData = rawData.replace(/^data:\s*/g, '').trim();
+                        // 过滤空内容/心跳包
+                        if (!rawData || rawData === 'heartbeat' || rawData === ':') return;
+                        // 解析JSON，完全对齐chat_ui事件处理逻辑
+                        const data = JSON.parse(rawData);
+                        const content = data.content || data.text || data.answer || '';
+                        if (!content) return;
+
+                        // 处理记忆召回标记，对齐主界面显示逻辑（不修改UI样式）
+                        if (data.type === 'rag_recall') {
+                            const lastAiMsg = document.querySelector('.msg.ai:last-child .content .content-inner');
+                            lastAiMsg.textContent += `\n📚 召回记忆：${content}\n`;
+                            scrollToBottom();
+                            return;
+                        }
+                        // 处理工具调用标记，对齐主界面显示逻辑（不修改UI样式）
+                        if (data.type === 'tool_call') {
+                            const lastAiMsg = document.querySelector('.msg.ai:last-child .content .content-inner');
+                            lastAiMsg.textContent += `\n🔧 调用工具：${content}\n`;
+                            scrollToBottom();
+                            return;
+                        }
+
+                        // 处理流式增量输出事件
+                        if (data.type === 'ai_output_stream') {
+                            const lastAiMsg = document.querySelector('.msg.ai:last-child .content .content-inner');
+                            if (!currentStreamMsg) {
+                                // 第一次收到流式内容，初始化缓存
+                                currentStreamMsg = { text: '', el: lastAiMsg };
+                                // 清空加载提示
+                                currentStreamMsg.el.textContent = '';
+                            }
+                            // 拼接流式内容，纯文本显示，escapeHtml转义后innerHTML输出，100%保留原始符号
+                            currentStreamMsg.text += decodeEscapeChars(content);
+                            currentStreamMsg.el.innerHTML = escapeHtml(currentStreamMsg.text);
+                            scrollToBottom();
+                        }
+                        // 处理流式结束事件
+                        else if (data.type === 'ai_output') {
+                            if (currentStreamMsg) {
+                            // 全量纯文本展示，完全不解析任何markdown/HTML格式，100%保留原始符号
+                            currentStreamMsg.el.innerHTML = escapeHtml(decodeEscapeChars(autoCloseToolBlocks(currentStreamMsg.text)));
+                            // 把原始内容存到msg-actions的data-response中，保证复制内容和原始一致
+                            const actionsEl = currentStreamMsg.el.closest('.content').querySelector('.msg-actions');
+                            if (actionsEl) actionsEl.dataset.response = encodeURIComponent(currentStreamMsg.text);
+                                // 触发折叠逻辑
+                                updateMessageFoldStates();
+                                // 清空流式缓存
+                                currentStreamMsg = null;
+                            } else {
+                                addMessage('ai', content);
+                            }
+                            scrollToBottom();
+                        }
+                    } catch (e) {
+                        // 所有异常直接忽略，不显示错误内容
+                        console.debug('SSE解析跳过:', event.data);
+                    }
+                };
+                sseSource.onerror = () => sseSource.close();
+            }
+            // 发送消息
+            async function sendMessage() {
+                const content = messageInput.value.trim();
+                if (!content && chatAttachments.length === 0) return;
+                // 添加用户消息
+                addMessage('user', content, chatAttachments);
+                messageInput.value = '';
+                // 先清空上一次的流式缓存
+                currentStreamMsg = null;
+                // 先显示加载提示
+                addMessage('ai', '正在思考中...');
+                scrollToBottom();
+                try {
+                    // 真实调用后端对话接口，传入自定义SESSION_ID和主界面完全隔离
+                    await fetch(`/api/task/submit?session_id=${SESSION_ID}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            task_type: "chat", // 指定任务类型为聊天
+                            params: {
+                                query: content,
+                                system_prompt: (localStorage.getItem("ai_system_prompt") || currentSelectedPrompt || "") + (currentProjectPrompt || ""),
+                                project_id: currentSelectedProject ? currentSelectedProject.project_id : "",
+                                attachments: chatAttachments, // 自动带上上传的文件/截图
+                                enable_tool_call: true,
+                                enable_rag_recall: true
+                            }
+                        })
+                    })
+                    // 清空已上传的附件缓存
+                    chatAttachments = [];
+                    renderAttachments();
+                    // 启动SSE监听接收AI回复
+                    initSSE();
+                } catch (e) {
+                    const lastAiMsg = document.querySelector('.msg.ai:last-child .content');
+                    lastAiMsg.textContent = '请求失败，请稍后重试：' + e.message;
+                }
+            }
+
+            // 智能折叠管理器（完全对齐chat_ui正向逻辑，无强制高度）
+            function updateMessageFoldStates() {
+                const messages = chatArea.querySelectorAll('.msg');
+                if (messages.length === 0) return;
+                const lineHeight = 19.5; // 13px字号*1.5行高=单排高度，和chat_ui完全一致
+                const foldThreshold = lineHeight * 4; // 超过4行才触发折叠
+                messages.forEach((msg, index) => {
+                    const content = msg.querySelector('.content');
+                    const toggleBtn = msg.querySelector('.msg-toggle-btn');
+                    if (!content || !toggleBtn) return;
+                    // 先清除所有折叠类，按真实高度判断
+                    content.classList.remove('fold', 'expanded');
+                    const realHeight = content.scrollHeight;
+                    // 最新两条消息（用户+AI）永远不折叠，完全自适应高度
+                    if (index >= messages.length - 2) {
+                        content.classList.add('expanded');
+                        toggleBtn.textContent = '👆 收起';
+                        toggleBtn.style.display = realHeight > foldThreshold ? 'inline-block' : 'none';
+                    } else {
+                        // 历史消息仅超过4行才折叠，否则完全自适应
+                        if (realHeight > foldThreshold) {
+                            content.classList.add('fold');
+                            toggleBtn.textContent = '👇 展开';
+                            toggleBtn.style.display = 'inline-block';
+                        } else {
+                            toggleBtn.style.display = 'none';
+                        }
+                    }
+                });
+            }
+
+            // addMessage支持附件渲染（完全对齐chat_ui）
+            function addMessage(role, content, attachments = []) {
+                const msg = document.createElement('div');
+                msg.className = `msg ${role}`;
+            msg.innerHTML = `
+                    <div class="avatar">${role === 'user' ? '我' : '<img src="/logo.png" alt="AI助手">'}</div>
+                    <div class="content">
+                        <div class="msg-actions" data-response="${encodeURIComponent(content)}">
+                            <button class="msg-toggle-btn" style="display:none;">👇 展开</button>
+                            <button class="msg-copy-btn">📋 复制</button>
+                        </div>
+                        <!-- 新增独立内容容器，完全不触碰按钮和原有气泡样式 -->
+                        <div class="content-inner">${role === 'user' ? escapeHtml(content) : escapeHtml(decodeEscapeChars(autoCloseToolBlocks(content)))}</div>
+                    </div>
+                `;
+                const contentEl = msg.querySelector('.content');
+                // 渲染附件
+                if (attachments.length > 0) {
+                    const attachmentsEl = document.createElement('div');
+                    attachmentsEl.className = 'msg-attachments';
+                    attachments.forEach(item => {
+                        if (item.file_type === 'image') {
+                            attachmentsEl.innerHTML += `<img src="${item.url}" alt="${item.original_name}" class="img-item" title="${item.original_name}" onclick="window.open('${item.url}')">`;
+                        } else {
+                            attachmentsEl.innerHTML += `<div class="file-card"><span>📄</span><span>${item.original_name}</span><a href="${item.url}" target="_blank" style="color:#165DFF;margin-left:auto;">下载</a></div>`;
+                        }
+                    });
+                    contentEl.appendChild(attachmentsEl);
+                }
+                chatArea.appendChild(msg);
+                scrollToBottom();
+                // 触发折叠逻辑，和chat_ui完全一致
+                setTimeout(updateMessageFoldStates, 10);
+            }
+
+            // 发送事件绑定
+            sendBtn.addEventListener('click', sendMessage);
+            // IME输入法状态标记
+            let isComposing = false;
+            // 监听输入法组合事件
+            messageInput.addEventListener('compositionstart', () => {
+                isComposing = true;
+            });
+            messageInput.addEventListener('compositionupdate', () => {
+                isComposing = true;
+            });
+            messageInput.addEventListener('compositionend', () => {
+                isComposing = false;
+            });
+            // 悬浮窗专属：聚焦时让出50ms优先级给输入法候选框，避免焦点抢占
+            messageInput.addEventListener('focus', () => {
+                setTimeout(() => messageInput.focus(), 50);
+            });
+            messageInput.addEventListener('keydown', (e) => {
+                // 输入法组合状态下不响应Enter发送，避免打断候选词上屏
+                if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            // 页面加载完成立即加载项目列表，优先读取localStorage同步跨页面状态
+            await loadProjectList();
+            const savedProj = localStorage.getItem('current_selected_project');
+            if (savedProj) {
+                currentSelectedProject = JSON.parse(savedProj);
+                if (currentSelectedProject.project_name === 'default') {
+                    currentProjectPrompt = `\n\n⚠️ 当前为全局记忆状态:
+1. 你能进行全项目操作，并且能使用工具查询、读取、修改仓库外部的电脑文件
+2. 如果需要执行特定项目的开发、修复、调试操作，可提醒用户先选择对应的开发项目
+3. 全局对话记忆独立存储，不会和任何项目记忆混淆`;
+                    projectSelector.value = "";
+                    // 同步切换后端项目状态
+                    await fetch('/api/project/switch', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: savedProj 
+                    });
+                } else {
+                    // 已选具体项目，同步切换后端状态并加载文件列表
+                    const switchRes = await fetch('/api/project/switch', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: savedProj 
+                    });
+                    const switchData = await switchRes.json();
+                    if (switchData.code === 200) {
+                        currentProjectPrompt = `\n\n当前开发项目:${currentSelectedProject.project_name}\n项目文件清单:\n${switchData.file_list.join('\n')}`;
+                    }
+                    projectSelector.value = savedProj;
+                }
+            } else {
+                // 没有保存的项目，自动切换到default
+                await switchProject();
+            }
+            // 加载Prompt模板
+            await loadPromptTemplates();
+        });
+    </script>
+</body>
+</html>

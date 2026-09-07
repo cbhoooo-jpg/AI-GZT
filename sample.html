@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆管理 - AI智能助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        body {
+            background-color: #f7f7f8;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        /* 头部 */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .header h1 {
+            font-size: 22px;
+            font-weight: 600;
+            color: #111;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background-color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            text-decoration: none;
+            color: #333;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:hover {
+            background-color: #f5f5f5;
+        }
+        .btn.primary {
+            background-color: #165DFF;
+            color: #fff;
+            border-color: #165DFF;
+        }
+        .btn.primary:hover {
+            background-color: #0f4cd0;
+        }
+        .btn.danger {
+            background-color: #F53F3F;
+            color: #fff;
+            border-color: #F53F3F;
+        }
+        .btn.danger:hover {
+            background-color: #d93636;
+        }
+        .btn.small {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        /* 搜索筛选区域 */
+        .search-area {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e5e5e5;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .search-area input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+            flex: 1;
+            min-width: 240px;
+        }
+        .search-area input:focus {
+            border-color: #165DFF;
+        }
+        /* 批量操作区域 */
+        .batch-area {
+            background-color: #fff;
+            padding: 16px 20px;
+            border-radius: 8px;
+            border: 1px solid #e5e5e5;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .batch-actions {
+            display: flex;
+            gap: 8px;
+        }
+        /* 样本列表 */
+        .sample-list {
+            background-color: #fff;
+            border-radius: 8px;
+            border: 1px solid #e5e5e5;
+            margin-bottom: 24px;
+        }
+        .sample-item {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            gap: 12px;
+        }
+        .sample-item:last-child {
+            border-bottom: none;
+        }
+        .sample-checkbox {
+            flex-shrink: 0;
+            margin-top: 4px;
+        }
+        .sample-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .sample-query {
+            font-weight: 500;
+            color: #111;
+            line-height: 1.5;
+        }
+        .sample-response {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .sample-response.expanded {
+            -webkit-line-clamp: unset;
+        }
+        .sample-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+        .sample-actions {
+            display: flex;
+            gap: 6px;
+        }
+        /* 分页 */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        .pagination .btn {
+            padding: 6px 12px;
+        }
+        .pagination span {
+            font-size: 14px;
+            color: #666;
+        }
+        /* 编辑弹窗 */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+.modal-content {
+    background-color: #fff;
+    padding: 24px;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 700px;
+    /* 新增滚动优化：最大高度为视口高度的85%，超过自动出滚动条 */
+    max-height: 85vh;
+    overflow-y: auto;
+}
+        .modal-content h3 {
+            margin-bottom: 16px;
+            font-size: 16px;
+        }
+        .modal-content .form-group {
+            margin-bottom: 16px;
+        }
+        .modal-content label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .modal-content textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            min-height: 100px;
+            font-size: 14px;
+            resize: vertical;
+            outline: none;
+        }
+        .modal-content textarea:focus {
+            border-color: #165DFF;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 20px;
+        }
+        .loading {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ddd;
+            border-top-color: #165DFF;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .empty-state {
+            padding: 60px 20px;
+            text-align: center;
+            color: #999;
+        }
+        /* Tab导航 */
+        .tab-nav {
+            background-color: #fff;
+            border-radius: 8px;
+            border: 1px solid #e5e5e5;
+            margin-bottom: 24px;
+            display: flex;
+            overflow: hidden;
+        }
+        .tab-item {
+            padding: 12px 24px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab-item.active {
+            color: #165DFF;
+            border-bottom-color: #165DFF;
+            background-color: #f8faff;
+        }
+        .tab-item:hover {
+            background-color: #f5f5f5;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .tag {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+        .tag.primary {
+            background-color: #e8f3ff;
+            color: #165DFF;
+        }
+        .tag.success {
+            background-color: #e6ffed;
+            color: #00b42a;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 style="display: flex; align-items: center; gap: 8px; overflow: visible;"><img src="/logo.png" style="width: 74px; height: 74px; object-fit: contain; margin: -25px 0;">记忆库</h1>
+    </div>
+
+    <!-- Tab导航 -->
+    <div class="tab-nav">
+        <div class="tab-item" data-tab="memory" onclick="switchTab('memory')">全库记忆管理</div>
+        <div class="tab-item" data-tab="library" onclick="switchTab('library')">记忆库管理</div>
+        <div class="tab-item" data-tab="file" onclick="switchTab('file')">记忆文件管理</div>
+    </div>
+
+    <!-- Tab3：记忆素材库 -->
+    <div class="tab-content" id="tab-memory">
+        <div class="search-area">
+            <input type="text" id="memorySearchInput" placeholder="搜索记忆内容，按Enter搜索" onkeydown="if(event.key==='Enter') loadMemoryList(1)">
+            <label style="display:flex;align-items:center;gap:6px;font-size:14px;">
+                <input type="checkbox" id="onlyNotSynced" onchange="loadMemoryList(1)"> 仅显示未生成样本的记忆
+            </label>
+            <button class="btn primary" onclick="loadMemoryList(1)">🔍 搜索</button>
+            <button class="btn" onclick="loadMemoryList(1)">🔄 刷新</button>
+        </div>
+
+        <div class="sample-list" id="memoryList">
+            <div class="empty-state">加载中...</div>
+        </div>
+
+        <div class="pagination" id="memoryPagination" style="display:none;">
+            <button class="btn" id="memoryPrevBtn" onclick="loadMemoryList(currentMemoryPage-1)" disabled>上一页</button>
+            <span id="memoryPageInfo">第 1 页 / 共 1 页</span>
+            <button class="btn" id="memoryNextBtn" onclick="loadMemoryList(currentMemoryPage+1)" disabled>下一页</button>
+        </div>
+    </div>
+
+    <!-- Tab4：记忆库管理 -->
+    <div class="tab-content" id="tab-library">
+        <div class="search-area">
+            <div style="flex:1;display:flex;align-items:center;gap:12px;">
+                <span style="font-size:14px;color:#666;" id="totalMemoryCount">总记忆数：0 条</span>
+            </div>
+            <button class="btn primary" onclick="loadMemoryLibraryList()">🔄 刷新列表</button>
+        </div>
+
+        <div class="sample-list" id="memoryLibraryList">
+            <div class="empty-state">加载中...</div>
+        </div>
+    </div>
+
+    <!-- Tab5：记忆文件管理 -->
+    <div class="tab-content" id="tab-file">
+        <div class="search-area">
+            <div style="flex:1;display:flex;align-items:center;gap:12px;">
+                <span style="font-size:14px;color:#F53F3F;">⚠️ 仅可清理项目对话历史缓存文件，记忆库内容、系统核心文件不会被修改</span>
+            </div>
+            <button class="btn primary" onclick="loadMemoryFileList()">🔄 刷新列表</button>
+        </div>
+
+        <div class="sample-list" id="memoryFileList">
+            <div class="empty-state">加载中...</div>
+        </div>
+    </div>
+
+
+    <script>
+        // 全局变量
+        const pageSize = 10;
+        let currentTab = 'train';
+        // 记忆素材库变量
+        let currentMemoryPage = 1;
+        let totalMemoryPages = 1;
+        let currentGenMemory = null;
+        let currentGenVariants = [];
+
+        // 页面加载自动加载默认Tab
+        window.onload = () => {
+            loadTrainSamples(1);
+        };
+
+        // Tab切换
+        function switchTab(tab) {
+            currentTab = tab;
+            // 切换Tab样式
+            document.querySelectorAll('.tab-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.tab === tab) item.classList.add('active');
+            });
+            // 切换内容显示
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            // 加载对应Tab数据
+            if (tab === 'memory') loadMemoryList(1);
+            if (tab === 'library') loadMemoryLibraryList();
+            if (tab === 'file') loadMemoryFileList();
+        }
+        // -------------------------- 记忆素材库逻辑 --------------------------
+        async function loadMemoryList(page) {
+            currentMemoryPage = Math.max(1, page);
+            const searchKeyword = document.getElementById('memorySearchInput').value.trim();
+            const onlyNotSynced = document.getElementById('onlyNotSynced').checked;
+            const listContainer = document.getElementById('memoryList');
+            const paginationContainer = document.getElementById('memoryPagination');
+            
+            listContainer.innerHTML = '<div class="empty-state">加载中...</div>';
+
+            try {
+                const params = new URLSearchParams({
+                    page: currentMemoryPage,
+                    page_size: pageSize,
+                    keyword: searchKeyword,
+                    only_not_synced: onlyNotSynced ? 1 : 0
+                });
+                const res = await fetch(`/api/memory/list?${params}`);
+                const data = await res.json();
+                totalMemoryPages = Math.ceil(data.total / pageSize) || 1;
+
+                if (data.memories.length === 0) {
+                    listContainer.innerHTML = '<div class="empty-state">暂无匹配的记忆素材</div>';
+                    paginationContainer.style.display = 'none';
+                    return;
+                }
+
+                listContainer.innerHTML = '';
+                // 后端接口已按timestamp倒序返回，无需额外反转，且已正确拆分query/response字段，无需前端二次分割
+                data.memories.forEach(memory => {
+                    // 直接使用后端返回的拆分好的字段，兼容旧数据兜底处理
+                    const userContent = (memory.query || '').replace(/^用户问[:：]/, '').trim();
+                    const aiContent = (memory.response || '').replace(/^回答[:：]/, '').trim();
+                    
+                    const item = document.createElement('div');
+                    item.className = 'sample-item';
+                    item.innerHTML = `
+                        <div style="flex:1;">
+                            <!-- 按钮栏:右上角对齐，固定在内容框上方 -->
+                            <div style="text-align:right;margin-bottom:8px;">
+                        <button class="btn small danger" onclick="deleteMemory('${memory.id}')">🗑️ 删除记忆</button>
+                            </div>
+                            <!-- 记忆内容内框 -->
+                            <div style="border:1px solid #e5e5e5;border-radius:8px;padding:16px;background-color:#fcfcfc;white-space: pre-wrap;word-break: break-all;overflow-wrap: break-word;max-height:400px;overflow-y:auto;">
+                                <div style="margin-bottom:8px;">
+                                    ${memory.synced_to_lora ? '<span class="tag success">已生成样本</span>' : ''}
+                                    <strong style="color:#165DFF;">用户:</strong><span class="memory-query"></span>
+                                </div>
+                                <div style="color:#333;margin-bottom:8px;">
+                                    <strong style="color:#00b42a;">AI:</strong><span class="memory-response"></span>
+                                </div>
+                                <div style="font-size:12px;color:#999;">调用次数:${memory.call_count} | 创建时间:${memory.create_time}</div>
+                            </div>
+                        </div>
+                    `;
+                    // 用textContent自动转义所有特殊字符，避免HTML标签破坏DOM结构导致内容错位
+                    item.querySelector('.memory-query').textContent = userContent;
+                    item.querySelector('.memory-response').textContent = aiContent;
+                    listContainer.appendChild(item);
+                });
+
+                // 更新分页
+                paginationContainer.style.display = 'flex';
+                document.getElementById('memoryPageInfo').innerText = `第 ${currentMemoryPage} 页 / 共 ${totalMemoryPages} 页`;
+                document.getElementById('memoryPrevBtn').disabled = currentMemoryPage <= 1;
+                document.getElementById('memoryNextBtn').disabled = currentMemoryPage >= totalMemoryPages;
+            } catch (e) {
+                listContainer.innerHTML = '<div class="empty-state">加载失败，请刷新重试</div>';
+            }
+        }
+        // 删除记忆功能
+        async function deleteMemory(memoryId) {
+            if (!confirm('确定要删除这条记忆吗？删除后不可恢复！')) return;
+            try {
+                const res = await fetch('/api/memory/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: memoryId})
+                });
+                if (res.ok) {
+                    alert('记忆删除成功');
+                    loadMemoryList(currentMemoryPage);
+                } else {
+                    alert('删除失败，请重试');
+                }
+            } catch (e) {
+                alert('删除失败，请重试');
+            }
+        }
+        // 弹窗按钮兼容函数
+        // -------------------------- 记忆文件管理逻辑 --------------------------
+        async function loadMemoryFileList() {
+            const listContainer = document.getElementById('memoryFileList');
+            listContainer.innerHTML = '<div class="empty-state">加载中...</div>';
+            try {
+                const res = await fetch('/api/memory/file/list');
+                const data = await res.json();
+                if (data.code !== 200) {
+                    listContainer.innerHTML = '<div class="empty-state">加载失败：' + data.msg + '</div>';
+                    return;
+                }
+                const fileList = data.data;
+
+                if (fileList.length === 0) {
+                    listContainer.innerHTML = '<div class="empty-state">暂无记忆相关文件</div>';
+                    return;
+                }
+
+                listContainer.innerHTML = '';
+                fileList.forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = 'sample-item';
+                    // 系统文件禁用清空按钮，项目文件才允许操作
+                    const clearBtnDisabled = file.is_system ? 'disabled' : '';
+                    const btnTip = file.is_system ? '系统文件禁止清理' : '仅清空对话历史缓存，不影响记忆库内容';
+                    item.innerHTML = `
+                        <div style="flex:1;display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <div style="font-size:16px;font-weight:500;color:#111;margin-bottom:6px;">
+                                    ${file.file_desc}
+                                    ${file.is_system ? '<span class="tag primary">系统文件</span>' : '<span class="tag success">项目文件</span>'}
+                                </div>
+                                <div style="font-size:14px;color:#666;margin-bottom:4px;">文件名：${file.file_name}</div>
+                                <div style="font-size:12px;color:#999;">文件大小：${file.file_size} | 最后修改时间：${file.modify_time}</div>
+                            </div>
+                            <div>
+                                <button class="btn danger" onclick="clearMemoryFile('${file.file_name}', '${file.file_desc}')" ${clearBtnDisabled} title="${btnTip}">
+                                    🗑️ 清空文件内容
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    listContainer.appendChild(item);
+                });
+            } catch (e) {
+                listContainer.innerHTML = '<div class="empty-state">加载失败，请刷新重试</div>';
+            }
+        }
+
+        async function clearMemoryFile(fileName, fileDesc) {
+            if (!confirm(`确定要清空【${fileDesc}】吗？\n⚠️ 该操作仅清空对话历史缓存内容，记忆库中的记忆条目不会被删除，不会影响记忆召回功能！`)) return;
+            try {
+                const res = await fetch('/api/memory/file/clear', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({file_name: fileName})
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    alert(`✅ ${data.msg}`);
+                    loadMemoryFileList();
+                } else {
+                    alert('❌ 清空失败：' + data.msg);
+                }
+            } catch (e) {
+                alert('❌ 清空失败，请重试');
+            }
+        }
+        // -------------------------- 记忆库管理逻辑 --------------------------
+        async function loadMemoryLibraryList() {
+            const listContainer = document.getElementById('memoryLibraryList');
+            const totalCountEl = document.getElementById('totalMemoryCount');
+            listContainer.innerHTML = '<div class="empty-state">加载中...</div>';
+            try {
+                const res = await fetch('/api/memory/library/list');
+                const data = await res.json();
+                if (data.code !== 200) {
+                    listContainer.innerHTML = '<div class="empty-state">加载失败：' + data.msg + '</div>';
+                    return;
+                }
+                const libraryList = data.data;
+                // 统计总记忆数
+                let totalCount = 0;
+                libraryList.forEach(lib => totalCount += lib.memory_count);
+                totalCountEl.innerText = `总记忆数：${totalCount} 条`;
+
+                if (libraryList.length === 0) {
+                    listContainer.innerHTML = '<div class="empty-state">暂无记忆库</div>';
+                    return;
+                }
+
+                listContainer.innerHTML = '';
+                libraryList.forEach(library => {
+                    const item = document.createElement('div');
+                    item.className = 'sample-item';
+                    item.innerHTML = `
+                        <div style="flex:1;display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <div style="font-size:16px;font-weight:500;color:#111;margin-bottom:6px;">
+                                    ${library.library_name}
+                                    ${library.is_main }
+                                </div>
+                                <div style="font-size:14px;color:#666;">记忆条数：${library.memory_count} 条</div>
+                            </div>
+                            <div>
+                                <button class="btn danger" onclick="clearMemoryLibrary('${library.library_id}', '${library.library_name}')" ${library.memory_count === 0 ? 'disabled' : ''}>
+                                    🗑️ 清空该库
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    listContainer.appendChild(item);
+                });
+            } catch (e) {
+                listContainer.innerHTML = '<div class="empty-state">加载失败，请刷新重试</div>';
+            }
+        }
+
+        async function clearMemoryLibrary(libraryId, libraryName) {
+            if (!confirm(`确定要清空【${libraryName}】吗？\n该操作会永久删除该库下所有记忆，且不可恢复！`)) return;
+            try {
+                const res = await fetch('/api/memory/library/clear', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({library_id: libraryId})
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    alert(`清空成功，共删除${data.deleted_count}条记忆`);
+                    loadMemoryLibraryList();
+                    // 如果当前在记忆素材库Tab，同步刷新记忆列表
+                    if (currentTab === 'memory') loadMemoryList(1);
+                } else {
+                    alert('清空失败：' + data.msg);
+                }
+            } catch (e) {
+                alert('清空失败，请重试');
+            }
+        }
+        function closeEditModal() {
+            closeTrainEditModal();
+        }
+        function saveEditedSample() {
+            saveTrainEditedSample();
+        }
+        // 兼容旧弹窗调用
+        function closeEditModal() {
+            closeTrainEditModal();
+        }
+        function saveEditedSample() {
+            saveTrainEditedSample();
+        }
+    </script>
+</body>
+</html>

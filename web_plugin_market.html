@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>插件市场 - AI智能助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        success: '#00B42A',
+                        warning: '#FF7D00',
+                        danger: '#F53F3F',
+                        dark: '#1D2129',
+                        light: '#F2F3F5'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 原生开关组件样式 */
+        .switch-toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch-toggle input { opacity: 0; width: 0; height: 0; }
+        .switch-toggle .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #e5e7eb; transition: .4s; border-radius: 24px; }
+        .switch-toggle .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+        .switch-toggle input:checked + .slider { background-color: #165DFF; }
+        .switch-toggle input:checked + .slider:before { transform: translateX(20px); }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <!-- 主内容区 -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- 页面标题 -->
+        <div class="mb-8 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex-shrink-0">
+                <h1 style="display: flex; align-items: center; gap: 14px; overflow: visible; font-size: 28px; font-weight: bold;"><img src="/logo.png" style="width: 74px; height: 74px; object-fit: contain; margin: -25px 0;">插件管理</h1>
+        </div>
+    </div>
+        <div class="flex gap-3 flex-shrink-0">
+            <button id="createPluginBtn" class="bg-success text-white px-4 py-2 rounded-lg hover:bg-success/90 transition flex items-center whitespace-nowrap">
+                <i class=""></i>
+            </button>
+            <div class="relative">
+                <button id="importPluginBtn" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition flex items-center whitespace-nowrap">
+                    <i class="fas fa-upload mr-2"></i>安装插件
+                    <i class="fas fa-chevron-down ml-2 text-xs"></i>
+                </button>
+            <!-- 下拉菜单 -->
+            <div id="importDropdown" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 hidden z-10">
+                <div class="py-1">
+                    <button id="importZipBtn" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                        <i class="fas fa-file-archive mr-2 text-gray-500"></i> 上传ZIP插件包
+                    </button>
+                    <button id="importFolderBtn" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                        <i class="fas fa-folder mr-2 text-gray-500"></i> 上传插件
+                    </button>
+                </div>
+            </div>
+            <input type="file" id="pluginZipInput" accept=".zip" class="hidden">
+            <input type="file" id="pluginFolderInput" webkitdirectory directory class="hidden">
+        </div>
+    </div>
+
+        <!-- Tab切换 -->
+        <div class="mt-4 mb-6 border-b border-gray-200">
+            <div class="flex space-x-8 flex-nowrap overflow-x-auto pb-1">
+                <button id="tab-installed" class="py-4 px-1 border-b-2 border-primary text-primary font-medium whitespace-nowrap flex-shrink-0">已安装插件</button>
+                <button id="tab-available" class="py-4 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium whitespace-nowrap flex-shrink-0">可安装插件</button>
+                <button id="tab-develop" class="py-4 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium whitespace-nowrap flex-shrink-0">开发新插件</button>
+            </div>
+        </div>
+
+        <!-- 加载状态 -->
+        <div id="loading" class="text-center py-20">
+            <i class="fas fa-circle-notch fa-spin text-primary text-4xl mb-4"></i>
+            <p class="text-gray-500">加载中...</p>
+        </div>
+
+        <!-- 已安装插件列表 -->
+        <div id="installed-panel" class="hidden">
+            <div id="installed-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- 插件卡片动态生成 -->
+            </div>
+            <div id="installed-empty" class="hidden text-center py-20">
+                <i class="fas fa-puzzle-piece text-gray-300 text-6xl mb-4"></i>
+                <p class="text-gray-500 text-lg">暂无已安装插件</p>
+                <button onclick="switchTab('available')" class="mt-4 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition">去插件市场逛逛</button>
+            </div>
+        </div>
+
+        <!-- 可安装插件列表 -->
+        <div id="available-panel" class="hidden">
+            <div id="available-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- 插件卡片动态生成 -->
+            </div>
+            <div id="available-empty" class="hidden text-center py-20">
+                <i class="fas fa-store text-gray-300 text-6xl mb-4"></i>
+                <p class="text-gray-500 text-lg">暂无可用插件，云端插件市场开发中</p>
+            </div>
+        </div>
+        <!-- 开发新插件面板 -->
+        <div id="develop-panel" class="hidden">
+            <div class="mb-6">
+                <h2 class="text-xl font-bold text-dark mb-2">选择预制模板</h2>
+                <p class="text-gray-500">选择适合的模板，自动填充通用逻辑，无需从零开始编写代码</p>
+            </div>
+            <div id="template-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                <!-- 模板卡片动态生成 -->
+            </div>
+            <div id="template-loading" class="text-center py-10">
+                <i class="fas fa-circle-notch fa-spin text-primary text-3xl mb-4"></i>
+                <p class="text-gray-500">加载模板列表中...</p>
+            </div>
+            <div id="template-empty" class="hidden text-center py-10">
+                <i class="fas fa-puzzle-piece text-gray-300 text-6xl mb-4"></i>
+                <p class="text-gray-500 text-lg">暂无可用模板</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示弹窗 -->
+    <div id="toast" class="fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300">
+        <div class="flex items-center">
+            <i id="toast-icon" class="mr-2"></i>
+            <span id="toast-message"></span>
+        </div>
+    </div>
+    <!-- 极简一键生成插件弹窗 -->
+    <div id="quick-generate-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl w-full max-w-lg p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-dark">一键生成插件</h3>
+                <button onclick="closeQuickGenerate()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">插件名称 <span class="text-danger">*</span></label>
+                    <input type="text" id="quick_name" placeholder="例如:AI音乐生成插件" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">触发关键词 <span class="text-danger">*</span></label>
+                    <input type="text" id="quick_trigger" placeholder="例如:生成音乐" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                    <p class="text-xs text-gray-500 mt-1">用户输入该关键词即可触发插件</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">功能描述（可选）</label>
+                    <textarea id="quick_desc" rows="2" placeholder="简要描述插件功能，留空自动生成" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">保存路径 <span class="text-danger">*</span></label>
+                    <div class="flex gap-2">
+                        <input type="text" id="quick_save_dir" placeholder="插件保存的目录路径" value="D:/AI仓库文件夹/AI智能助手/plugins/" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">目录不存在会自动创建，默认保存在仓库文件夹的插件开发目录下，专门用于插件二次开发</p>
+                </div>
+                <div class="flex justify-end gap-3 pt-4 border-t">
+                    <button type="button" onclick="closeQuickGenerate()" class="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition">取消</button>
+                    <button type="button" onclick="doQuickGenerate()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition">🚀 一键生成</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 插件配置弹窗 -->    
+    <div id="config-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-dark" id="config-modal-title">插件配置</h2>
+                <button onclick="closePluginConfig()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6" id="config-form-container">
+                <!-- 表单动态生成 -->
+                <div class="text-center py-10">
+                    <i class="fas fa-circle-notch fa-spin text-primary text-3xl mb-4"></i>
+                    <p class="text-gray-500">加载配置中...</p>
+                </div>
+            </div>
+            <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+                <button onclick="closePluginConfig()" class="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition">
+                    取消
+                </button>
+                <button id="test-connection-btn" onclick="testPluginConnection()" class="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary/5 transition hidden">
+                    <i class="fas fa-plug mr-1"></i> 测试连接
+                </button>
+                <button onclick="savePluginConfig()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition">
+                    保存配置
+                </button>
+            </div>
+        </div>
+    </div>
+    <script>
+        let pluginData = { installed: [], available: [] };
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPluginList();
+            // Tab切换事件
+            document.getElementById('tab-installed').addEventListener('click', () => switchTab('installed'));
+            document.getElementById('tab-available').addEventListener('click', () => switchTab('available'));
+            document.getElementById('tab-develop').addEventListener('click', () => switchTab('develop'));
+            // 下拉菜单显示/隐藏
+            document.getElementById('importPluginBtn').addEventListener('click', () => {
+                const dropdown = document.getElementById('importDropdown');
+                dropdown.classList.toggle('hidden');
+            });
+            // 点击页面其他地方关闭下拉
+            document.addEventListener('click', (e) => {
+                if (!document.getElementById('importPluginBtn').contains(e.target) && !document.getElementById('importDropdown').contains(e.target)) {
+                    document.getElementById('importDropdown').classList.add('hidden');
+                }
+            });
+            // 上传ZIP包逻辑
+            document.getElementById('importZipBtn').addEventListener('click', () => {
+                document.getElementById('importDropdown').classList.add('hidden');
+                document.getElementById('pluginZipInput').click();
+            });
+            document.getElementById('pluginZipInput').addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                if (!file.name.endsWith('.zip')) {
+                    showToast('请选择zip格式的插件压缩包', 'error');
+                    return;
+                }
+                const formData = new FormData();
+                formData.append('plugin_file', file);
+                try {
+                    showToast('正在上传安装插件...', 'info');
+                    const res = await fetch('/api/plugin/install/local', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+                    if (data.code === 200) {
+                        showToast('插件安装成功', 'success');
+                        loadPluginList();
+                    } else {
+                        showToast(data.msg, 'error');
+                    }
+                } catch (err) {
+                    showToast('上传失败，请检查服务是否正常', 'error');
+                }
+                e.target.value = '';
+            });
+            // 上传文件夹逻辑
+            document.getElementById('importFolderBtn').addEventListener('click', () => {
+                document.getElementById('importDropdown').classList.add('hidden');
+                document.getElementById('pluginFolderInput').click();
+            });
+            document.getElementById('pluginFolderInput').addEventListener('change', async (e) => {
+                const files = e.target.files;
+                if (!files || files.length === 0) return;
+                // 提取插件名称（文件夹名）
+                const firstFile = files[0];
+                const pluginName = firstFile.webkitRelativePath.split('/')[0];
+                const formData = new FormData();
+                formData.append('plugin_name', pluginName);
+                // 遍历所有文件，添加到formData
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const relativePath = file.webkitRelativePath.replace(pluginName + '/', '');
+                    formData.append(`file_${i}`, file);
+                    formData.append(`path_${i}`, relativePath);
+                }
+                formData.append('file_count', files.length);
+                try {
+                    showToast('正在上传安装插件...', 'info');
+                    const res = await fetch('/api/plugin/install/folder', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+                    if (data.code === 200) {
+                        showToast('插件安装成功', 'success');
+                        loadPluginList();
+                    } else {
+                        showToast(data.msg, 'error');
+                    }
+                } catch (err) {
+                    showToast('上传失败，请检查服务是否正常', 'error');
+                }
+                e.target.value = '';
+            });
+        });
+
+        // 切换Tab
+        // 全局变量:模板列表、当前选中模板ID
+        let templateList = [];
+        let selectedTemplateId = null;
+        function switchTab(tab) {
+            const installedTab = document.getElementById('tab-installed');
+            const availableTab = document.getElementById('tab-available');
+            const developTab = document.getElementById('tab-develop');
+            const installedPanel = document.getElementById('installed-panel');
+            const availablePanel = document.getElementById('available-panel');
+            const developPanel = document.getElementById('develop-panel');
+
+            // 重置所有Tab样式
+            [installedTab, availableTab, developTab].forEach(t => {
+                t.classList.remove('border-primary', 'text-primary');
+                t.classList.add('border-transparent', 'text-gray-500');
+            });
+            // 隐藏所有面板
+            [installedPanel, availablePanel, developPanel].forEach(p => p.classList.add('hidden'));
+
+            if (tab === 'installed') {
+                installedTab.classList.add('border-primary', 'text-primary');
+                installedPanel.classList.remove('hidden');
+            } else if (tab === 'available') {
+                availableTab.classList.add('border-primary', 'text-primary');
+                availablePanel.classList.remove('hidden');
+            } else if (tab === 'develop') {
+                developTab.classList.add('border-primary', 'text-primary');
+                developPanel.classList.remove('hidden');
+                loadTemplateList();
+            }
+        }
+
+        // 加载模板列表
+        async function loadTemplateList() {
+            if (templateList.length > 0) {
+                renderTemplateList();
+                return;
+            }
+            document.getElementById('template-loading').classList.remove('hidden');
+            document.getElementById('template-empty').classList.add('hidden');
+            try {
+                const res = await fetch('/api/plugin/templates');
+                const data = await res.json();
+                if (data.code === 200) {
+                    templateList = data.data;
+                    renderTemplateList();
+                } else {
+                    showToast(data.msg, 'error');
+                    document.getElementById('template-empty').classList.remove('hidden');
+                }
+            } catch (e) {
+                showToast('加载模板列表失败，请检查服务是否正常', 'error');
+                document.getElementById('template-empty').classList.remove('hidden');
+            } finally {
+                document.getElementById('template-loading').classList.add('hidden');
+            }
+        }
+
+        // 渲染模板列表
+        function renderTemplateList() {
+            const list = document.getElementById('template-list');
+            if (templateList.length === 0) {
+                document.getElementById('template-empty').classList.remove('hidden');
+                list.innerHTML = '';
+                return;
+            }
+            document.getElementById('template-empty').classList.add('hidden');
+            list.innerHTML = templateList.map(template => `
+                <div class="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition border-2 ${selectedTemplateId === template.template_id ? 'border-primary' : 'border-transparent'}" onclick="selectTemplate('${template.template_id}')">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center text-primary text-xl">
+                                <i class="fas fa-cubes"></i>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="font-bold text-lg text-dark">${template.name}</h3>
+                                <p class="text-xs text-gray-500">${template.scene}</p>
+                            </div>
+                        </div>
+                        ${selectedTemplateId === template.template_id ? '<i class="fas fa-check-circle text-success text-xl"></i>' : ''}
+                    </div>
+                    <div class="mb-4">
+                        <div class="text-xs text-gray-600 mb-2">📋 默认配置</div>
+                        <div class="flex flex-wrap gap-1">
+                            ${template.default_config ? template.default_config.map(c => `<span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">${c.label}</span>`).join('') : ''}
+                        </div>
+                    </div>
+                    <div class="mb-6">
+                        <div class="text-xs text-gray-600 mb-2">📥 默认入参</div>
+                        <div class="flex flex-wrap gap-1">
+                            ${template.default_params ? template.default_params.map(p => `<span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">${p.name}</span>`).join('') : ''}
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="useTemplate('${template.template_id}')" class="w-full px-3 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition text-sm">
+                            <i class="fas fa-magic mr-1"></i> 一键生成插件
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 选择模板
+        function selectTemplate(templateId) {
+            selectedTemplateId = templateId;
+            renderTemplateList();
+        }
+
+        // 全局变量:当前选中的模板ID
+        let currentQuickTemplateId = '';
+        // 使用模板:极简一键生成
+        function useTemplate(templateId) {
+            currentQuickTemplateId = templateId;
+            // 打开极简生成弹窗
+            document.getElementById('quick-generate-modal').classList.remove('hidden');
+            // 清空表单
+            document.getElementById('quick_name').value = '';
+            document.getElementById('quick_trigger').value = '';
+            document.getElementById('quick_desc').value = '';
+        }
+
+        // 关闭极简生成弹窗
+        function closeQuickGenerate() {
+            currentQuickTemplateId = '';
+            document.getElementById('quick-generate-modal').classList.add('hidden');
+        }
+
+        // 执行一键生成
+        async function doQuickGenerate() {
+            const name = document.getElementById('quick_name').value.trim();
+            const trigger = document.getElementById('quick_trigger').value.trim();
+            const desc = document.getElementById('quick_desc').value.trim() || `${name}，使用触发关键词即可调用生成功能`;
+            
+            if (!name || !trigger) {
+                showToast('请填写插件名称和触发关键词', 'error');
+                return;
+            }
+
+            // 自动生成插件ID（转拼音+小写+下划线）
+            const pluginId = name.toLowerCase().replace(/[\u4e00-\u9fa5]/g, '').replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            if (!pluginId) {
+                showToast('插件名称需要包含英文或数字', 'error');
+                return;
+            }
+
+            try {
+                const saveDir = document.getElementById('quick_save_dir').value.trim();
+                showToast('正在生成插件...', 'info');
+                const res = await fetch('/api/plugin/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        plugin_info: {
+                            plugin_id: pluginId,
+                            name: name,
+                            description: desc,
+                            version: '1.0.0',
+                            author: '插件生成器',
+                            trigger_keyword: trigger
+                        },
+                        save_dir: saveDir,
+                        preset_template_id: currentQuickTemplateId
+                    })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    showToast('插件生成成功！已自动添加到已安装插件列表', 'success');
+                    closeQuickGenerate();
+                    setTimeout(() => {
+                        switchTab('installed');
+                        loadPluginList();
+                    }, 1000);
+                } else {
+                    showToast('生成失败:' + data.msg, 'error');
+                }
+            } catch (e) {
+                showToast('网络错误，请检查服务是否正常', 'error');
+            }
+        }
+
+        // 预览模板生成的代码
+        async function previewTemplate(templateId) {
+            // 模拟最小必要参数生成预览
+            const pluginInfo = {
+                plugin_id: "preview_demo",
+                name: "预览演示插件",
+                description: "模板预览演示",
+                version: "1.0.0",
+                author: "预览",
+                trigger_keyword: "预览测试"
+            };
+            try {
+                showToast('正在生成预览代码...', 'info');
+                const res = await fetch('/api/plugin/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        plugin_info: pluginInfo,
+                        preset_template_id: templateId
+                    })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    // 弹出预览窗口
+                    const previewWindow = window.open('', 'pluginPreview', 'width=1000,height=700');
+                    // 先在当前上下文拼接所有预览内容，避免嵌套模板字符串语法冲突
+                    let previewHtml = '';
+                    for (const [fileName, content] of Object.entries(data.data)) {
+                        const lang = fileName.endsWith('.py') ? 'python' : fileName.endsWith('.json') ? 'json' : 'markdown';
+                        const escapedContent = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        previewHtml += `
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <h2 class="text-lg font-semibold mb-3 text-primary">${fileName}</h2>
+                            <pre><code class="language-${lang}">${escapedContent}</code></pre>
+                        </div>
+                        `;
+                    }
+                    // 写入预览窗口内容
+                    previewWindow.document.write();
+                    previewWindow.document.close();
+                } else {
+                    showToast(data.msg, 'error');
+                }
+            } catch (e) {
+                showToast('预览失败，请检查服务是否正常', 'error');
+            }
+        }
+
+        // 加载插件列表
+        async function loadPluginList() {
+            try {
+                const res = await fetch('/api/plugin/list');
+                const data = await res.json();
+                if (data.code === 200) {
+                    pluginData = data.data;
+                    renderInstalledPlugins();
+                    renderAvailablePlugins();
+                    switchTab('installed');
+                } else {
+                    showToast('加载失败:' + data.msg, 'error');
+                }
+            } catch (e) {
+                showToast('网络错误，请检查服务是否正常', 'error');
+            } finally {
+                // 无论成功失败都隐藏loading
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        // 渲染已安装插件
+        function renderInstalledPlugins() {
+            const list = document.getElementById('installed-list');
+            const empty = document.getElementById('installed-empty');
+            if (pluginData.installed.length === 0) {
+                list.innerHTML = '';
+                empty.classList.remove('hidden');
+                return;
+            }
+            empty.classList.add('hidden');
+            list.innerHTML = pluginData.installed.map(plugin => `
+                <div class="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center text-primary text-xl">
+                                <i class="fas fa-puzzle-piece"></i>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="font-bold text-lg text-dark">${plugin.name}</h3>
+                                <p class="text-xs text-gray-500">v${plugin.version} · 作者:${plugin.author}</p>
+                            </div>
+                        </div>
+                        <span class="px-2 py-1 rounded-full text-xs ${plugin.enabled ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-500'}">
+                            ${plugin.enabled ? '启用' : '已禁用'}
+                        </span>
+                    </div>
+                    <p class="text-gray-600 text-sm mb-4 h-12 overflow-hidden">${plugin.description}</p>
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        ${plugin.permissions.map(p => `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">${p}</span>`).join('')}
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        ${plugin.enabled ? 
+                            `<button onclick="operatePlugin('${plugin.plugin_id}', 'disable')" class="flex-1 min-w-[80px] px-3 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition text-sm">
+                                <i class="fas fa-ban mr-1"></i> 禁用
+                            </button>` : 
+                            `<button onclick="operatePlugin('${plugin.plugin_id}', 'enable')" class="flex-1 min-w-[80px] px-3 py-2 border border-primary text-primary rounded-lg hover:bg-primary/5 transition text-sm">
+                                <i class="fas fa-check mr-1"></i> 启用
+                            </button>`
+                        }
+                        <button onclick="operatePlugin('${plugin.plugin_id}', 'uninstall')" class="flex-1 min-w-[80px] px-3 py-2 border border-danger text-danger rounded-lg hover:bg-danger/5 transition text-sm">
+                            <i class="fas fa-trash mr-1"></i> 卸载
+                        </button>
+                        <button onclick="openPluginConfig('${plugin.plugin_id}')" class="px-3 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition text-sm">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                        ${(plugin.actions || []).map(action => {
+                            const btnClass = action.type === 'primary' ? 'bg-primary text-white hover:bg-primary/90' : 
+                                            action.type === 'danger' ? 'bg-danger text-white hover:bg-danger/90' : 
+                                            'border border-gray-200 text-gray-600 hover:bg-gray-50';
+                            return `<button onclick="executePluginAction('${plugin.plugin_id}', '${action.key}')" class="flex-1 min-w-[100px] px-3 py-2 rounded-lg transition text-sm ${btnClass}">
+                                ${action.icon ? `<i class="${action.icon} mr-1"></i>` : ''}${action.label}
+                            </button>`;
+                        }).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 渲染可安装插件
+        function renderAvailablePlugins() {
+            const list = document.getElementById('available-list');
+            const empty = document.getElementById('available-empty');
+            if (pluginData.available.length === 0) {
+                list.innerHTML = '';
+                empty.classList.remove('hidden');
+                return;
+            }
+            empty.classList.add('hidden');
+            list.innerHTML = pluginData.available.map(plugin => `
+                <div class="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center text-primary text-xl">
+                                <i class="fas fa-puzzle-piece"></i>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="font-bold text-lg text-dark">${plugin.name}</h3>
+                                <p class="text-xs text-gray-500">v${plugin.version} · 作者:${plugin.author}</p>
+                            </div>
+                        </div>
+                        <span class="px-2 py-1 rounded-full text-xs bg-primary/10 text-primary">
+                            官方
+                        </span>
+                    </div>
+                    <p class="text-gray-600 text-sm mb-4 h-12 overflow-hidden">${plugin.description}</p>
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        ${plugin.permissions.map(p => `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">${p}</span>`).join('')}
+                    </div>
+                    <button onclick="installPlugin('${plugin.plugin_id}')" class="w-full bg-primary text-white px-3 py-2 rounded-lg hover:bg-primary/90 transition text-sm">
+                        <i class="fas fa-download mr-1"></i> 安装
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // 插件操作
+        async function operatePlugin(pluginId, action) {
+            if (action === 'uninstall' && !confirm('确定要卸载该插件吗？卸载后数据将无法恢复！')) {
+                return;
+            }
+            try {
+                const res = await fetch(`/api/plugin/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plugin_id: pluginId })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    showToast(data.msg, 'success');
+                    loadPluginList();
+                } else {
+                    showToast(data.msg, 'error');
+                }
+            } catch (e) {
+                showToast('操作失败，请重试', 'error');
+            }
+        }
+
+        // 执行插件自定义操作（卡片按钮触发）
+        async function executePluginAction(pluginId, actionKey) {
+            try {
+                showToast('正在执行操作...', 'info');
+                const res = await fetch('/api/plugin/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plugin_id: pluginId, action_key: actionKey })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    showToast(data.msg, 'success');
+                    // 操作成功后自动刷新插件列表，同步状态变化
+                    loadPluginList();
+                } else {
+                    showToast(data.msg, 'error');
+                }
+            } catch (e) {
+                showToast('操作执行失败，请检查服务是否正常', 'error');
+            }
+        }
+
+        // 安装插件
+        async function installPlugin(pluginId) {
+            try {
+                const res = await fetch('/api/plugin/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plugin_id: pluginId, is_local: false })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    showToast(data.msg, 'success');
+                    loadPluginList();
+                } else {
+                    showToast(data.msg, 'error');
+                }
+            } catch (e) {
+                showToast('安装失败，请重试', 'error');
+            }
+        }
+
+        // 当前编辑的插件ID
+        let currentConfigPluginId = '';
+        let currentConfigDefinition = [];
+        // 新建插件相关变量
+        let configItemIndex = 0;
+        let paramItemIndex = 0;
+        // 自动生成插件ID（调用后端接口实现）
+        async function autoGeneratePluginId() {
+            const name = document.getElementById('create_name').value.trim();
+            if (!name) {
+                document.getElementById('create_plugin_id').value = '';
+                return;
+            }
+            try {
+                const res = await fetch('/api/utils/chinese_to_pinyin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: name })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    document.getElementById('create_plugin_id').value = data.data;
+                }
+            } catch (e) {
+                showToast('拼音转换失败，请检查服务是否正常', 'error');
+            }
+        }
+        // 自动修正插件ID格式，用户手动输入时实时处理（调用后端接口实现）
+        async function autoFixPluginId() {
+            const inputVal = document.getElementById('create_plugin_id').value.trim();
+            if (!inputVal) return;
+            try {
+                const res = await fetch('/api/utils/chinese_to_pinyin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: inputVal })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    const pluginId = data.data;
+                    // 只有内容变化时才更新，避免光标跳转到末尾
+                    if (pluginId !== inputVal) {
+                        document.getElementById('create_plugin_id').value = pluginId;
+                    }
+                }
+            } catch (e) {
+                showToast('拼音转换失败，请检查服务是否正常', 'error');
+            }
+        }
+
+
+        // 选择配置项预设
+        function selectConfigPreset(type) {
+            const list = document.getElementById('config-item-list');
+            if (configItemIndex === 0) {
+                list.innerHTML = '';
+            }
+            if (type === 'api_key') {
+                // 模型密钥配置一键生成3个参数:API密钥、接口地址、模型ID
+                const apiConfigs = [
+                    {
+                        key: 'api_key',
+                        label: '火山方舟API密钥',
+                        type: 'password',
+                        default: '',
+                        placeholder: '从火山方舟对应应用控制台密钥管理处获取',
+                        required: true
+                    },
+                    {
+                        key: 'api_url',
+                        label: 'API接口地址',
+                        type: 'input',
+                        default: 'https://ark.cn-beijing.volces.com/api/v3/images/generations',
+                        placeholder: '第三方AI服务的API请求地址',
+                        required: true
+                    },
+                    {
+                        key: 'model_id',
+                        label: '模型ID',
+                        type: 'input',
+                        default: 'doubao-seedream-5-0-260128',
+                        placeholder: '火山方舟部署的对应模型ID',
+                        required: true
+                    }
+                ];
+                apiConfigs.forEach(config => {
+                    const itemHtml = `
+                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200" id="config-item-${configItemIndex}">
+                            <div class="flex justify-between items-center mb-3">
+                                <h4 class="font-medium text-sm text-gray-700">配置项 ${configItemIndex + 1}</h4>
+                                <button onclick="removeConfigItem(${configItemIndex})" class="text-danger text-sm hover:text-danger/80">
+                                    <i class="fas fa-trash"></i> 删除
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">字段Key <span class="text-danger">*</span></label>
+                                    <input type="text" id="config_key_${configItemIndex}" value="${config.key}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">显示名称 <span class="text-danger">*</span></label>
+                                    <input type="text" id="config_label_${configItemIndex}" value="${config.label}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">字段类型 <span class="text-danger">*</span></label>
+                                    <select id="config_type_${configItemIndex}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                                        <option value="input" ${config.type === 'input' ? 'selected' : ''}>单行文本</option>
+                                        <option value="password" ${config.type === 'password' ? 'selected' : ''}>密码</option>
+                                        <option value="number">数字</option>
+                                        <option value="textarea">多行文本</option>
+                                        <option value="switch">开关</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">默认值</label>
+                                    <input type="text" id="config_default_${configItemIndex}" value="${config.default}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                                </div>
+                                <div class="md:col-span-2">
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">提示文案</label>
+                                    <input type="text" id="config_placeholder_${configItemIndex}" value="${config.placeholder}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="config_required_${configItemIndex}" class="mr-1" ${config.required ? 'checked' : ''}>
+                                    <label class="text-xs text-gray-600">是否必填</label>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    list.insertAdjacentHTML('beforeend', itemHtml);
+                    configItemIndex++;
+                });
+            } else {
+                // 其他预设保持原有单配置项逻辑
+                const itemHtml = `
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200" id="config-item-${configItemIndex}">
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-medium text-sm text-gray-700">配置项 ${configItemIndex + 1}</h4>
+                            <button onclick="removeConfigItem(${configItemIndex})" class="text-danger text-sm hover:text-danger/80">
+                                <i class="fas fa-trash"></i> 删除
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">字段Key <span class="text-danger">*</span></label>
+                                <input type="text" id="config_key_${configItemIndex}" placeholder="例如:api_key" value="${type === 'save_path' ? 'save_path' : type === 'api_url' ? 'api_url' : ''}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">显示名称 <span class="text-danger">*</span></label>
+                                <input type="text" id="config_label_${configItemIndex}" placeholder="例如:API密钥" value="${type === 'save_path' ? '文件保存路径' : type === 'api_url' ? 'API接口地址' : ''}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">字段类型 <span class="text-danger">*</span></label>
+                                <select id="config_type_${configItemIndex}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                                    <option value="input" ${type === 'save_path' || type === 'api_url' ? 'selected' : ''}>单行文本</option>
+                                    <option value="password">密码</option>
+                                    <option value="number">数字</option>
+                                    <option value="textarea">多行文本</option>
+                                    <option value="switch">开关</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">默认值</label>
+                                <input type="text" id="config_default_${configItemIndex}" placeholder="默认值" value="${type === 'save_path' ? './output/' : ''}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-medium text-gray-600 mb-1">提示文案</label>
+                                <input type="text" id="config_placeholder_${configItemIndex}" placeholder="例如:从开放平台获取的API密钥" value="${type === 'save_path' ? '生成的文件/内容保存的本地目录' : type === 'api_url' ? '第三方服务的请求接口地址' : ''}" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="config_required_${configItemIndex}" class="mr-1" ${type === 'api_url' ? 'checked' : ''}>
+                                <label class="text-xs text-gray-600">是否必填</label>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                list.insertAdjacentHTML('beforeend', itemHtml);
+                configItemIndex++;
+            }
+        }
+
+        // 打开/关闭新建插件弹窗
+        function closeCreatePlugin() {
+            document.getElementById('create-plugin-modal').classList.add('hidden');
+            // 清空表单
+            document.getElementById('create_plugin_id').value = '';
+            document.getElementById('create_name').value = '';
+            document.getElementById('create_description').value = '';
+            document.getElementById('create_version').value = '1.0.0';
+            document.getElementById('create_author').value = '官方插件生成';
+            document.getElementById('create_trigger_keyword').value = '';
+            document.getElementById('create_permission').value = 'none';
+            document.getElementById('config-item-list').innerHTML = '<div class="text-center py-4 text-gray-500 text-sm">暂无配置项，点击上方按钮添加</div>';
+            document.getElementById('param-item-list').innerHTML = '<div class="text-center py-4 text-gray-500 text-sm">暂无需入参，点击上方按钮添加</div>';
+            configItemIndex = 0;
+            paramItemIndex = 0;
+        }
+
+
+        // 删除配置项
+        function removeConfigItem(index) {
+            document.getElementById(`config-item-${index}`).remove();
+            const list = document.getElementById('config-item-list');
+            if (list.children.length === 0) {
+                list.innerHTML = '<div class="text-center py-4 text-gray-500 text-sm">暂无配置项，点击上方按钮添加</div>';
+            }
+        }
+
+        // 添加入参
+        function addParamItem() {
+            const list = document.getElementById('param-item-list');
+            if (paramItemIndex === 0) {
+                list.innerHTML = '';
+            }
+            const itemHtml = `
+                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200" id="param-item-${paramItemIndex}">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="font-medium text-sm text-gray-700">入参 ${paramItemIndex + 1}</h4>
+                        <button onclick="removeParamItem(${paramItemIndex})" class="text-danger text-sm hover:text-danger/80">
+                            <i class="fas fa-trash"></i> 删除
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">参数名 <span class="text-danger">*</span></label>
+                            <input type="text" id="param_name_${paramItemIndex}" placeholder="例如:city" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">参数描述 <span class="text-danger">*</span></label>
+                            <input type="text" id="param_desc_${paramItemIndex}" placeholder="例如:要查询的城市名称" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary">
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="param_required_${paramItemIndex}" class="mr-1" checked>
+                            <label class="text-xs text-gray-600">是否必填</label>
+                        </div>
+                    </div>
+                </div>
+            `;
+            list.insertAdjacentHTML('beforeend', itemHtml);
+            paramItemIndex++;
+        }
+
+        // 删除入参
+        function removeParamItem(index) {
+            document.getElementById(`param-item-${index}`).remove();
+            const list = document.getElementById('param-item-list');
+            if (list.children.length === 0) {
+                list.innerHTML = '<div class="text-center py-4 text-gray-500 text-sm">暂无需入参，点击上方按钮添加</div>';
+            }
+        }
+        // 选择保存目录
+        function selectSaveDir() {
+            // 调用系统目录选择器
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.webkitdirectory = true;
+            input.directory = true;
+            input.onchange = (e) => {
+                if (e.target.files.length > 0) {
+                    const path = e.target.files[0].webkitRelativePath.split('/')[0];
+                    document.getElementById('create_save_dir').value = `./${path}/`;
+                }
+            };
+            input.click();
+        }
+
+        // 生成插件
+        async function generatePlugin() {
+            // 校验基础必填项
+            const pluginId = document.getElementById('create_plugin_id').value.trim();
+            const name = document.getElementById('create_name').value.trim();
+            const description = document.getElementById('create_description').value.trim();
+            const version = document.getElementById('create_version').value.trim();
+            const author = document.getElementById('create_author').value.trim();
+            const triggerKeyword = document.getElementById('create_trigger_keyword').value.trim();
+            const permission = document.getElementById('create_permission').value;
+
+            if (!pluginId || !name || !description || !version || !author || !triggerKeyword) {
+                showToast('请填写完整的基础信息', 'error');
+                return;
+            }
+            if (!/^[a-z0-9_]+$/.test(pluginId)) {
+                showToast('插件ID仅支持小写英文、数字、下划线', 'error');
+                return;
+            }
+
+            // 收集配置项
+            const configList = [];
+            for (let i = 0; i < configItemIndex; i++) {
+                const el = document.getElementById(`config-item-${i}`);
+                if (!el) continue;
+                const key = document.getElementById(`config_key_${i}`).value.trim();
+                const label = document.getElementById(`config_label_${i}`).value.trim();
+                const type = document.getElementById(`config_type_${i}`).value;
+                const defaultVal = document.getElementById(`config_default_${i}`).value;
+                const placeholder = document.getElementById(`config_placeholder_${i}`).value;
+                const required = document.getElementById(`config_required_${i}`).checked;
+
+                if (!key || !label) {
+                    showToast(`配置项${i+1}的字段Key和显示名称不能为空`, 'error');
+                    return;
+                }
+
+                configList.push({ key, label, type, default: defaultVal, placeholder, required });
+            }
+
+            // 收集入参
+            const paramList = [];
+            for (let i = 0; i < paramItemIndex; i++) {
+                const el = document.getElementById(`param-item-${i}`);
+                if (!el) continue;
+                const name = document.getElementById(`param_name_${i}`).value.trim();
+                const desc = document.getElementById(`param_desc_${i}`).value.trim();
+                const required = document.getElementById(`param_required_${i}`).checked;
+
+                if (!name || !desc) {
+                    showToast(`入参${i+1}的参数名和描述不能为空`, 'error');
+                    return;
+                }
+
+                paramList.push({ name, description: desc, required });
+            }
+
+            try {
+                showToast('正在生成插件...', 'info');
+                const res = await fetch('/api/plugin/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            plugin_info: { plugin_id: pluginId, name, description, version, author, trigger_keyword: triggerKeyword },
+                            config_list: configList,
+                            param_list: paramList,
+                            permission: permission,
+                            save_dir: document.getElementById('create_save_dir').value.trim(),
+                            preset_template_id: window.selectedTemplateId ?? null
+                        })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    showToast(data.msg, 'success');
+                    closeCreatePlugin();
+                    loadPluginList();
+                } else {
+                    showToast(data.msg, 'error');
+                }
+            } catch (e) {
+                showToast('生成失败，请检查服务是否正常', 'error');
+            }
+        }
+
+        // 打开插件配置
+        async function openPluginConfig(pluginId) {
+            currentConfigPluginId = pluginId;
+            document.getElementById('config-modal').classList.remove('hidden');
+            document.getElementById('config-form-container').innerHTML = `
+                <div class="text-center py-10">
+                    <i class="fas fa-circle-notch fa-spin text-primary text-3xl mb-4"></i>
+                    <p class="text-gray-500">加载配置中...</p>
+                </div>
+            `;
+            try {
+                // 强制禁用浏览器缓存，每次打开弹窗都读取磁盘最新配置
+                const res = await fetch(`/api/plugin/config?plugin_id=${pluginId}`, {cache: 'no-store'});
+                const data = await res.json();
+                if (data.code === 200) {
+                    const configDef = data.data.config_definition;
+                    const currentConfig = data.data.current_config;
+                    currentConfigDefinition = configDef;            
+                    
+                    // 读取插件测试连接支持标识，控制按钮显示
+                    const supportTest = data.data.support_test === true;
+                    const testBtn = document.getElementById('test-connection-btn');
+                    if (testBtn) {
+                        testBtn.classList.toggle('hidden', !supportTest);
+                    }
+                    
+                    // 如果没有配置项，显示提示
+                    if (configDef.length === 0) {
+                        document.getElementById('config-form-container').innerHTML = `
+                            <div class="text-center py-10">
+                                <i class="fas fa-info-circle text-gray-400 text-3xl mb-4"></i>
+                                <p class="text-gray-500">该插件无需配置参数</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    // 动态生成表单
+                    let formHtml = '';
+                    configDef.forEach(item => {
+                        const value = currentConfig[item.key] ?? item.default;
+                        const required = item.required ? '<span class="text-danger">*</span>' : '';
+                        formHtml += `<div class="mb-6">`;
+                        formHtml += `<label class="block text-sm font-medium text-gray-700 mb-2">${item.label} ${required}</label>`;
+                        
+                        if (item.type === 'input') {
+                            formHtml += `<input type="text" id="config_${item.key}" value="${value}" placeholder="${item.placeholder ?? ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">`;
+                        } else if (item.type === 'password') {
+                            formHtml += `<input type="password" id="config_${item.key}" value="${value}" placeholder="${item.placeholder ?? ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">`;
+                        } else if (item.type === 'number') {
+                            formHtml += `<input type="number" id="config_${item.key}" value="${value}" min="${item.min ?? ''}" max="${item.max ?? ''}" step="${item.step ?? 1}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">`;
+                        } else if (item.type === 'textarea') {
+                            formHtml += `<textarea id="config_${item.key}" rows="${item.rows ?? 3}" placeholder="${item.placeholder ?? ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">${value}</textarea>`;
+                        } else if (item.type === 'switch' || item.type === 'boolean') {
+                            // 兼容switch和boolean两种开关类型定义
+                            const checked = value ? 'checked' : '';
+                            formHtml += `<label class="switch-toggle">
+                                            <input type="checkbox" id="config_${item.key}" ${checked}>
+                                            <span class="slider"></span>
+                                        </label>`;
+                        } else if (item.type === 'select') {
+                            formHtml += `<select id="config_${item.key}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">`;
+                            item.options.forEach(opt => {
+                                // 兼容纯字符串选项和{value,label}对象两种格式
+                                const optVal = typeof opt === 'string' ? opt : opt.value;
+                                const optLabel = typeof opt === 'string' ? opt : opt.label;
+                                const selected = optVal === value ? 'selected' : '';
+                                formHtml += `<option value="${optVal}" ${selected}>${optLabel}</option>`;
+                            });
+                            formHtml += `</select>`;
+                        } else if (item.type === 'array') {
+                            // 数组类型渲染为可视化标签组件，支持增删改查
+                            const arrValue = Array.isArray(value) ? value : [];
+                            // HTML转义函数，避免特殊字符破坏页面结构
+                            const escapeHtml = (str) => {
+                                const div = document.createElement('div');
+                                div.textContent = str;
+                                return div.innerHTML;
+                            };
+                            formHtml += `<div class="array-config-container" data-key="${item.key}">
+                                <div class="flex flex-wrap gap-2 mb-3 array-tag-list" id="array_tags_${item.key}">
+                                    ${arrValue.map(val => `
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full bg-success/10 text-success text-sm">
+                                            ${escapeHtml(val)}
+                                            <button type="button" class="ml-2 text-success/70 hover:text-danger" onclick="removeArrayTag(this, '${item.key}')">
+                                                <i class="fas fa-times text-xs"></i>
+                                            </button>
+                                        </span>
+                                    `).join('')}
+                                </div>
+                                <div class="flex gap-2">
+                                    <input type="text" id="array_input_${item.key}" placeholder="${item.placeholder ?? '输入值后按回车/点击添加，支持逗号分隔批量添加'}" 
+                                        class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                                        onkeydown="if(event.key === 'Enter') {event.preventDefault(); addArrayTags('${item.key}');}">
+                                    <button type="button" onclick="addArrayTags('${item.key}')" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition">
+                                        <i class="fas fa-plus mr-1"></i>添加
+                                    </button>
+                                    <button type="button" onclick="clearArrayTags('${item.key}')" class="px-4 py-2 border border-danger text-danger rounded-lg hover:bg-danger/5 transition">
+                                        <i class="fas fa-trash mr-1"></i>清空
+                                    </button>
+                                </div>
+                            </div>`;
+                        } else if (item.type === 'button' && item.action === 'openUrl' && item.url) {
+
+                            // 一键跳转按钮，点击打开新页面
+                            formHtml += `<button type="button" onclick="window.open('${item.url}', '_blank')" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition">${item.label}</button>`;
+                        }
+
+                        if (item.description) {
+                            formHtml += `<p class="text-xs text-gray-500 mt-1">${item.description}</p>`;
+                        }
+                        formHtml += `</div>`;
+                    });
+
+                    document.getElementById('config-form-container').innerHTML = formHtml;
+                } else {
+                    showToast(data.msg, 'error');
+                    closePluginConfig();
+                }
+            } catch (e) {
+                showToast('加载配置失败，请检查服务是否正常', 'error');
+                closePluginConfig();
+            }
+        }
+
+        // 关闭插件配置
+        function closePluginConfig() {
+            document.getElementById('config-modal').classList.add('hidden');
+            currentConfigPluginId = '';
+            currentConfigDefinition = [];
+        }
+        // 测试插件连接
+        async function testPluginConnection() {
+            if (!currentConfigPluginId) return;
+            const testBtn = document.getElementById('test-connection-btn');
+            const originalHtml = testBtn.innerHTML;
+            testBtn.disabled = true;
+            testBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-1"></i> 测试中...';
+            
+            try {
+                // 先保存当前配置，再执行测试，确保测试使用最新配置
+                await savePluginConfig(true);
+                const res = await fetch('/api/plugin/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plugin_id: currentConfigPluginId })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    showToast(data.msg || '连接测试成功', 'success');
+                } else {
+                    showToast(data.msg || '连接测试失败', 'error');
+                }
+            } catch (e) {
+                showToast('测试失败，请检查服务是否正常', 'error');
+            } finally {
+                testBtn.disabled = false;
+                testBtn.innerHTML = originalHtml;
+            }
+        }
+        /**
+         * 数组配置标签操作：删除单个标签
+         */
+        function removeArrayTag(btn, key) {
+            btn.parentElement.remove();
+        }
+
+        /**
+         * 数组配置标签操作：添加标签（支持逗号分隔批量添加，自动去重）
+         */
+        function addArrayTags(key) {
+            const input = document.getElementById(`array_input_${key}`);
+            const tagList = document.getElementById(`array_tags_${key}`);
+            const inputVal = input.value.trim();
+            if (!inputVal) return;
+
+            // 支持逗号分隔批量添加，自动过滤空值
+            const newVals = inputVal.split(/[,，\n]/).map(v => v.trim()).filter(v => v.length > 0);
+            // 获取已存在的标签值，用于去重（精确提取第一个文本节点内容）
+            const existingVals = Array.from(tagList.querySelectorAll('span')).map(el => el.childNodes[0].textContent.trim());
+            
+            newVals.forEach(val => {
+                if (!existingVals.includes(val)) {
+                    const tag = document.createElement('span');
+                    tag.className = 'inline-flex items-center px-3 py-1 rounded-full bg-success/10 text-success text-sm';
+                    // HTML转义避免特殊字符破坏结构
+                    const textNode = document.createTextNode(val);
+                    tag.appendChild(textNode);
+                    const closeBtn = document.createElement('button');
+                    closeBtn.type = 'button';
+                    closeBtn.className = 'ml-2 text-success/70 hover:text-danger';
+                    closeBtn.onclick = () => removeArrayTag(closeBtn, key);
+                    closeBtn.innerHTML = '<i class="fas fa-times text-xs"></i>';
+                    tag.appendChild(closeBtn);
+                    tagList.appendChild(tag);
+                    existingVals.push(val);
+                }
+            });
+
+            input.value = '';
+        }
+
+        /**
+         * 数组配置标签操作：清空所有标签
+         */
+        function clearArrayTags(key) {
+            if (confirm('确定要清空该配置的所有值吗？')) {
+                document.getElementById(`array_tags_${key}`).innerHTML = '';
+            }
+        }
+        // 保存插件配置
+        async function savePluginConfig(silent = false) {
+            if (!currentConfigPluginId || currentConfigDefinition.length === 0) {
+                if (!silent) closePluginConfig();
+                return;
+            }
+
+            // 收集表单数据
+            const config = {};
+            currentConfigDefinition.forEach(item => {
+                // 按钮类型配置项无需保存用户输入值，直接跳过
+                if (item.type === 'button') {
+                    return;
+                }
+                
+                // 数组类型特殊处理：没有config_xxx的DOM元素，直接从标签容器提取值
+                if (item.type === 'array') {
+                    const tagList = document.getElementById(`array_tags_${item.key}`);
+                    if (tagList) {
+                        config[item.key] = Array.from(tagList.querySelectorAll('span')).map(tagEl => {
+                            // 精确提取标签内第一个文本节点内容，完全避免按钮/图标内容干扰
+                            return tagEl.childNodes[0].textContent.trim();
+                        }).filter(v => v.length > 0);
+                    } else {
+                        // 兼容旧版本textarea格式
+                        const el = document.getElementById(`config_${item.key}`);
+                        if (el) {
+                            config[item.key] = el.value.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+                        }
+                    }
+                    return;
+                }
+                
+                const el = document.getElementById(`config_${item.key}`);
+                // 异常容错：DOM不存在时跳过，避免报错中断整个保存流程
+                if (!el) {
+                    return;
+                }
+                if (item.type === 'switch' || item.type === 'boolean') {
+                    // 兼容switch和boolean两种开关类型，统一读取布尔值
+                    config[item.key] = el.checked;
+                } else if (item.type === 'number') {
+                    config[item.key] = Number(el.value);
+                } else {
+                    config[item.key] = el.value;
+                }
+            });
+            try {
+                const res = await fetch('/api/plugin/config/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plugin_id: currentConfigPluginId, config: config })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    if (!silent) {
+                        showToast(data.msg, 'success');
+                        closePluginConfig();
+                    }
+                } else {
+                    showToast(data.msg, 'error');
+                    throw new Error(data.msg);
+                }
+            } catch (e) {
+                showToast('保存失败，请检查服务是否正常', 'error');
+            }
+        }
+
+        // 显示提示
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            const msg = document.getElementById('toast-message');
+            
+            msg.textContent = message;
+            if (type === 'success') {
+                toast.className = 'fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg transform translate-x-0 transition-transform duration-300 bg-success text-white';
+                icon.className = 'fas fa-check-circle mr-2';
+            } else if (type === 'error') {
+                toast.className = 'fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg transform translate-x-0 transition-transform duration-300 bg-danger text-white';
+                icon.className = 'fas fa-exclamation-circle mr-2';
+            } else {
+                toast.className = 'fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg transform translate-x-0 transition-transform duration-300 bg-primary text-white';
+                icon.className = 'fas fa-info-circle mr-2';
+            }
+
+            setTimeout(() => {
+                toast.classList.add('translate-x-full');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

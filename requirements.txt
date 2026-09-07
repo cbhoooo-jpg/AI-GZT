@@ -1,0 +1,107 @@
+# 项目基础依赖（锁定版本，确保打包环境一致性）
+fastapi==0.110.0
+starlette==0.36.3  # FastAPI官方绑定底层依赖，锁定版本避免兼容问题
+uvicorn==0.29.0
+click==8.1.7  # Uvicorn命令行启动硬依赖
+sse-starlette==2.0.0
+# FastAPI文件上传表单解析依赖（api_server.py所需）
+python-multipart==0.0.9
+# 异步HTTP客户端依赖（starlette.testclient所需）
+httpx==0.27.0
+httpcore==1.0.4  # httpx核心传输层硬依赖
+h11==0.14.0  # HTTP/1.1协议底层实现
+anyio==4.3.0  # 异步IO框架共同依赖
+sniffio==1.3.1  # 异步库自动识别依赖
+certifi==2024.2.2  # HTTPS根证书库
+idna==3.6  # 域名编码处理依赖
+pydantic==2.6.4
+pydantic-core==2.16.3  # pydantic核心二进制扩展
+annotated-types==0.6.0  # pydantic类型注解硬依赖
+typing-extensions==4.10.0  # 多库共用类型兼容层
+jiter==0.4.0  # pydantic高性能JSON解析硬依赖
+requests==2.31.0
+urllib3==2.2.1  # requests/tos SDK底层HTTP依赖，锁定版本避免冲突
+six==1.16.0  # 多SDK通用工具依赖
+pypinyin==0.50.0
+# 大模型客户端依赖（llm_client.py所需）
+openai==1.35.12
+distro==1.9.0  # openai系统版本识别硬依赖
+tqdm==4.66.2  # openai请求进度条依赖
+# 火山引擎方舟平台SDK
+volcengine==1.0.0
+# 火山引擎TOS对象存储独立SDK
+tos==2.1.0
+# 信息采集插件正文提取、结构化解析依赖
+newspaper3k==0.2.8
+lxml==5.1.0
+beautifulsoup4==4.12.3  # newspaper3k HTML解析硬依赖
+tldextract==5.1.2  # newspaper3k域名提取硬依赖
+# 定时任务调度器依赖
+apscheduler==3.10.4
+pytz==2021.3  # 兼容tos SDK版本要求（tos要求pytz<2022.1），同时满足apscheduler/volcengine时区处理需求
+tzlocal==5.2  # apscheduler本地时区识别硬依赖
+# 文件变动监听依赖（auto_sync_monitor.py所需）
+watchdog==4.0.0
+# 全局系统级截图工具依赖（screenshot_tool.py所需）
+mss==9.0.1
+screeninfo==0.8.1
+Pillow==10.3.0
+# 内置浏览器和悬浮窗GUI框架依赖（ai_browser.py/main.py所需）
+PySide6==6.8.0.2
+# 向量检索和本地嵌入模型依赖（rag_manager.py所需）
+faiss-cpu==1.8.0
+torch==2.2.2
+sentence-transformers==2.6.1
+transformers==4.44.2
+tokenizers==0.19.1  # transformers分词核心硬依赖
+huggingface-hub==0.23.2  # transformers模型下载硬依赖，满足transformers 4.44.2≥0.23.2的版本要求，同时兼容sentence-transformers
+safetensors==0.4.2  # transformers模型加载硬依赖
+regex==2023.12.25  # transformers文本处理硬依赖
+# transformers中文分词核心依赖，缺少会导致本地向量模型tokenizer加载失败
+sentencepiece==0.2.2
+numpy==1.26.4
+# PyInstaller打包工具依赖（build.py所需）
+pyinstaller==6.5.0
+pywin32-ctypes==0.2.2  # PyInstaller Windows平台硬依赖
+pefile==2023.2.7  # PyInstaller PE文件解析硬依赖
+# 进程监控插件依赖（process_monitor插件所需）
+psutil>=5.9.0
+sse-starlette==2.0.0
+# FastAPI文件上传表单解析依赖（api_server.py所需）
+python-multipart==0.0.9
+# 异步HTTP客户端依赖（starlette.testclient所需）
+httpx==0.27.0
+pydantic==2.6.4
+requests==2.31.0
+pypinyin==0.50.0
+# 大模型客户端依赖（llm_client.py所需）
+openai==1.35.12
+# 火山引擎方舟平台SDK
+volcengine==1.0.0
+# 火山引擎TOS对象存储独立SDK
+tos==2.1.0
+# 信息采集插件正文提取、结构化解析依赖
+newspaper3k==0.2.8
+lxml==5.1.0
+# 定时任务调度器依赖
+apscheduler==3.10.4
+# 文件变动监听依赖（auto_sync_monitor.py所需）
+watchdog==4.0.0
+# 全局系统级截图工具依赖（screenshot_tool.py所需）
+mss==9.0.1
+screeninfo==0.8.1
+Pillow==10.3.0
+# 内置浏览器和悬浮窗GUI框架依赖（ai_browser.py/main.py所需）
+PySide6==6.8.0.2
+# 向量检索和本地嵌入模型依赖（rag_manager.py所需）
+faiss-cpu==1.8.0
+torch==2.2.2
+sentence-transformers==2.6.1
+transformers==4.44.2
+# transformers中文分词核心依赖，缺少会导致本地向量模型tokenizer加载失败
+sentencepiece==0.2.2
+numpy==1.26.4
+# PyInstaller打包工具依赖（build.py所需）
+pyinstaller==6.5.0
+# 进程监控插件依赖（process_monitor插件所需）
+psutil>=5.9.0

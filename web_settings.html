@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统设置</title>
+    <link rel="stylesheet" href="/static/element-ui.min.css">
+    <script src="/static/vue.min.js"></script>
+    <script src="/static/element-ui.min.js"></script>
+    <script src="/static/axios.min.js"></script>
+    <style>
+        /* ========== 大小配置变量，修改这里的数值即可全局调整按钮/文字大小 ========== */
+        :root {
+            --action-btn-height: 32px;       /* 功能大按钮高度（火山方舟、模型切换按钮） */
+            --action-btn-font-size: 13px;    /* 功能大按钮文字大小 */
+            --input-number-height: 42px;     /* 数字输入框高度（超时、温度参数等） */
+            --input-number-font-size: 12px;  /* 数字输入框内文字大小 */
+            --tip-text-font-size: 12px;      /* 提示说明文字大小 */
+            --label-font-size: 14px;         /* 表单左侧标签文字大小（如"快捷入口"、"请求超时"） */
+            --section-title-font-size: 18px; /* 板块标题文字大小（如"模型配置"、"存储设置"） */
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f5f7fa;
+            padding: 16px;
+            font-size: var(--label-font-size);
+        }
+        .form-card {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        /* 表单标签文字大小 */
+        .el-form-item__label {
+            font-size: var(--label-font-size) !important;
+        }
+        /* 板块标题样式 */
+        h3 {
+            font-size: var(--section-title-font-size) !important;
+        }
+        /* 功能大按钮统一样式 */
+        .large-action-btn {
+            height: var(--action-btn-height) !important;
+            font-size: var(--action-btn-font-size) !important;
+            padding: 0 20px !important;
+            border-radius: 4px !important;
+            font-weight: 500 !important;
+        }
+        /* 数字输入框统一样式 */
+        .el-input-number--large {
+            height: var(--input-number-height) !important;
+            width: 100% !important;
+        }
+        .el-input-number--large .el-input__inner {
+            height: var(--input-number-height) !important;
+            line-height: var(--input-number-height) !important;
+            font-size: var(--input-number-font-size) !important;
+            text-align: center;
+        }
+        .el-input-number--large .el-input-number__decrease, 
+        .el-input-number--large .el-input-number__increase {
+            height: calc(var(--input-number-height) / 2) !important;
+            line-height: calc(var(--input-number-height) / 2) !important;
+            font-size: 18px !important;
+            width: 50px !important;
+        }
+        /* 提示文字统一样式 */
+        .tip-text {
+            font-size: var(--tip-text-font-size) !important;
+            color: #909399;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+        .save-btn {
+            width: 100%;
+            height: 48px;
+            font-size: 18px;
+            margin-top: 24px;
+            border-radius: 8px;
+        }
+        /* 所有按钮统一主色调 #409EFF */
+        .el-button,
+        .el-button--default,
+        .el-button--primary,
+        .el-button--success,
+        .el-button--warning,
+        .el-button--danger {
+            background-color: #409EFF !important;
+            border-color: #409EFF !important;
+            color: #fff !important;
+        } 
+        .el-button:hover,
+        .el-button--default:hover,
+        .el-button--primary:hover,
+        .el-button--success:hover,
+        .el-button--warning:hover,
+        .el-button--danger:hover {
+            background-color: #66b1ff !important;
+            border-color: #66b1ff !important;
+            color: #fff !important;
+        }
+        .el-button:active,
+        .el-button--default:active,
+        .el-button--primary:active,
+        .el-button--success:active,
+        .el-button--warning:active,
+        .el-button--danger:active {
+            background-color: #337ecc !important;
+            border-color: #337ecc !important;
+            color: #fff !important;
+        }
+        .el-button.is-disabled,
+        .el-button[disabled] {
+            background-color: #a0cfff !important;
+            border-color: #a0cfff !important;
+            color: #fff !important;
+            cursor: not-allowed;
+        }
+        /* 输入框尾部按钮样式适配 */
+        .el-input-group__append .el-button {
+            border-radius: 0 4px 4px 0 !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+<el-card class="form-card" shadow="hover">
+            <div slot="header" style="display: flex; justify-content: space-between; align-items: center; font-size: 18px; font-weight: bold; color: #303133;">
+                <span>系统设置</span>
+                <el-button type="primary" class="large-action-btn" @click="saveConfig" size="small" style="width: 100px;">保存配置</el-button>
+            </div>
+            <el-form :model="form" label-width="120px" ref="form">
+                <h3 style="margin: 24px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">模型配置</h3>
+                
+                <el-form-item label="模型厂商">
+                    <el-select v-model="form.model_provider" style="width: 100%;">
+                        <el-option label="本地模型" value="local"></el-option>
+                        <el-option label="火山方舟" value="火山方舟"></el-option>
+                        <el-option label="OpenAI" value="OpenAI"></el-option>
+                        <el-option label="Anthropic Claude" value="Anthropic"></el-option>
+                        <el-option label="通义千问" value="通义千问"></el-option>
+                        <el-option label="文心一言" value="文心一言"></el-option>
+                    </el-select>
+                </el-form-item>
+
+                <el-form-item label="API地址">
+                    <el-input v-model="form.api_url" placeholder="请输入API接口地址" :disabled="form.model_provider === 'local'"></el-input>
+                </el-form-item>
+
+                <el-form-item label="模型ID">
+                    <el-input v-model="form.model_name" placeholder="请输入模型ID/名称" :disabled="form.model_provider === 'local'"></el-input>
+                </el-form-item>
+
+                <el-form-item label="API密钥">
+                    <el-input v-model="form.api_key" placeholder="请输入API密钥" type="password" show-password :disabled="form.model_provider === 'local'"></el-input>
+                </el-form-item>
+                <el-form-item label="快捷入口" v-if="form.model_provider === '火山方舟'">
+                    <el-button type="warning" class="large-action-btn" @click="openVolcengineArk" icon="el-icon-link">火山方舟</el-button>
+                    <div class="tip-text">点击打开链接注册登录，可开通模型、获取API密钥、模型ID</div>
+                </el-form-item>
+
+                <el-row :gutter="24">
+                    <el-col span="12">
+                        <el-form-item label="请求超时">
+                            <el-input-number v-model="form.timeout" :min="10" :max="300" size="large" controls-position="right" :disabled="form.model_provider === 'local'">
+                                <template slot="append">秒</template>
+                            </el-input-number>
+                        </el-form-item>
+                    </el-col>
+                    <el-col span="12">
+                        <el-form-item label="温度参数">
+                            <el-input-number v-model="form.temperature" :min="0" :max="2" :step="0.1" size="large" controls-position="right"></el-input-number>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+                <el-row :gutter="24">
+                    <el-col span="12">
+                        <el-form-item label="回复上限">
+                            <el-input-number v-model="form.max_chat_rounds" :min="5" :max="50" size="large" controls-position="right"></el-input-number>
+                            <div class="tip-text">每轮回复次数上限</div>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+
+                <el-form-item label="快速切换">
+                    <el-button type="success" class="large-action-btn" @click="switchToLocal" :disabled="form.model_provider === 'local'">✅ 本地模型</el-button>
+                    <el-button type="primary" class="large-action-btn" @click="switchToCloud" :disabled="form.model_provider !== 'local'" style="margin-left: 16px;">☁️ 云端模型</el-button>
+                    <div class="tip-text"></div>
+                </el-form-item>
+
+                <el-form-item label="输出模式">
+                    <el-switch v-model="form.stream_output" active-text="启用流式输出" inactive-text="关闭流式输出"></el-switch>
+                </el-form-item>
+
+<div v-if="form.model_provider === 'local'" style="padding: 16px; background-color: #fdf6ec; border: 1px solid #faecd8; border-radius: 4px; margin-bottom: 16px;">
+    <p style="color: #e6a23c; font-size: 14px;">⚠️ 本地模型功能升级中，敬请期待，当前请使用云端模型</p>
+</div>
+
+                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">记忆与上下文配置</h3>
+                <el-row :gutter="24">
+                    <el-col span="12">
+                        <el-form-item label="上下文轮数">
+                            <el-input-number v-model="memoryConfig.history_context_rounds" :min="3" :max="50" size="large" controls-position="right"></el-input-number>
+                            <div class="tip-text">向量检索依赖如未安装可适当调高参数</div>
+                        </el-form-item>
+                    </el-col>
+                    <el-col span="12">
+                        <el-form-item label="记忆检索数">
+                            <el-input-number v-model="memoryConfig.recall_top_k" :min="1" :max="10" size="large" controls-position="right"></el-input-number>
+                            <div class="tip-text">检索N条记忆</div>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+                <el-row :gutter="24">
+                    <el-col span="12">
+                        <el-form-item label="相似度阈值">
+                            <el-input-number v-model="memoryConfig.similarity_threshold" :min="0.1" :max="1" :step="0.05" size="large" controls-position="right"></el-input-number>
+                            <div class="tip-text">相似度检索值</div>
+                        </el-form-item>
+                    </el-col>
+                    <el-col span="12">
+                        <el-form-item label="检索触发阈值">
+                            <el-input-number v-model="memoryConfig.recall_trigger_rounds" :min="2" :max="50" size="large" controls-position="right"></el-input-number>
+                            <div class="tip-text">超过N轮触发</div>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+                <el-form-item label="固定提示1">
+                    <el-input type="textarea" :rows="2" v-model="memoryConfig.fixed_recall.slot1" placeholder="填写需要固定召回的内容，空则不生效"></el-input>
+                </el-form-item>
+                <el-form-item label="固定提示2">
+                    <el-input type="textarea" :rows="2" v-model="memoryConfig.fixed_recall.slot2" placeholder="填写需要固定召回的内容，空则不生效"></el-input>
+                </el-form-item>
+                <el-form-item label="固定提示3">
+                    <el-input type="textarea" :rows="2" v-model="memoryConfig.fixed_recall.slot3" placeholder="填写需要固定召回的内容，空则不生效"></el-input>
+                </el-form-item>
+                <el-form-item label="上下文时间戳">
+                    <el-switch v-model="memoryConfig.show_timestamp_in_context" active-text="开启" inactive-text="关闭" style="font-size: 18px;"></el-switch>
+                    <div class="tip-text">开启后会话带时间戳</div>
+                </el-form-item>
+                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">向量检索环境检测</h3>
+                <div style="padding: 16px; background-color: #f4f4f5; border: 1px solid #e9e9eb; border-radius: 8px; margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                        <el-tag :type="vectorEnv.current_mode === 'full' ? 'success' : 'warning'" size="medium">
+                            {{ vectorEnv.current_mode === 'full' ? '✅ 完整模式' : '⚠️ 降级模式' }}
+                        </el-tag>
+                        <span style="margin-left: 12px; color: #606266; font-size: 14px;">Python版本: {{ vectorEnv.python_version }}</span>
+                    </div>
+                    <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                        <el-tag :type="vectorEnv.torch_installed ? 'success' : 'danger'" size="small">
+                            torch {{ vectorEnv.torch_installed ? '已安装' : '未安装' }}
+                        </el-tag>
+                        <el-tag :type="vectorEnv.sentence_transformers_installed ? 'success' : 'danger'" size="small">
+                            sentence_transformers {{ vectorEnv.sentence_transformers_installed ? '已安装' : '未安装' }}
+                        </el-tag>
+                        <el-tag :type="vectorEnv.transformers_installed ? 'success' : 'danger'" size="small">
+                            transformers {{ vectorEnv.transformers_installed ? '已安装' : '未安装' }}
+                        </el-tag>
+                    </div>
+                    <div v-if="vectorEnv.current_mode === 'full'" style="color: #67C23A; font-size: 14px;">
+                        ✅ 向量检索功能已启用，记忆检索开启，RAG功能开启
+                    </div>
+                    <div v-else style="color: #e6a23c; font-size: 14px;">
+                        ⚠️ 向量检索功能已禁用，当前仅保留元数据记忆。请安装以下依赖以启用完整模式:
+                        <div style="margin-top: 8px; padding: 8px; background-color: #fdf6ec; border-radius: 4px;">
+                            <div>1. 安装Python 3.11 (需与程序内置版本一致)</div>
+                            <div>2. 找到安装文件中的(Python和依赖安装.bat)文件双击运行会自动安装Python 3.11和相关依赖</div>
+                            <div>3. 安装完成后重启程序</div>
+                        </div>
+                    </div>
+                    <el-button type="primary" size="small" @click="checkVectorEnv" :loading="vectorEnvLoading" style="margin-top: 12px;">
+                        重新检测
+                    </el-button>
+                </div>
+                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">存储设置</h3>
+                <el-form-item label="仓库存储路径">
+                    <div style="width: 100%;">
+                        <el-input v-model="form.repository_path" placeholder="请选择仓库存储位置" readonly>
+                            <el-button slot="append" icon="el-icon-folder" @click="selectRepositoryPath">选择文件夹</el-button>
+                        </el-input>
+                        <div style="margin-top: 8px;">
+                            <el-button type="primary" class="large-action-btn" size="small" @click="saveRepositoryPath" :loading="migrateLoading" style="margin-left: 16px;">保存仓库路径</el-button>
+                        </div>
+                        <div class="tip-text"></div>
+                    </div>
+                </el-form-item>
+
+                <el-form-item label="下载保存路径">
+                    <el-input v-model="form.download_path" placeholder="请选择下载文件保存位置" readonly>
+                        <el-button slot="append" icon="el-icon-folder" @click="selectDownloadPath">选择文件夹</el-button>
+                    </el-input>
+                </el-form-item>
+
+                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">运行设置</h3>
+                <el-form-item label="显示调试控制台">
+                    <el-switch v-model="form.show_debug_console" active-text="开启" inactive-text="关闭" style="font-size: 18px;"></el-switch>
+                    <div class="tip-text">可开启查看实时运行日志，保存后重启工作台生效</div>
+                </el-form-item>
+
+                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">安全设置 - 禁止操作列表</h3>
+                <div style="padding: 12px; background-color: #fef0f0; border: 1px solid #fde2e2; border-radius: 8px; margin-bottom: 16px; font-size: 15px; color: #f56c6c; line-height: 1.5;">
+                    ⚠️ 禁止列表的目录/文件，AI无法进行任何操作，可设置
+                </div>
+
+                <!-- 自定义禁止路径 -->
+                <el-form-item label="自定义禁止列表">
+                    <div style="width: 100%;">
+                        <div v-for="(path, idx) in form.forbidden_paths" :key="'custom-'+idx" style="display: flex; align-items: center; margin: 4px 0;">
+                            <el-tag type="danger" style="flex: 1; margin-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="path">
+                                {{ path }}
+                            </el-tag>
+                            <el-button type="danger" icon="el-icon-delete" size="mini" circle @click="removeForbiddenPath(idx)"></el-button>
+                        </div>
+                        <div v-if="form.forbidden_paths.length === 0" class="tip-text" style="margin: 8px 0;">暂无自定义禁止路径，点击下方按钮添加</div>
+                        <div style="margin-top: 16px;">
+                            <el-button type="primary" class="large-action-btn" icon="el-icon-document" @click="addForbiddenFile" style="height: 40px; font-size: 16px; padding: 0 20px; border-radius: 6px;">添加文件</el-button>
+                            <el-button type="warning" class="large-action-btn" icon="el-icon-folder" @click="addForbiddenFolder" style="height: 40px; font-size: 16px; padding: 0 20px; border-radius: 6px; margin-left: 12px;">添加文件夹</el-button>
+                        </div>
+                        <div class="tip-text" style="margin-top: 12px;">点击按钮选择文件或文件夹加入列表，即时生效</div>
+                    </div>
+                </el-form-item>
+
+            </el-form>
+        </el-card>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    form: {
+                        model_provider: '火山方舟',
+                        api_url: '',
+                        model_name: '',
+                        api_key: '',
+                        timeout: 200,
+                        stream_output: true,
+                        temperature: 0.5,
+                        max_chat_rounds: 10, // 每轮回复最大次数（安全上限，防止无限循环）
+                        download_path: '',
+                        repository_path: '',
+                        model_repo_path: '',
+                        default_local_model: '',
+                        lastCloudProvider: '火山方舟',
+                        forbidden_paths: [],
+                        show_debug_console: false // 默认关闭调试控制台显示
+                    },
+                    apiBase: '/api',
+                    localModelList: [],
+                    loadingModel: false,
+                    unloadingModel: false,
+                    modelStatus: {
+                        is_loaded: false,
+                        current_model: "",
+                        vram_usage: "0MB"
+                    },
+                    migrateFiles: false,
+                    migrateLoading: false,
+                    memoryConfig: {
+                        history_context_rounds: 5,
+                        recall_top_k: 4,
+                        similarity_threshold: 0.9,
+                        recall_trigger_rounds: 2,
+                        show_timestamp_in_context: true,
+                        fixed_recall: {
+                            slot1: "",
+                            slot2: "",
+                            slot3: ""
+                        }
+                    },
+                    systemConfig: {
+                        tos_endpoint: '',
+                        tos_bucket: '',
+                        tos_ak: '',
+                        tos_sk: ''
+                    },
+                    vectorEnv: {
+                        python_version: '',
+                        python_matched: true,
+                        torch_installed: false,
+                        sentence_transformers_installed: false,
+                        transformers_installed: false,
+                        current_mode: 'degraded'
+                    },
+                    vectorEnvLoading: false
+                }
+            },
+
+            mounted() {
+                this.loadConfig()
+                this.loadMemoryConfig()
+                this.loadLocalModels()
+                // 加载模型状态
+                this.getModelStatus()
+                // 加载向量检索环境状态
+                this.checkVectorEnv()
+                // 每30秒自动刷新状态
+                setInterval(() => this.getModelStatus(), 30000)
+            },
+            methods: {
+                // 加载现有配置
+                async loadConfig() {
+                    try {
+                        const res = await axios.get(`${this.apiBase}/config/get`)
+                        if (res.data.code === 200) {
+                            this.form = { ...this.form, ...res.data.data }
+                            // 读取系统级配置（TOS对象存储等）
+                            if (res.data.data.system) {
+                                this.systemConfig = { ...this.systemConfig, ...res.data.data.system }
+                            }
+                            // 加载完成后自动刷新模型列表
+                            await this.loadLocalModels()
+                        }
+                    } catch (e) {
+                        this.$message.error('加载配置失败:' + e.message)
+                    }
+                },
+                // 加载记忆配置
+                async loadMemoryConfig() {
+                    try {
+                        const res = await axios.get(`${this.apiBase}/memory/config`)
+                        if (res.data.code === 200) {
+                            this.memoryConfig = res.data.data
+                        }
+                    } catch (e) {
+                        this.$message.error('加载记忆配置失败：' + e.message)
+                    }
+                },
+                // 保存配置（同时保存系统配置+记忆配置）
+                async saveConfig() {
+                    try {
+                        // 将系统级配置（TOS等）合并到主表单中提交
+                        const submitForm = { ...this.form, system: this.systemConfig }
+                        // 先保存系统配置
+                        await axios.post(`${this.apiBase}/config/set`, {
+                            config: submitForm
+                        })
+                        // 再保存记忆配置
+                        await axios.post(`${this.apiBase}/memory/config/update`, {
+                            config: this.memoryConfig
+                        })
+                        this.$message.success('所有配置保存成功，即时生效！')
+                    } catch (e) {
+                        this.$message.error('保存失败:' + (e.response?.data?.msg || e.response?.data?.detail || e.message))
+                    }
+                },
+                // 一键切换到本地模型
+                async switchToLocal() {
+                    // 切换本地前先保存当前的云端厂商
+                    if (this.form.model_provider !== 'local') {
+                        this.lastCloudProvider = this.form.model_provider
+                    }
+                    this.form.model_provider = 'local'
+                    await this.saveConfig()
+                    this.$message.info('已切换到本地模型，当前功能升级中暂不可用')
+                },
+                // 一键切换到云端模型
+                async switchToCloud() {
+                    // 恢复用户上次选择的云端厂商，不丢失原有配置
+                    this.form.model_provider = this.lastCloudProvider
+                    await this.saveConfig()
+                    this.$message.success('已切换到云端模型，已自动加载')
+                },
+                // 获取模型状态
+                // 打开火山方舟模型选择页面
+                openVolcengineArk() {
+                    window.open('https://console.volcengine.com/ark/region:ark+cn-beijing/model', '_blank')
+                },
+                async getModelStatus() {
+                    try {
+                        const res = await axios.get(`${this.apiBase}/local_models/status`)
+                        if (res.data.code === 200) {
+                            this.modelStatus = res.data.data
+                        }
+                    } catch (e) {}
+                },
+                // 加载本地模型列表（兼容本地模型功能升级中场景，接口不存在不报错）
+                async loadLocalModels() {
+                    if (this.form.model_provider !== 'local') return
+                    this.loadingModel = true
+                    try {
+                        const res = await axios.get(`${this.apiBase}/local_models/list`)
+                        if (res.data.code === 200) {
+                            this.localModelList = res.data.data.models || []
+                        }
+                    } catch (e) {
+                        console.warn('本地模型功能升级中，暂不可用:', e.message)
+                    } finally {
+                        this.loadingModel = false
+                    }
+                },
+                // 选择仓库存储路径
+                async selectRepositoryPath() {
+                    try {
+                        const res = await axios.post(`${this.apiBase}/utils/select_path`, { select_dir: true })
+                        if (res.data.code === 200 && res.data.data) {
+                            this.form.repository_path = res.data.data
+                        } else if (res.data.msg) {
+                            this.$message.info(res.data.msg)
+                        }
+                    } catch (e) {
+                        this.$message.error('选择文件夹失败:' + e.message)
+                    }
+                },
+                // 选择下载保存路径
+                async selectDownloadPath() {
+                    try {
+                        const res = await axios.post(`${this.apiBase}/utils/select_path`, { select_dir: true })
+                        if (res.data.code === 200 && res.data.data) {
+                            this.form.download_path = res.data.data
+                            this.$message.success('已选择下载路径，记得点击顶部保存配置生效')
+                        } else if (res.data.msg) {
+                            this.$message.info(res.data.msg)
+                        }
+                    } catch (e) {
+                        this.$message.error('选择文件夹失败:' + e.message)
+                    }
+                },
+                // 保存仓库路径
+                async saveRepositoryPath() {
+                    if (!this.form.repository_path) {
+                        this.$message.warning('请先选择仓库存储路径')
+                        return
+                    }
+                    this.$confirm(`确定要将仓库路径设置为【${this.form.repository_path}】吗？${this.migrateFiles ? '勾选了迁移文件，原有仓库所有文件会复制到新路径' : '不会迁移原有文件'}`, '提示', {
+                        confirmButtonText: '确定设置',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(async () => {
+                        this.migrateLoading = true
+                        try {
+                            const res = await axios.post(`${this.apiBase}/config/repository/set`, {
+                                new_path: this.form.repository_path,
+                                migrate_files: this.migrateFiles
+                            })
+                            if (res.data.code === 200) {
+                                this.$message.success(res.data.msg)
+                                this.migrateFiles = false
+                                // 重新加载配置
+                                await this.loadConfig()
+                            } else {
+                                this.$message.error(res.data.msg)
+                            }
+                        } catch (e) {
+                            this.$message.error('设置仓库路径失败:' + (e.response?.data?.detail || e.message))
+                        } finally {
+                            this.migrateLoading = false
+                        }
+                    }).catch(() => {})
+                },
+                // 添加禁止文件
+                async addForbiddenFile() {
+                    try {
+                        const res = await axios.post(`${this.apiBase}/utils/select_path`, { select_dir: false })
+                        if (res.data.code === 200 && res.data.data) {
+                            const path = res.data.data
+                            // 调用后端添加接口即时生效
+                            const addRes = await axios.post(`${this.apiBase}/config/forbidden/add`, { path: path })
+                            if (addRes.data.code === 200) {
+                                this.form.forbidden_paths = addRes.data.data.forbidden_paths
+                                this.$message.success('已添加禁止文件:' + path + '，即时生效')
+                            } else {
+                                this.$message.error(addRes.data.msg)
+                            }
+                        } else if (res.data.msg) {
+                            this.$message.info(res.data.msg)
+                        }
+                    } catch (e) {
+                        this.$message.error('选择文件失败:' + (e.response?.data?.msg || e.message))
+                    }
+                },
+                // 添加禁止文件夹
+                async addForbiddenFolder() {
+                    try {
+                        const res = await axios.post(`${this.apiBase}/utils/select_path`, { select_dir: true })
+                        if (res.data.code === 200 && res.data.data) {
+                            const path = res.data.data
+                            // 调用后端添加接口即时生效
+                            const addRes = await axios.post(`${this.apiBase}/config/forbidden/add`, { path: path })
+                            if (addRes.data.code === 200) {
+                                this.form.forbidden_paths = addRes.data.data.forbidden_paths
+                                this.$message.success('已添加禁止文件夹:' + path + '，即时生效')
+                            } else {
+                                this.$message.error(addRes.data.msg)
+                            }
+                        } else if (res.data.msg) {
+                            this.$message.info(res.data.msg)
+                        }
+                    } catch (e) {
+                        this.$message.error('选择文件夹失败:' + (e.response?.data?.msg || e.message))
+                    }
+                },
+                // 移除禁止路径
+                removeForbiddenPath(idx) {
+                    const delPath = this.form.forbidden_paths[idx]
+                    this.$confirm('确定要移除该禁止路径吗？移除后AI将可以正常操作该路径下的文件，操作即时生效', '提示', {
+                        confirmButtonText: '确定移除',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(async () => {
+                        try {
+                            const res = await axios.post(`${this.apiBase}/config/forbidden/delete`, { path: delPath })
+                            if (res.data.code === 200) {
+                                this.form.forbidden_paths = res.data.data.forbidden_paths
+                                this.$message.success('已移除禁止路径，即时生效')
+                            } else {
+                                this.$message.error(res.data.msg)
+                            }
+                        } catch (e) {
+                            this.$message.error('移除失败:' + (e.response?.data?.msg || e.message))
+                        }
+                    }).catch(() => {})
+                },
+                // 检测向量检索环境状态
+                async checkVectorEnv() {
+                    this.vectorEnvLoading = true
+                    try {
+                        const res = await axios.get(`${this.apiBase}/memory/env_check`)
+                        if (res.data.code === 200) {
+                            this.vectorEnv = res.data.data
+                        }
+                    } catch (e) {
+                        this.$message.error('检测向量检索环境失败:' + e.message)
+                    } finally {
+                        this.vectorEnvLoading = false
+                    }
+                }
+            }
+        })
+    </script>
+</body>
+</html>

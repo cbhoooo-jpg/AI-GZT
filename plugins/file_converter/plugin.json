@@ -1,0 +1,40 @@
+{
+    "plugin_id": "file_converter",
+    "name": "文件格式转换插件",
+    "version": "1.1.0",
+    "author": "AI智能助手",
+    "description": "支持常见图片格式互转、文档格式转换、表格格式转换的本地文件处理插件",
+    "category": "本地操作",
+    "entry": "main.py",
+    "trigger_words": ["文件转换", "格式转换", "图片转换", "转图片", "转格式", "png转jpg", "jpg转webp", "批量转换图片", "md转word", "md转excel", "文档转换", "表格转换", "markdown转word", "markdown转excel"],
+    "permissions": ["file_read", "file_write"],
+    "parameters": [
+        {
+            "name": "input_path",
+            "type": "string",
+            "required": true,
+            "description": "源文件路径或目录路径（目录则批量转换所有支持的文件）"
+        },
+        {
+            "name": "output_format",
+            "type": "string",
+            "required": true,
+            "description": "目标格式，支持图片格式:png/jpg/jpeg/webp/bmp/ico/gif，文档格式:docx（Word）、xlsx（Excel）"
+        },
+        {
+            "name": "output_dir",
+            "type": "string",
+            "required": false,
+            "description": "输出目录，默认和源文件同目录"
+        },
+        {
+            "name": "quality",
+            "type": "integer",
+            "required": false,
+            "default": 80,
+            "description": "图片压缩质量（1-100），仅对jpg/webp等有损格式生效"
+        }
+    ],
+    "dependencies": ["pypandoc-binary==1.13", "openpyxl==3.1.5"],
+    "enabled": true
+}

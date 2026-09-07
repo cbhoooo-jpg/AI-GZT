@@ -1,0 +1,28 @@
+{
+    "model_provider": "火山方舟",
+    "api_url": "https://ark.cn-beijing.volces.com/api/v3",
+    "model_name": "doubao-seed-2-1-pro-260628",
+    "api_key": "",
+    "timeout": 200,
+    "stream_output": true,
+    "temperature": 0.5,
+    "download_path": "",
+    "max_parse_fail_count": 3,
+    "repository_path": "",
+    "max_chat_rounds": 10,
+    "forbidden_paths": [
+        "C:/Windows",
+        "C:/Program Files",
+        "C:/Program Files (x86)",
+        "C:/ProgramData"
+    ],
+    "system": {
+        "tos_endpoint": "https://tos-cn-beijing.volces.com",
+        "tos_bucket": "",
+        "tos_ak": "",
+        "tos_sk": "",
+        "project_root_absolute_path": ""
+    },
+    "show_debug_console": false,
+    "lastCloudProvider": "火山方舟"
+}

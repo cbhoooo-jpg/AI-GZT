@@ -1,0 +1,150 @@
+{
+  "plugin_id": "rag_enhance",
+  "name": "RAG增强与本地知识库",
+  "version": "1.2.0",
+  "author": "AI智能助手官方",
+  "description": "本地文件名毫秒级搜索、轻量化Markdown知识库、网页剪藏、RAG文档问答，所有数据100%本地存储，默认全盘自动扫描，后台常驻运行",
+  "enabled": true,
+  "run_mode": "daemon",
+  "trigger_keyword": ["搜索文档", "找文件", "本地搜索", "知识库", "笔记", "剪藏", "保存网页", "文档问答"],
+  "trigger_words": ["搜索文档", "找文件", "本地搜索", "知识库", "笔记", "剪藏", "保存网页", "文档问答"],
+  "permissions": ["read_file", "write_file", "network"],
+  "entry": "main.py",
+  "parameters": [
+    {
+      "name": "action",
+      "type": "string",
+      "description": "插件操作类型:search_files(搜索本地文件)/search_knowledge_base(搜索知识库笔记内容)/scan_directory(扫描目录)/read_file_content(读取文件内容)/save_note(保存笔记)/should_auto_save(判断是否自动入库)",
+      "required": true,
+      "default": "search_files"
+    },
+    {
+      "name": "tags",
+      "type": "array",
+      "description": "知识库标签过滤列表，仅搜索包含指定标签的笔记，search_knowledge_base接口专用",
+      "required": false,
+      "default": []
+    },
+    {
+      "name": "keyword",
+      "type": "string",
+      "description": "搜索关键词，支持模糊匹配",
+      "required": false,
+      "default": ""
+    },
+    {
+      "name": "file_type",
+      "type": "string",
+      "description": "文件类型过滤，如docx/pdf/py",
+      "required": false,
+      "default": ""
+    },
+    {
+      "name": "limit",
+      "type": "integer",
+      "description": "搜索结果返回最大数量",
+      "required": false,
+      "default": 50
+    },
+    {
+      "name": "dir_path",
+      "type": "string",
+      "description": "要扫描的目录路径，默认扫描配置的索引目录",
+      "required": false,
+      "default": ""
+    },
+    {
+      "name": "file_path",
+      "type": "string",
+      "description": "要读取内容的文件绝对路径",
+      "required": false,
+      "default": ""
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "笔记标题",
+      "required": false,
+      "default": "未命名笔记"
+    },
+    {
+      "name": "content",
+      "type": "string",
+      "description": "笔记内容",
+      "required": false,
+      "default": ""
+    },
+    {
+      "name": "source_url",
+      "type": "string",
+      "description": "笔记来源URL",
+      "required": false,
+      "default": ""
+    },
+    {
+      "name": "source",
+      "type": "string",
+      "description": "内容来源:user/info_collector/ai_generate",
+      "required": false,
+      "default": "user"
+    }
+  ],
+  "config": [
+    {
+      "key": "exclude_patterns",
+      "label": "排除规则",
+      "type": "array",
+      "default": ["*.tmp", "*.temp", "*.log", "*.cache", "~$*", "*.chk", "*.old", "*/Windows/*", "*/Program Files/*", "*/Program Files (x86)/*", "*/ProgramData/*", "*/$Recycle.Bin/*", "*/System Volume Information/*", "*/Recovery/*", "*/node_modules/*", "*/.git/*", "*/.svn/*", "*/__pycache__/*", "*/AppData/Local/Temp/*", "*/AppData/Local/Microsoft/Windows/INetCache/*"],
+      "description": "不需要索引的文件/目录匹配规则，默认已排除系统目录和临时文件，无需手动配置索引目录，插件自动扫描全盘所有可用磁盘"
+    },
+    {
+      "key": "enable_web_clip",
+      "label": "启用网页剪藏",
+      "type": "boolean",
+      "default": true,
+      "description": "支持将网页内容保存到本地知识库"
+    },
+    {
+      "key": "low_priority_only",
+      "label": "仅低优先级运行",
+      "type": "boolean",
+      "default": true,
+      "description": "扫描索引时仅在系统空闲时运行，不占用前台资源"
+    },
+    {
+      "key": "note_dir",
+      "label": "笔记存储目录",
+      "type": "string",
+      "default": "~/Documents/AI知识库",
+      "description": "Markdown笔记本地存储路径"
+    },
+    {
+      "key": "auto_index",
+      "label": "启动时自动扫描",
+      "type": "boolean",
+      "default": true,
+      "description": "插件启动时自动扫描索引目录"
+    },
+    {
+      "key": "auto_save_collect_content",
+      "label": "自动保存采集内容",
+      "type": "boolean",
+      "default": true,
+      "description": "info_collector采集的网络内容自动存入知识库"
+    },
+    {
+      "key": "auto_save_trigger_keywords",
+      "label": "自动入库触发词",
+      "type": "array",
+      "default": ["存到知识库", "保存为笔记", "加入知识库"],
+      "description": "用户消息包含这些关键词时自动保存内容到知识库"
+    },
+    {
+      "key": "exclude_auto_save_keywords",
+      "label": "自动入库排除词",
+      "type": "array",
+      "default": ["开发总结", "修复结果", "工具调用日志", "报错信息"],
+      "description": "包含这些关键词的内容不自动入库"
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "plugin_id": "image_generator",
+  "name": "AI图片生成插件",
+  "description": "调用豆包Seedream高清生图模型生成3K/4K分辨率图片，支持文生图/图生图/多图融合、多角度专业卡片生成，无需手动填写像素值，本地图片自动转Base64上传",
+  "version": "1.1.0",
+  "author": "AI助手",
+  "trigger_words": ["生成图片", "画图", "AI绘图", "画一张", "生成插图"],
+  "entry": "main.py",
+  "permissions": ["network","write_file","read_file"],
+  "enabled": true,
+  "icon": "",
+  "min_system_version": "1.2.0",
+  "config": [
+    {
+      "key": "ark_api_key", 
+      "label": "火山方舟API密钥", 
+      "type": "password", 
+      "default": "", 
+      "placeholder": "从火山方舟对应应用的控制台「密钥管理」处获取", 
+      "required": true
+    },
+    {
+      "key": "ark_api_url", 
+      "label": "API接口地址", 
+      "type": "input", 
+      "default": "https://ark.cn-beijing.volces.com/api/v3/images/generations", 
+      "placeholder": "火山方舟应用专属的API调用Endpoint地址", 
+      "required": true
+    },
+    {
+      "key": "ark_model_id", 
+      "label": "模型ID", 
+      "type": "input", 
+      "default": "doubao-seedream-5-0-260128", 
+      "placeholder": "火山方舟对应部署模型的ID", 
+      "required": true
+    },
+    {
+      "key": "save_path", 
+      "label": "图片保存路径", 
+      "type": "input", 
+      "default": "D:/AI仓库文件夹/文件生成/图片生成/", 
+      "placeholder": "生成图片的本地保存目录，会自动创建不存在的路径", 
+      "required": true
+    },
+    {
+      "key": "open_volc_ark", 
+      "label": "前往开通模型", 
+      "type": "button", 
+      "action": "openUrl", 
+      "url": "https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement", 
+      "description": "点击直达火山方舟控制台，可开通Seedream生图模型、获取API密钥、复制模型ID", 
+      "default": "", 
+      "required": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "prompt", 
+      "type": "string", 
+      "required": true, 
+      "description": "图片生成的提示词，越详细生成效果越好"
+    },
+    {
+      "name": "size_level", 
+      "type": "string", 
+      "required": false, 
+      "description": "分辨率档位，可选值:3k/4k，默认3k，无需手动填写像素值，所有档位均符合模型最低像素要求"
+    },
+    {
+      "name": "size_ratio", 
+      "type": "string", 
+      "required": false, 
+      "description": "图片比例，可选值:1:1/16:9/9:16/4:3/3:4/2:3/21:9，默认16:9"
+    },
+    {
+      "name": "style", 
+      "type": "string", 
+      "required": false, 
+      "description": "图片风格，如写实、卡通、科幻、水墨画等"
+    },
+    {
+      "name": "count", 
+      "type": "int", 
+      "required": false, 
+      "description": "生成图片数量，默认1，最多支持4张"
+    },
+    {
+      "name": "images", 
+      "type": "list", 
+      "required": false, 
+      "description": "参考图列表，支持本地文件路径/URL/Base64，最多14张，本地图片自动转Base64上传实现图生图/多图融合"
+    },
+    {
+      "name": "card_type", 
+      "type": "string", 
+      "required": false, 
+      "description": "卡片类型，可选值:人物/场景/动物/物体，传值后自动生成对应类型的多角度标准化卡片"
+    },
+    {
+      "name": "card_mode", 
+      "type": "string", 
+      "required": false, 
+      "description": "卡片模式，可选值:normal/unified，默认normal（独立多角度卡片模式），传unified时启用合一卡片模式，自动生成1920×2160竖版合一简介卡片"
+    },
+    {
+      "name": "introduction",
+      "type": "string", 
+      "required": false, 
+      "description": "合一卡片自定义简介内容，未传值时自动根据提示词生成标准化简介"
+    }
+  ]       
+}
