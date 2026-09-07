@@ -100,6 +100,39 @@ python main.py
 
 首次启动后在「系统设置」中配置模型 API（或选择本地模型），设置仓库目录即可使用。完整打包方案见 `build.py` 与 `AI智能助手Windows单机版跑通方案.md`。
 
+## 源码运行补充:向量模型文件
+
+RAG 私有知识库依赖中文向量模型 `gte-small-zh`（阿里达摩院 GTE 中文向量模型，向量维度 512）。
+
+- **安装版用户无需任何操作**:安装包已内置完整模型文件（`pytorch_model.bin`，约 58 MB），开箱即用。
+- **源码用户请注意**:受 GitHub 仓库体积限制，模型权重文件 `pytorch_model.bin` 未纳入 Git 仓库。`git clone` 后需自行下载该文件并放入 `gte-small-zh/` 目录；若缺少该文件，程序启动时 RAG 知识库会**自动降级禁用**（对话、插件等其他功能完全不受影响），控制台会打印警告信息。
+
+**下载方式一:网页直接下载（推荐）**
+
+1. 打开 ModelScope 模型主页:https://modelscope.cn/models/iic/nlp_gte_sentence-embedding_chinese-small
+2. 切换到「文件」标签页，在文件列表中找到 `pytorch_model.bin`，点击下载
+3. 将下载得到的 `pytorch_model.bin` 放入项目根目录下的 `gte-small-zh/` 文件夹，与 `configuration.json`、`vocab.txt` 等文件同级
+
+**下载方式二:modelscope 命令行**
+
+```bash
+pip install modelscope
+modelscope download --model iic/nlp_gte_sentence-embedding_chinese-small pytorch_model.bin --local_dir gte-small-zh
+```
+
+放置完成后，`gte-small-zh/` 目录结构应如下所示:
+
+```
+gte-small-zh/
+├── pytorch_model.bin        # ← 需自行下载（约 58 MB）
+├── configuration.json
+├── config.json
+├── vocab.txt
+├── tokenizer_config.json
+├── special_tokens_map.json
+└── ...
+```
+
 ## 插件开发
 
 插件放置于 `plugins/` 目录，每个插件包含 `main.py` + `plugin.json`，模板参考 `plugin_templates/` 目录下的三类标准模板（AIGC 生成类 / 信息采集查询类 / 本地操作类）。
