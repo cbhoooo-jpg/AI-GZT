@@ -34,6 +34,8 @@
 | memory_config.json | AI智能助手 | 配置文件 |
 | project_manual_manager.py | AI智能助手 | 项目手册管理核心模块 |
 | prompt_templates.json | AI智能助手 | 配置文件 |
+| push_err.txt | AI智能助手 | 文本文件 |
+| push_log.txt | AI智能助手 | 文本文件 |
 | Python和依赖安装.bat | AI智能助手 | 其他文件 |
 | rag_manager.py | AI智能助手 | 添加文件到RAG库，自动提取项目归属标签 |
 | README.md | AI智能助手 | Markdown文档 |
@@ -53,6 +55,7 @@
 | web_settings.html | AI智能助手 | 系统设置 |
 | web_workspace.html | AI智能助手 | AI工作台 |
 | 一键打包.bat | AI智能助手 | 其他文件 |
+| 推送到GitHub.bat | AI智能助手 | 其他文件 |
 | code_rag/code.index | AI智能助手/code_rag | 其他文件 |
 | gte-small-zh/.msc | AI智能助手/gte-small-zh | 其他文件 |
 | gte-small-zh/.mv | AI智能助手/gte-small-zh | 其他文件 |
@@ -453,6 +456,16 @@
 - 功能描述：配置文件
 - 实现状态：✅ 已实现
 
+### 📄 文件名：push_err.txt
+- 所属模块：AI智能助手
+- 功能描述：文本文件
+- 实现状态：✅ 已实现
+
+### 📄 文件名：push_log.txt
+- 所属模块：AI智能助手
+- 功能描述：文本文件
+- 实现状态：⏳ 待开发
+
 ### 📄 文件名：Python和依赖安装.bat
 - 所属模块：AI智能助手
 - 功能描述：其他文件
@@ -588,6 +601,11 @@
 - 实现状态：✅ 已实现
 
 ### 📄 文件名：一键打包.bat
+- 所属模块：AI智能助手
+- 功能描述：其他文件
+- 实现状态：✅ 已实现
+
+### 📄 文件名：推送到GitHub.bat
 - 所属模块：AI智能助手
 - 功能描述：其他文件
 - 实现状态：✅ 已实现
