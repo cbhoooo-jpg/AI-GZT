@@ -92,6 +92,20 @@ Unless required by applicable law or agreed to in writing, software distributed 
 
 ## 快速开始
 
+**方式一:一键环境安装（推荐，无需手动装任何东西）**
+
+Windows 用户直接双击项目根目录下的 **`Python和依赖安装.bat`**，脚本会自动完成全部环境准备:
+
+1. 检测并自动下载安装 **Python 3.11.9**（华为云镜像，静默安装到当前用户目录，**无需管理员权限**）
+2. 检测并自动安装 **VC++ 2015-2022 x64 运行库**（PyTorch 等依赖必需，已安装则自动跳过）
+3. 自动升级 pip 并配置清华国内镜像源，加速依赖下载
+4. 自动安装 `requirements.txt` 中的全部依赖（总大小约 3.5 GB，预计 5-15 分钟，请耐心等待）
+5. 自动校验 PySide6、FastAPI、PyTorch、Transformers 等核心依赖是否安装成功
+
+看到「环境配置全部完成」提示后，直接运行 `python main.py` 启动程序即可。若中途报错，按脚本窗口内的中文提示排查网络后重新运行即可（已安装的步骤会自动跳过）。
+
+**方式二:手动安装（本机已有 Python 3.11 环境的用户）**
+
 ```bash
 # 环境要求:Python 3.11（向量检索依赖需 3.11）
 pip install -r requirements.txt
