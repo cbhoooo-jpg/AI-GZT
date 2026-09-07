@@ -31,7 +31,6 @@
 | 前端界面 | 系统设置 | 模型配置、仓库路径、白名单、记忆参数配置 | ✅ 已实现 | web_settings.html |
 | 开源合规 | 免费开源 | 源码完全开源（Apache 2.0），无激活、无注册码、无功能限制，开箱即用 | ✅ 已实现 | - |
 | 打包部署 | 打包脚本 | PyInstaller一键打包，自动识别Inno Setup编译器生成安装包 | ✅ 已实现 | build.py、setup.iss |
-| 辅助工具 | 软著文档转换 | 自动生成带页眉页脚的软著源代码Word、说明书Word | ✅ 已实现 | convert_code_docx.py、convert_docx.py |
 | 辅助工具 | 图标转换 | PNG转ICO超清圆形图标 | ✅ 已实现 | convert_icon.py |
 ---
 ## 二、插件能力明细

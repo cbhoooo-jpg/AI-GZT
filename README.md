@@ -92,6 +92,11 @@ Unless required by applicable law or agreed to in writing, software distributed 
 
 ## 快速开始
 
+> 📦 **请先确认你拿到的是哪种分发形式:**
+>
+> - **安装包用户（免费版 / 赞助版 `.exe` 安装包）**:运行环境（Python 与全部依赖）已内置打包，**安装后开箱即用，无需运行本章节任何命令、无需下载 `Python和依赖安装.bat`**。
+> - **源码包用户（`git clone` 或下载 Release 页的 Source code 压缩包）**:本机需先配置 Python 3.11 运行环境。**推荐直接双击项目根目录下的 `Python和依赖安装.bat` 一键自动安装**（见下方方式一）；本机已有 Python 3.11 环境的用户也可按方式二手动安装依赖。
+
 **方式一:一键环境安装（推荐，无需手动装任何东西）**
 
 Windows 用户直接双击项目根目录下的 **`Python和依赖安装.bat`**，脚本会自动完成全部环境准备:
@@ -112,7 +117,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-首次启动后在「系统设置」中配置模型 API（或选择本地模型），设置仓库目录即可使用。完整打包方案见 `build.py` 与 `AI智能助手Windows单机版跑通方案.md`。
+首次启动后在「系统设置」中配置模型 API（或选择本地模型），设置仓库目录即可使用。完整打包方案见 `build.py` 。
 
 ## 源码运行补充:向量模型文件
 
