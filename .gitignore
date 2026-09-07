@@ -39,3 +39,6 @@ _oss_path_cleanup.py
 # ===== git推送临时日志（双击推送脚本时生成，不进仓库） =====
 push_log.txt
 push_err.txt
+
+# ===== GitHub Release 发布状态缓存（本机临时文件，不进仓库） =====
+release_info.json

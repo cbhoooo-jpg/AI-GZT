@@ -39,6 +39,7 @@
 | Python和依赖安装.bat | AI智能助手 | 其他文件 |
 | rag_manager.py | AI智能助手 | 添加文件到RAG库，自动提取项目归属标签 |
 | README.md | AI智能助手 | Markdown文档 |
+| release_info.json | AI智能助手 | 配置文件 |
 | requirements.txt | AI智能助手 | 文本文件 |
 | sample.html | AI智能助手 | 记忆管理 - AI智能助手 |
 | scheduler_manager.py | AI智能助手 | 其他文件 |
@@ -55,6 +56,8 @@
 | web_settings.html | AI智能助手 | 系统设置 |
 | web_workspace.html | AI智能助手 | AI工作台 |
 | 一键打包.bat | AI智能助手 | 其他文件 |
+| 发布GitHubRelease.ps1 | AI智能助手 | 其他文件 |
+| 发布Release.bat | AI智能助手 | 其他文件 |
 | 推送到GitHub.bat | AI智能助手 | 其他文件 |
 | code_rag/code.index | AI智能助手/code_rag | 其他文件 |
 | gte-small-zh/.msc | AI智能助手/gte-small-zh | 其他文件 |
@@ -491,6 +494,11 @@
 - 功能描述：Markdown文档
 - 实现状态：✅ 已实现
 
+### 📄 文件名：release_info.json
+- 所属模块：AI智能助手
+- 功能描述：配置文件
+- 实现状态：✅ 已实现
+
 ### 📄 文件名：requirements.txt
 - 所属模块：AI智能助手
 - 功能描述：文本文件
@@ -601,6 +609,16 @@
 - 实现状态：✅ 已实现
 
 ### 📄 文件名：一键打包.bat
+- 所属模块：AI智能助手
+- 功能描述：其他文件
+- 实现状态：✅ 已实现
+
+### 📄 文件名：发布GitHubRelease.ps1
+- 所属模块：AI智能助手
+- 功能描述：其他文件
+- 实现状态：✅ 已实现
+
+### 📄 文件名：发布Release.bat
 - 所属模块：AI智能助手
 - 功能描述：其他文件
 - 实现状态：✅ 已实现
