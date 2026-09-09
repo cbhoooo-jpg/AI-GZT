@@ -113,6 +113,11 @@
 | screenshots/02-uac-unknown.png | AI智能助手/screenshots | 图片资源 |
 | screenshots/03-license.png | AI智能助手/screenshots | 图片资源 |
 | screenshots/04-install-dir.png | AI智能助手/screenshots | 图片资源 |
+| screenshots/05-workspace-and-float.png | AI智能助手/screenshots | 图片资源 |
+| screenshots/06-repository.png | AI智能助手/screenshots | 图片资源 |
+| screenshots/07-settings-model.png | AI智能助手/screenshots | 图片资源 |
+| screenshots/08-operation-logs.png | AI智能助手/screenshots | 图片资源 |
+| screenshots/09-scheduled-task.png | AI智能助手/screenshots | 图片资源 |
 | screenshots/README.md | AI智能助手/screenshots | Markdown文档 |
 | static/axios.min.js | AI智能助手/static | 其他文件 |
 | static/clike.min.js | AI智能助手/static | 其他文件 |
@@ -309,6 +314,7 @@
   | ManualChangeHandler | 类 | 项目手册变动事件处理器 |
   | get_repository_path | 函数 | 动态获取当前配置的仓库路径，自动适配配置更新，避免硬编码 |
   | trigger_file_change_notify | 函数 | 暂无描述 |
+  | request_manual_update | 函数 | 文件事件线程调用:登记手册待处理（仅轻量赋值+唤醒，重写由工作线程串行执行） |
   | start_monitor | 函数 | 启动双向监听服务 |
   | FileChangeHandler.on_any_event | 函数 | 统一处理所有文件变动事件 |
 - 实现状态：✅ 已实现
@@ -986,6 +992,31 @@
 - 功能描述：图片资源
 - 实现状态：✅ 已实现
 
+### 📄 文件名：screenshots/05-workspace-and-float.png
+- 所属模块：AI智能助手/screenshots
+- 功能描述：图片资源
+- 实现状态：✅ 已实现
+
+### 📄 文件名：screenshots/06-repository.png
+- 所属模块：AI智能助手/screenshots
+- 功能描述：图片资源
+- 实现状态：✅ 已实现
+
+### 📄 文件名：screenshots/07-settings-model.png
+- 所属模块：AI智能助手/screenshots
+- 功能描述：图片资源
+- 实现状态：✅ 已实现
+
+### 📄 文件名：screenshots/08-operation-logs.png
+- 所属模块：AI智能助手/screenshots
+- 功能描述：图片资源
+- 实现状态：✅ 已实现
+
+### 📄 文件名：screenshots/09-scheduled-task.png
+- 所属模块：AI智能助手/screenshots
+- 功能描述：图片资源
+- 实现状态：✅ 已实现
+
 ### 📄 文件名：screenshots/README.md
 - 所属模块：AI智能助手/screenshots
 - 功能描述：Markdown文档
@@ -1121,10 +1152,16 @@
 | 1 | 一键打包工具:新建「一键打包.bat」，双击自动完成 Python3.11检测 → 创建/复用.venv虚拟环境 → 清华源安装requirements.txt依赖（已装秒过）→ 虚拟环境内执行build.py打包| 已完成 | ✅ 完成 |
 | 2 | README新增Gitee国内镜像地址:①开头简介后新增「仓库地址」小节，标注Gitee镜像 https://gitee.com/chen-bohan3000/ai-gzt  | 已完成 | ✅ 完成 |
 | 3 | 全量文件扫描噪音过滤统一修复（BUG根治）:新建file_filter_config.py统一过滤配置源——目录黑名单EXCLUDE_DIR_NAMES、后缀黑名单、文件名黑名单；| 已完成 | ✅ 已完成（真实安装环境实测根治） |
+| 4 | 监听自激循环根治（稳定性BUG）:①project_manual_manager内容无变化短路不写盘+mtime乐观锁(409放弃冲突轮次)+临时文件os.replace原子写；②auto_sync_monitor新增唯一守护线程串行调度器（trailing防抖1秒+串行扫描+静默复查+仅内容真实变化才广播SSE），事件入口只登记不重写，backup目录入黑名单；③api_server手动同步接口对齐409/404处理与changed广播条件 | 已完成 | ✅ 已完成（安装版5项真机实测全部通过） |
 
 ## 五、风险评估与应对
 | 风险点 | 影响等级 | 应对方案 | 状态 |
 | --- | --- | --- | --- |
+| 监听自激循环:watchdog事件线程直接重写手册→再次触发监听，形成0.5~1秒级刷屏风暴，并引发前端SSE高频广播与JSON解析报错 | 高 | 已根治:事件入口仅登记不重写，唯一守护线程trailing防抖1秒+串行扫描；内容无变化短路不写盘；仅changed=True才广播SSE；安装版5项真机实测通过 | ✅ 已闭环 |
+| 源码修复对已安装运行版不生效:Python打包后不热加载，改.py不重新打包安装则旧逻辑继续运行 | 中 | 修复后必须重新执行build.py打包→关闭旧exe→安装新版；通过PID变化与手册mtime静止双重确认新版生效 | ✅ 已规避（已纳入发布流程） |
+| 备份文件误触发手册更新:编辑器自动备份落盘可能被监听器当作文件变动 | 中 | 双保险:备份目录在安装盘(C盘)、监听根在仓库盘(D盘)物理隔离；同时backup目录已入监听黑名单纵深防御 | ✅ 已闭环（真机实测） |
+| 未签名安装包触发SmartScreen/UAC未知发布者提示及杀软误报，可能降低用户信任 | 中 | 现阶段README提供4步图文跳过教程；暂不购买证书（EV自2024年起也不再即时绕过SmartScreen）；待有真实用户测试后，优先评估SignPath基金会对开源项目免费OV签名，其次Azure Trusted Signing($9.99/月，个人限美加)，国内个人开发者只能选传统OV($150-300/年) | ⏸ 暂缓（待用户测试后决策） |
+| 123云盘免费分享链接可能失效或被风控，导致下载入口不可用 | 中 | README同时保留Gitee源码克隆入口与Release分发；发布前校验链接有效性，失效即更换；后续可迁移至GitHub Release/Gitee Release附件 | ⏳ 持续监控 |
 
 ## 六、版本迭代记录
 | 版本号 | 发布时间 | 更新内容 | 负责人 |
