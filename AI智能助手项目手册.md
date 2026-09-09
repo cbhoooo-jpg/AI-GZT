@@ -26,15 +26,20 @@
 | convert_icon.py | AI智能助手 | PNG转ICO超清圆形图标转换脚本 |
 | editor_empty_bg.png | AI智能助手 | 图片资源 |
 | file_editor.html | AI智能助手 | 文件预览 |
+| file_filter_config.py | AI智能助手 | 文件过滤统一配置模块（file_filter_config.py） |
+| file_upload_map.json | AI智能助手 | 配置文件 |
 | LICENSE | AI智能助手 | 其他文件 |
 | llm_client.py | AI智能助手 | 统一模型调用客户端 |
 | logo.png | AI智能助手 | 图片资源 |
 | main.py | AI智能助手 | 其他文件 |
 | memory_cache.py | AI智能助手 | 向量记忆库 |
 | memory_config.json | AI智能助手 | 配置文件 |
+| pending_samples.json | AI智能助手 | 配置文件 |
 | project_manual_manager.py | AI智能助手 | 项目手册管理核心模块 |
 | prompt_templates.json | AI智能助手 | 配置文件 |
 | push_err.txt | AI智能助手 | 文本文件 |
+| push_gitee_err.txt | AI智能助手 | 文本文件 |
+| push_gitee_out.txt | AI智能助手 | 文本文件 |
 | push_log.txt | AI智能助手 | 文本文件 |
 | Python和依赖安装.bat | AI智能助手 | 其他文件 |
 | rag_manager.py | AI智能助手 | 添加文件到RAG库，自动提取项目归属标签 |
@@ -45,6 +50,7 @@
 | scheduler_manager.py | AI智能助手 | 其他文件 |
 | screenshot_tool.py | AI智能助手 | 全局系统级截图工具 V1.0（极简无依赖版） |
 | setup.iss | AI智能助手 | 其他文件 |
+| system_prompt_config.json | AI智能助手 | 配置文件 |
 | THIRD_PARTY_LICENSES.md | AI智能助手 | Markdown文档 |
 | tool_template_manager.py | AI智能助手 | AI助手指令固化模块 |
 | web_about.html | AI智能助手 | 关于 - AI工作台 |
@@ -59,7 +65,6 @@
 | 发布GitHubRelease.ps1 | AI智能助手 | 其他文件 |
 | 发布Release.bat | AI智能助手 | 其他文件 |
 | 推送到GitHub.bat | AI智能助手 | 其他文件 |
-| code_rag/code.index | AI智能助手/code_rag | 其他文件 |
 | gte-small-zh/.msc | AI智能助手/gte-small-zh | 其他文件 |
 | gte-small-zh/.mv | AI智能助手/gte-small-zh | 其他文件 |
 | gte-small-zh/config.json | AI智能助手/gte-small-zh | 配置文件 |
@@ -72,7 +77,6 @@
 | gte-small-zh/vocab.txt | AI智能助手/gte-small-zh | 文本文件 |
 | gte-small-zh/resources/dual-encoder.png | AI智能助手/gte-small-zh/resources | 图片资源 |
 | Languages/ChineseSimplified.isl | AI智能助手/Languages | 其他文件 |
-| Languages/ChineseSimplified.isl.bak | AI智能助手/Languages | 其他文件 |
 | plugins/channel_wecom/main.py | AI智能助手/plugins/channel_wecom | 企业微信远程通道插件 |
 | plugins/channel_wecom/plugin.json | AI智能助手/plugins/channel_wecom | 配置文件 |
 | plugins/channel_wecom/README.md | AI智能助手/plugins/channel_wecom | Markdown文档 |
@@ -353,6 +357,22 @@
 - 功能描述：文件预览
 - 实现状态：✅ 已实现
 
+### 📄 文件名：file_filter_config.py
+- 所属模块：AI智能助手
+- 功能描述：文件过滤统一配置模块（file_filter_config.py）
+- 包含类&核心函数列表：
+  | 名称 | 类型 | 功能描述 |
+  | --- | --- | --- |
+  | is_noise_dir | 函数 | 判断目录名是否为应排除的噪音目录（精确匹配，不做前缀/子串匹配） |
+  | is_noise_file | 函数 | 判断文件名是否为应排除的噪音文件（点开头文件一律保留，如 .gitignore） |
+  | prune_walk_dirs | 函数 | 对 os.walk 的 dirs 列表原地剪枝（排除噪音目录，阻止递归进入） |
+- 实现状态：✅ 已实现
+
+### 📄 文件名：file_upload_map.json
+- 所属模块：AI智能助手
+- 功能描述：配置文件
+- 实现状态：✅ 已实现
+
 ### 📄 文件名：LICENSE
 - 所属模块：AI智能助手
 - 功能描述：其他文件
@@ -440,6 +460,11 @@
 - 功能描述：配置文件
 - 实现状态：✅ 已实现
 
+### 📄 文件名：pending_samples.json
+- 所属模块：AI智能助手
+- 功能描述：配置文件
+- 实现状态：✅ 已实现
+
 ### 📄 文件名：project_manual_manager.py
 - 所属模块：AI智能助手
 - 功能描述：项目手册管理核心模块
@@ -460,6 +485,16 @@
 - 实现状态：✅ 已实现
 
 ### 📄 文件名：push_err.txt
+- 所属模块：AI智能助手
+- 功能描述：文本文件
+- 实现状态：✅ 已实现
+
+### 📄 文件名：push_gitee_err.txt
+- 所属模块：AI智能助手
+- 功能描述：文本文件
+- 实现状态：✅ 已实现
+
+### 📄 文件名：push_gitee_out.txt
 - 所属模块：AI智能助手
 - 功能描述：文本文件
 - 实现状态：✅ 已实现
@@ -546,6 +581,11 @@
 - 功能描述：其他文件
 - 实现状态：✅ 已实现
 
+### 📄 文件名：system_prompt_config.json
+- 所属模块：AI智能助手
+- 功能描述：配置文件
+- 实现状态：✅ 已实现
+
 ### 📄 文件名：THIRD_PARTY_LICENSES.md
 - 所属模块：AI智能助手
 - 功能描述：Markdown文档
@@ -628,11 +668,6 @@
 - 功能描述：其他文件
 - 实现状态：✅ 已实现
 
-### 📄 文件名：code_rag/code.index
-- 所属模块：AI智能助手/code_rag
-- 功能描述：其他文件
-- 实现状态：⏳ 待开发
-
 ### 📄 文件名：gte-small-zh/.msc
 - 所属模块：AI智能助手/gte-small-zh
 - 功能描述：其他文件
@@ -689,11 +724,6 @@
 - 实现状态：✅ 已实现
 
 ### 📄 文件名：Languages/ChineseSimplified.isl
-- 所属模块：AI智能助手/Languages
-- 功能描述：其他文件
-- 实现状态：✅ 已实现
-
-### 📄 文件名：Languages/ChineseSimplified.isl.bak
 - 所属模块：AI智能助手/Languages
 - 功能描述：其他文件
 - 实现状态：✅ 已实现
@@ -1088,16 +1118,9 @@
 ## 四、功能开发计划
 | 步骤 | 功能内容 | 预估耗时 | 状态 |
 | --- | --- | --- | --- |
-| 1 | 开源合规准备:全项目敏感信息扫描（API密钥/硬编码路径/个人信息/私钥） | 已完成 | ✅ 完成 |
-| 2 | 创建 Apache-2.0 LICENSE 许可证文件 | 已完成 | ✅ 完成 |
-| 3 | 创建 README.md（含许可证声明、权限风险声明、第三方服务说明） | 已完成 | ✅ 完成 |
-| 4 | 开源路径清理:新建.gitignore与config.example.json模板；6个代码文件9处硬编码D:/AI路径全部中性化为~/Documents动态路径（py_compile校验通过、残留为零） | 已完成 | ✅ 完成 |
-| 5 | 开源方案A执行:删除keygen.py/auth_manager.py/activation_dialog.py共3个激活模块文件；清理main.py启动激活校验块与channel_wecom死导入（py_compile通过、全项目零残留引用）；4份文档同步（用户指南改"首次启动说明"、功能清单/完整报告移除激活条目、README新增SmartScreen跳过教程与赞助版说明） | 已完成 | ✅ 完成 |
-| 6 | 一键打包工具:新建「一键打包.bat」，双击自动完成 Python3.11检测 → 创建/复用.venv虚拟环境 → 清华源安装requirements.txt依赖（已装秒过）→ 虚拟环境内执行build.py打包（PyInstaller绿色版+Inno Setup安装包自动编译）→ 报告产物路径，每步失败均有中文提示并暂停；.gitignore同步新增.venv/venv/env虚拟环境排除项（约3.5G不进git）；零侵入不改动build.py/setup.iss现有逻辑 | 已完成 | ✅ 完成 |
-| 7 | 安装包汉化补全+README配图框架:①Languages/ChineseSimplified.isl新增许可协议页/选择目标位置页/附加任务页共16个缺失汉化键（含Inno Setup 6 modern向导样式专用Label3键），取消注释96个现成中文条目（浏览对话框/Ready页摘要/目录校验/卸载确认/常见错误等），修复安装向导半中半英问题；②README的SmartScreen章节由3步改为4步图文教程（SmartScreen蓝窗→UAC黄窗→许可协议页→选择安装位置页），嵌入4张截图引用；③新建screenshots/目录及截图说明文件（命名规范、拍摄要点、Zone.Identifier本地触发蓝窗方法）；零代码改动，重新打包即生效 | 已完成 | ✅ 完成（截图待重拍放入） |
-| 8 | 汉化语言文件彻底重建:任务7补丁实测仅部分生效（向导粗标题/许可单选框仍英文、磁盘空间行%1未替换成数字），根因是旧isl基于Inno Setup 5键名、与本机IS6.3+官方Default.isl的281个Messages键不匹配（旧键LicenseAcceptedRadio/SelectDirLabel等已废弃，新键为WizardLicense/LicenseAccepted/WizardSelectDir/SelectDirDesc，占位符由%1改为[mb]/[gb]）；以官方Default.isl键序为骨架重建ChineseSimplified.isl:236条内置标准译法+37条沿用现有中文+8条英文兜底，键名100%对齐官方，覆盖许可/目录/任务/就绪/安装/卸载/错误/文件冲突全流程；原文件自动备份为ChineseSimplified.isl.bak；零代码改动，重新打包即全中文 | 已完成 | ✅ 完成（待重新打包实测） |
-| 9 | 向导标题栏占位符修复:任务8重建isl时误将SetupWindowTitle译为"安装 - [name/ver]"，该键与官方Default.isl一致仅支持%1参数替换、不解析[name/ver]常量，导致向导所有页面标题栏字面量显示"安装 - [name/ver]"（正文[name]替换正常）；对照官方Default.isl改回"安装 - %1"（运行时替换为"AI智能助手 1.0"），WelcomeLabel2的[name/ver]属官方原生写法（该键支持常量展开）保持不动；用户5张实测截图验收通过:SmartScreen蓝窗/UAC黄窗/许可页/目录页全中文、磁盘空间"至少需要601.5MB"数字正常（%1 bug已消除）；零代码改动；2026-09-07 18:19已重新打包（dist/AI_GZT_Setup_v1.0.exe，198.9MB，晚于汉化文件17:50），标题栏修复已进包 | 已完成 | ✅ 完成 |
-| 10 | 安装教程截图归档:用户5张实拍截图源文件定位于工作台上传文件夹（_internal/上传文件夹/截图_17887733*.png），按时间序复制到screenshots/并规范命名:01-smartscreen.png（蓝窗初始态73KB）、01b-smartscreen-expanded.png（蓝窗展开态86KB，备用留档README未引用）、02-uac-unknown.png（UAC黄窗55KB）、03-license.png（许可页152KB）、04-install-dir.png（目录页147KB），README引用的4张图文件名100%匹配、大小与源一致；screenshots/README.md说明文件同步重写为现状清单（03/04拍摄于任务9标题栏修复前、标题栏带[name/ver]字面量，经用户确认直接使用不重拍，页面正文全中文不影响教程；18:19重打包后如想获得完美标题栏截图，可重拍03/04覆盖同名文件、无需改任何引用）；过程中处置两次文件写入异常（edit_file混入</parameter>协议标签残留、PowerShell -NoNewline导致30行被拼成1行），最终删除重建并校验行数/首尾/无标签残留全部正常 | 已完成 | ✅ 完成 |
+| 1 | 一键打包工具:新建「一键打包.bat」，双击自动完成 Python3.11检测 → 创建/复用.venv虚拟环境 → 清华源安装requirements.txt依赖（已装秒过）→ 虚拟环境内执行build.py打包| 已完成 | ✅ 完成 |
+| 2 | README新增Gitee国内镜像地址:①开头简介后新增「仓库地址」小节，标注Gitee镜像 https://gitee.com/chen-bohan3000/ai-gzt  | 已完成 | ✅ 完成 |
+| 3 | 全量文件扫描噪音过滤统一修复（BUG根治）:新建file_filter_config.py统一过滤配置源——目录黑名单EXCLUDE_DIR_NAMES、后缀黑名单、文件名黑名单；| 已完成 | ✅ 已完成（真实安装环境实测根治） |
 
 ## 五、风险评估与应对
 | 风险点 | 影响等级 | 应对方案 | 状态 |

@@ -263,7 +263,12 @@ class IntelligentFileEditor:
                         else:
                             raise ValueError("无效文件名格式")
                         # 解码原路径（统一使用/作为分隔符，跨平台兼容）
-                        original_path = encoded_path.replace('@', '/').replace('-', '.')
+                        # 目录段只做@→/还原（目录名原生减号保留，不做-→.还原）
+                        decoded_parts = encoded_path.replace('@', '/').split('/')
+                        # 文件名一律采用#（旧格式_）后保存的原始文件名，避免原生减号被误还原为点
+                        if decoded_parts:
+                            decoded_parts[-1] = original_name
+                        original_path = '/'.join(decoded_parts)
                         norm_repo = os.path.normpath(REPOSITORY_PATH).replace("\\", "/")
                         # 对齐restore_backup恢复方法的路径解析逻辑:先判断路径前缀再选择根目录拼接
                         if original_path.startswith("仓库文件夹/"):
@@ -275,8 +280,8 @@ class IntelligentFileEditor:
                             # 系统/旧版本备份:拼接AI程序根目录，自动处理../相对路径
                             original_abs_path = os.path.normpath(os.path.join(PROJECT_ROOT, original_path)).replace("\\", "/")
                             display_path = os.path.relpath(original_abs_path, PROJECT_ROOT).replace("\\", "/")
-                        # 基于真实绝对路径判断是否可恢复，状态显示准确
-                        restorable = os.path.exists(original_abs_path)
+                        # 可恢复判定:路径能成功解析即视为可恢复（文件被误删时也可通过备份重建，不再依赖文件当前是否存在）
+                        restorable = True
                         original_path = display_path
                         file_stat = os.stat(file_path)
                         backup_list.append({
@@ -317,12 +322,16 @@ class IntelligentFileEditor:
                 remaining_part = backup_file_name[16:]
                 # 兼容新旧格式:新格式用#分隔，旧格式用_分隔
                 if '#' in remaining_part:
-                    encoded_path, _ = remaining_part.split('#', 1)
+                    encoded_path, original_name = remaining_part.split('#', 1)
                 elif '_' in remaining_part:
-                    encoded_path, _ = remaining_part.split('_', 1)
+                    encoded_path, original_name = remaining_part.split('_', 1)
                 else:
                     raise ValueError("无效文件名格式")
-                original_path = encoded_path.replace('@', os.sep).replace('-', '.')
+                # 解码原路径:目录段只做@→/还原（目录名原生减号保留），文件名一律采用#/_后保存的原始文件名
+                decoded_parts = encoded_path.replace('@', '/').split('/')
+                if decoded_parts:
+                    decoded_parts[-1] = original_name
+                original_path = '/'.join(decoded_parts)
                 # 正确解析路径:仓库文件夹前缀的文件拼接REPOSITORY_PATH，其他文件拼接PROJECT_ROOT
                 norm_original = original_path.replace("\\", "/")
                 if norm_original.startswith("仓库文件夹/"):
@@ -334,14 +343,21 @@ class IntelligentFileEditor:
                 return False, "旧版本备份文件无法自动恢复，请手动恢复"
         else:
             return False, "旧版本备份文件无法自动恢复，请手动恢复"
-        if not os.path.exists(original_abs_path):
-            return False, "原文件路径不存在，无法恢复"
         try:
-            # 恢复前先备份当前最新版本，双重保险
-            self._backup_file(original_abs_path)
-            # 覆盖原文件
-            shutil.copy2(backup_path, original_abs_path)
-            return True, f"恢复成功，已自动备份恢复前的最新版本"
+            # 父目录不存在时自动重建（支持文件/父目录被误删后的恢复）
+            parent_dir = os.path.dirname(original_abs_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+            if os.path.exists(original_abs_path):
+                # 文件仍存在:恢复前先备份当前最新版本，双重保险
+                self._backup_file(original_abs_path)
+                # 覆盖原文件
+                shutil.copy2(backup_path, original_abs_path)
+                return True, f"恢复成功，已自动备份恢复前的最新版本"
+            else:
+                # 文件已被误删:直接从备份重建，无需备份当前版本
+                shutil.copy2(backup_path, original_abs_path)
+                return True, f"原文件已删除，已从备份重建成功"
         except Exception as e:
             return False, f"恢复失败:{str(e)}"
 
@@ -429,9 +445,9 @@ class IntelligentFileEditor:
         if not os.path.exists(abs_file_path):
             return False, f"文件不存在：{file_path}（解析后路径：{abs_file_path}）"
         if not os.path.isfile(abs_file_path):
-            return False, f"路径不是文件：{file_path}"
-        if not file_path.endswith(SUPPORTED_FILE_TYPES):
-            return False, f"不支持的文件类型，支持类型：{SUPPORTED_FILE_TYPES}"
+            return False, f"路径不是文件:{file_path}"
+        # 已放开文件类型白名单限制:任意扩展名/无扩展名的文本文件均可编辑
+        # 二进制文件（图片/压缩包/可执行文件/PDF/Office等）会在下方UTF-8读取阶段被安全拦截，不会损坏文件、不会产生垃圾备份
         if operation != "delete" and content is None:
             return False, "非删除操作必须传入content参数"
         
@@ -440,7 +456,7 @@ class IntelligentFileEditor:
             with open(abs_file_path, 'r', encoding='utf-8') as f:
                 original_content = f.read()
         except UnicodeDecodeError:
-            return False, "文件编码不是UTF-8，无法编辑"
+            return False, "该文件为二进制格式或非UTF-8编码，文本编辑器无法修改（图片/压缩包/可执行文件/PDF/Office等请使用专用工具）"
         except PermissionError:
             return False, "没有文件读写权限"
         except Exception as e:

@@ -7,6 +7,8 @@ import json
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict
+# 文件扫描噪音过滤统一配置（虚拟环境/打包产物/.git/缓存目录等），所有扫盘链路复用同一黑名单
+import file_filter_config
 
 # 容错导入:打包后可能缺少torch/sentence_transformers/faiss等RAG大体积依赖，降级运行避免启动崩溃
 try:
@@ -255,9 +257,8 @@ class CodeRAGManager:
         # 第一步:收集所有符合条件的文件路径
         all_files = []
         for root, dirs, files in os.walk(root_dir):
-            # 跳过不需要扫描的目录
-            if any(skip in root for skip in [".git", "__pycache__", "venv", "node_modules", "code_rag", "logs"]):
-                continue
+            # 剪枝:排除虚拟环境/.git/打包产物等噪音目录，阻止递归进入（精确匹配，不再用"venv" in root子串误伤my_venv_tools类目录）
+            file_filter_config.prune_walk_dirs(dirs)
             for file in files:
                 file_path = os.path.join(root, file)
                 # 只处理支持的文件类型

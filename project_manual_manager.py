@@ -17,6 +17,8 @@ import time
 import json
 import shutil
 from typing import List, Dict, Optional, Tuple
+# 文件扫描噪音过滤统一配置（虚拟环境/打包产物/.git/缓存目录等），所有扫盘链路复用同一黑名单
+import file_filter_config
 
 # 提升Python递归深度到2000，解决大文件AST解析报错
 sys.setrecursionlimit(2000)
@@ -323,21 +325,21 @@ class ProjectManualManager:
             # 优先加入项目手册自身，确保空项目时至少有手册条目
             manual_filename = os.path.basename(manual_full_path)
             all_files.append(manual_filename)
-            # 排除目录黑名单（Python生态通用约定，不纳入手册管理）
-            EXCLUDE_DIRS = {"test_venv", "venv", ".venv", "__pycache__", ".git", 
-                            "node_modules", ".idea", "dist", "build", ".pytest_cache"}
-            # 排除文件后缀黑名单（二进制/缓存文件，无解析价值）
-            EXCLUDE_EXTS = {".pyc", ".pyo", ".pyd", ".so", ".dll", ".bin", ".exe"}
+            # 文件后缀黑名单:复用统一后缀黑名单（.pyc/.log/.tmp/.bak等），
+            # 另加手册解析场景特有的二进制后缀（.pyd/.so/.dll等，无文本解析价值）
+            MANUAL_EXCLUDE_EXTS = set(file_filter_config.EXCLUDE_FILE_EXTS) | {".pyd", ".so", ".dll", ".bin", ".exe"}
             for root, dirs, files in os.walk(project_root):
-                # 原地修改dirs，阻止os.walk递归进入排除目录
-                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+                # 剪枝:复用统一噪音目录黑名单（.venv/venv/env/dist/build/.git/缓存等，精确匹配），
+                # 另排除手册场景特有的 test_venv（测试用虚拟环境目录），阻止os.walk递归进入
+                file_filter_config.prune_walk_dirs(dirs)
+                dirs[:] = [d for d in dirs if d != "test_venv"]
                 for file in files:
                     # 跳过已加入的手册文件，避免重复
                     if file == manual_filename:
                         continue
-                    # 跳过缓存/二进制文件
+                    # 跳过缓存/二进制/噪音文件（统一文件名+后缀黑名单，含Thumbs.db等系统垃圾）
                     ext = os.path.splitext(file)[1].lower()
-                    if ext in EXCLUDE_EXTS:
+                    if ext in MANUAL_EXCLUDE_EXTS or file_filter_config.is_noise_file(file):
                         continue
                     abs_path = os.path.join(root, file)
                     rel_path = os.path.relpath(abs_path, project_root).replace(os.sep, "/")

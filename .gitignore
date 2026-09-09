@@ -42,3 +42,15 @@ push_err.txt
 
 # ===== GitHub Release 发布状态缓存（本机临时文件，不进仓库） =====
 release_info.json
+
+# ===== 运行时自动生成的数据/配置（首次启动自动创建，禁止提交） =====
+file_upload_map.json
+pending_samples.json
+system_prompt_config.json
+
+# ===== Gitee 推送临时日志（推送脚本生成，不进仓库） =====
+push_gitee_err.txt
+push_gitee_out.txt
+
+# ===== 用户上传目录（运行时个人数据） =====
+上传文件夹/

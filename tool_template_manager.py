@@ -16,12 +16,12 @@ class ToolTemplateManager:
             "structure": {"__template_version": TEMPLATE_VERSION, "name": "read_file", "parameters": {"file_name": ""}}
         },
         "edit_file": {
-            "required_params": ["file_name", "operation", "target_block", "content"],
-            "structure": {"__template_version": TEMPLATE_VERSION, "name": "edit_file", "parameters": {"file_name": "", "operation": "", "target_block": "", "content": ""}}
+            "required_params": ["file_name", "operation", "gzt_anchor", "gzt_newtext"],
+            "structure": {"__template_version": TEMPLATE_VERSION, "name": "edit_file", "parameters": {"file_name": "", "operation": "", "gzt_anchor": "", "gzt_newtext": ""}}
         },
         "create_file": {
             "required_params": ["path"],
-            "structure": {"__template_version": TEMPLATE_VERSION, "name": "create_file", "parameters": {"path": "", "is_dir": False, "content": ""}}
+            "structure": {"__template_version": TEMPLATE_VERSION, "name": "create_file", "parameters": {"path": "", "is_dir": False, "gzt_newtext": ""}}
         },
         "exec_cmd": {
             "required_params": ["cmd"],

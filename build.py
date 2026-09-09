@@ -35,7 +35,7 @@ data_files = [
     'chat_float.html', 'chat_ui.html', 'file_editor.html', 'sample.html',
     'web_backup.html', 'web_file_repo.html', 'web_log.html', 'web_plugin_market.html',
     'web_scheduler.html', 'web_settings.html', 'web_workspace.html', 'web_about.html',
-    'config.json', 'memory_config.json', 'prompt_templates.json', 'requirements.txt',
+    'config.example.json', 'memory_config.json', 'prompt_templates.json', 'requirements.txt',
     'logo.png', 'app_icon.ico', 'editor_empty_bg.png',
     'AI_GZT_User_Guide.md', 'THIRD_PARTY_LICENSES.md'
 ]
@@ -51,6 +51,7 @@ hidden_imports = [
     'memory_cache', 'rag_manager', 'api_server', 'llm_client',
     'tool_template_manager', 'auto_sync_monitor', 'ai_browser',
     'screenshot_tool', 'project_manual_manager', 'scheduler_manager',
+    'file_filter_config',   # 文件扫描噪音过滤统一配置模块（任务12新增，6处扫盘链路复用，显式声明确保打包收集）
     # === FastAPI/Starlette/Web服务依赖的标准库模块（因第三方库被exclude，静态分析无法识别，强制收集） ===
     'http', 'http.cookies', 'http.client', 'http.server',
     'email', 'email.mime', 'email.mime.multipart', 'email.mime.text',

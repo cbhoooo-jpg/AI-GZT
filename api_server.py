@@ -27,6 +27,8 @@ import uvicorn
 import re
 import platform
 from pypinyin import pinyin, Style
+# 文件扫描噪音过滤统一配置（虚拟环境/打包产物/.git/缓存目录等），所有扫盘链路复用同一黑名单
+import file_filter_config
 
 # 全局配置，基于当前脚本路径生成绝对路径，避免工作目录错误导致找不到资源
 # 兼容PyInstaller打包环境:打包后静态资源从_internal读取，用户配置统一存在exe同级目录（升级不丢失、多模块读写一致）
@@ -541,13 +543,16 @@ def build_simple_tree(root_path, current_rel_path="", tag="current_project"):
     """生成极简纯树形目录结构，无冗余信息，自动过滤系统目录和隐藏文件，同时返回全量路径映射表"""
     children = []
     path_map = {}
-    # 要过滤的系统目录、隐藏文件前缀
-    filter_prefix = ('.', '__pycache__', '.git', 'node_modules', 'venv', '.idea', '.vscode')
     for item in os.listdir(root_path):
-        # 过滤掉匹配前缀的内容
-        if any(item.startswith(p) for p in filter_prefix):
-            continue
         item_full_path = os.path.join(root_path, item)
+        # 统一过滤:目录走噪音目录黑名单（点开头目录默认排除、.github等白名单保留），
+        # 文件走文件名/后缀黑名单（点开头文件如.gitignore保留），全部精确匹配无误伤
+        if os.path.isdir(item_full_path):
+            if file_filter_config.is_noise_dir(item):
+                continue
+        else:
+            if file_filter_config.is_noise_file(item):
+                continue
         # 计算当前条目的相对路径（统一/分隔符）
         if current_rel_path:
             item_rel_path = os.path.join(current_rel_path, item).replace("\\", "/")
@@ -932,41 +937,41 @@ async def chat(req: ChatRequest):
                         params_str_norm = params_str.replace('：', ':', 50)
                         if tool_name == "edit_file":
                             # 提取短参数:file_name、operation
-                            fn_match = re.search(r'^[ \t]*file_name[::][ \t]*(.*?)(?=\n[ \t]*(operation|target_block|content)[::]|\Z)', params_str_norm, re.S | re.M)
+                            fn_match = re.search(r'^[ \t]*file_name[::][ \t]*(.*?)(?=\n[ \t]*(operation|gzt_anchor|gzt_newtext|target_block|content)[::]|\Z)', params_str_norm, re.S | re.M)
                             if fn_match:
                                 params["file_name"] = fn_match.group(1).strip()
-                            op_match = re.search(r'^[ \t]*operation[::][ \t]*(.*?)(?=\n[ \t]*(target_block|content)[::]|\Z)', params_str_norm, re.S | re.M)
+                            op_match = re.search(r'^[ \t]*operation[::][ \t]*(.*?)(?=\n[ \t]*(gzt_anchor|gzt_newtext|target_block|content)[::]|\Z)', params_str_norm, re.S | re.M)
                             if op_match:
                                 params["operation"] = op_match.group(1).strip()
-                            # 提取target_block:从target_block:后到content:前/块结束的所有内容，完全保留原始格式
-                            tb_match = re.search(r'^[ \t]*target_block[::][ \t]*(.*?)(?=\n[ \t]*content[::]|\Z)', params_str_norm, re.S | re.M)
+                            # 提取gzt_anchor:从gzt_anchor:后到gzt_newtext:前/块结束的所有内容，完全保留原始格式
+                            tb_match = re.search(r'^[ \t]*gzt_anchor[::][ \t]*(.*?)(?=\n[ \t]*gzt_newtext[::]|\Z)', params_str_norm, re.S | re.M)
                             if tb_match:
                                 tb_content = tb_match.group(1)
                                 # 修复:如果内容以换行开头，去掉第一个换行符（保留后续缩进）
                                 if tb_content.startswith('\n'):
                                     tb_content = tb_content[1:]
-                                params["target_block"] = tb_content.rstrip('\n')
-                            # 提取content:从content:后一直到块结束，一字不差保留
-                            ct_match = re.search(r'^[ \t]*content[::](.*)', params_str_norm, re.S | re.M)
+                                params["gzt_anchor"] = tb_content.rstrip('\n')
+                            # 提取gzt_newtext:从gzt_newtext:后一直到块结束，一字不差保留
+                            ct_match = re.search(r'^[ \t]*gzt_newtext[::](.*)', params_str_norm, re.S | re.M)
                             if ct_match:
                                 ct_content = ct_match.group(1)
                                 # 修复:如果内容以换行开头，去掉第一个换行符（保留后续缩进）
                                 if ct_content.startswith('\n'):
                                     ct_content = ct_content[1:]
-                                params["content"] = ct_content.rstrip('\n')
-                            # 校验必填参数:非首尾插入操作必须有target_block
+                                params["gzt_newtext"] = ct_content.rstrip('\n')
+                            # 校验必填参数:非首尾插入操作必须有gzt_anchor
                             op = params.get("operation", "")
                             required_params = ["file_name", "operation"]
                             if op not in ("insert_start", "insert_end"):
-                                required_params.append("target_block")
+                                required_params.append("gzt_anchor")
                             parse_success = all(k in params for k in required_params)
                         
                         elif tool_name == "create_file":
                             # 提取短参数:path、is_dir
-                            p_match = re.search(r'^[ \t]*path[：:][ \t]*(.*?)(?=\n[ \t]*(is_dir|content)[：:])', params_str_norm, re.S | re.M)
+                            p_match = re.search(r'^[ \t]*path[：:][ \t]*(.*?)(?=\n[ \t]*(is_dir|gzt_newtext|content)[：:])', params_str_norm, re.S | re.M)
                             if p_match:
                                 params["path"] = p_match.group(1).strip()
-                            id_match = re.search(r'^[ \t]*is_dir[：:][ \t]*(.*?)(?=\n[ \t]*content[：:]|$)', params_str_norm, re.S | re.M)
+                            id_match = re.search(r'^[ \t]*is_dir[：:][ \t]*(.*?)(?=\n[ \t]*(?:gzt_newtext|content)[：:]|$)', params_str_norm, re.S | re.M)
                             if id_match:
                                 id_val = id_match.group(1).strip()
                                 # 专用通道内完成布尔类型转换，避免后续重复处理报错
@@ -974,14 +979,14 @@ async def chat(req: ChatRequest):
                                     params["is_dir"] = id_val.lower() in ("true", "1", "yes")
                                 else:
                                     params["is_dir"] = bool(id_val)
-                            # 提取content参数
-                            c_match = re.search(r'^[ \t]*content[：:][ \t]*(.*)', params_str_norm, re.S | re.M)
+                            # 提取gzt_newtext参数
+                            c_match = re.search(r'^[ \t]*(?:gzt_newtext|content)[：:][ \t]*(.*)', params_str_norm, re.S | re.M)
                             if c_match:
                                 content_val = c_match.group(1)
                                 # 去掉开头换行符，保留所有原始缩进格式
                                 if content_val.startswith('\n'):
                                     content_val = content_val[1:]
-                                params["content"] = content_val.rstrip()
+                                params["gzt_newtext"] = content_val.rstrip()
                             # 校验必填参数
                             parse_success = "path" in params
                     except Exception:
@@ -991,7 +996,7 @@ async def chat(req: ChatRequest):
                 # ========== 非编辑类工具/专用通道解析失败，走通用灵活解析通道 ==========
                 if not parse_success:
                     # 预定义内置工具参数名，插件参数动态加载
-                    ALL_PARAM_NAMES = {"file_name", "operation", "target_block", "content", "path", "is_dir", "old_path", "new_name", "query", "cmd"}
+                    ALL_PARAM_NAMES = {"file_name", "operation", "target_block", "content", "gzt_anchor", "gzt_newtext", "path", "is_dir", "old_path", "new_name", "query", "cmd"}
                     # 动态添加当前插件的所有参数名（如果是插件调用）
                     current_param_names = ALL_PARAM_NAMES.copy()
                     plugin_config = tool_template_manager.get_plugin_config(tool_name)
@@ -1039,7 +1044,7 @@ async def chat(req: ChatRequest):
                 import json as _json
                 for k, v in list(params.items()):
                     # 跳过content、target_block参数，避免文件内容/锚点被解析为Python对象导致写入/匹配失败
-                    if k in ("content", "target_block"):
+                    if k in ("content", "target_block", "gzt_newtext", "gzt_anchor"):
                         continue
                     if not isinstance(v, str):
                         continue
@@ -1128,7 +1133,7 @@ async def chat(req: ChatRequest):
                         # 把当前指令返回给前端展示，新增edit_file内容可视化还原（和文件格式100%对齐）
                         if func_call.get("name") == "edit_file":
                             params = func_call["parameters"]
-                            content = params.get("content", "")
+                            content = params.get("gzt_newtext") or params.get("content", "")
                             file_name = params.get("file_name", "")
                             operation = params.get("operation", "")
                             if content:
@@ -1223,8 +1228,8 @@ async def chat(req: ChatRequest):
                             params = func_call["parameters"]
                             file_name = params.get("file_name", "").strip()
                             operation = params.get("operation", "").strip()
-                            target_block = params.get("target_block", "")
-                            content = params.get("content", "")
+                            target_block = params.get("gzt_anchor") or params.get("target_block", "")
+                            content = params.get("gzt_newtext") or params.get("content", "")
                             
                             # 安全转义还原：自动区分传输层转义和代码内部转义，完全避免正则/字符串转义被误替换
                             formatted_target_block = safe_escape_restore(target_block)
@@ -1245,7 +1250,7 @@ async def chat(req: ChatRequest):
                             
                             # 锚点校验：非首尾插入/替换/删除需要target_block
                             if operation not in ["insert_start", "insert_end"] and not target_block:
-                                exec_result = "⚠️ 参数错误：delete/insert_before/insert_after/replace操作必须传入target_block参数"
+                                exec_result = "⚠️ 参数错误：delete/insert_before/insert_after/replace操作必须传入gzt_anchor参数"  
                                 all_exec_results.append(exec_result)
                                 continue
                             
@@ -1485,7 +1490,7 @@ async def chat(req: ChatRequest):
                                 is_dir = raw_is_dir.strip().lower() == "true"
                             else:
                                 is_dir = bool(raw_is_dir)
-                            content = func_call["parameters"].get("content", "") # 新增content参数支持，可选默认空
+                            content = func_call["parameters"].get("gzt_newtext") or func_call["parameters"].get("content", "")
                             # 统一路径处理，支持任意非禁止目录的绝对路径/相对路径创建
                             create_path = get_real_physical_path(path)
                             # 校验是否为禁止操作路径
@@ -4044,6 +4049,8 @@ async def get_project_list():
     try:
         project_list = []
         for root, dirs, files in os.walk(REPOSITORY_PATH):
+            # 剪枝:排除虚拟环境/.git/打包产物等噪音目录，避免遍历数万依赖文件
+            file_filter_config.prune_walk_dirs(dirs)
             for file in files:
                 if file.endswith("项目手册.md"):
                     project_name = os.path.basename(root)
@@ -4305,8 +4312,10 @@ async def full_backup():
             root_path = REPOSITORY_PATH
             backup_scope = "整个仓库"
         
-        # 过滤不需要备份的目录和后缀
-        filter_dirs = {"__pycache__", ".git", "node_modules", "venv", ".idea", ".vscode", "备份文件夹", "models", "output", "backup", "上传文件夹", "logs"}
+        # 过滤不需要备份的目录:复用统一噪音目录黑名单（.venv/venv/env/dist/build/.git/缓存等），
+        # 另加备份场景特有排除"上传文件夹"（用户上传的原始附件不纳入代码备份）；
+        # 剪枝后不再遍历 dist/.venv 等数万文件，备份速度大幅提升
+        filter_dirs = set(file_filter_config.EXCLUDE_DIR_NAMES) | {"上传文件夹"}
         # 二进制/大文件后缀黑名单（图片、视频、音频、压缩包、模型、临时文件）
         blacklist_exts = {".tmp", ".log", ".pyc", ".zip", ".rar", ".7z", ".gz", ".tar", ".gguf", ".bin",
                           ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico",
@@ -4601,6 +4610,8 @@ def start_api_server(port=8000):
             print("🔄 后台开始更新所有项目手册...")
             # 遍历所有项目手册
             for root, dirs, files in os.walk(REPOSITORY_PATH):
+                # 剪枝:排除虚拟环境/.git/打包产物等噪音目录，避免遍历数万依赖文件
+                file_filter_config.prune_walk_dirs(dirs)
                 for file in files:
                     if file.endswith("项目手册.md"):
                         try:

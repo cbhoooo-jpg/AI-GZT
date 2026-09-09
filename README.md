@@ -2,6 +2,9 @@
 
 > 本地优先、可审计的 Windows 桌面 AI 工作台。基于大语言模型实现自然语言交互，支持本地模型离线部署，内置 RAG 私有知识库与向量记忆，采用插件化扩展架构，所有数据默认本地存储。
 
+## 仓库地址
+
+- **Gitee 国内镜像**（推荐国内用户使用，克隆与下载速度更快）:<https://gitee.com/chen-bohan3000/ai-gzt>
 
 ---
 
@@ -96,6 +99,12 @@ Unless required by applicable law or agreed to in writing, software distributed 
 >
 > - **安装包用户（免费版 / 赞助版 `.exe` 安装包）**:运行环境（Python 与全部依赖）已内置打包，**安装后开箱即用，无需运行本章节任何命令、无需下载 `Python和依赖安装.bat`**。
 > - **源码包用户（`git clone` 或下载 Release 页的 Source code 压缩包）**:本机需先配置 Python 3.11 运行环境。**推荐直接双击项目根目录下的 `Python和依赖安装.bat` 一键自动安装**（见下方方式一）；本机已有 Python 3.11 环境的用户也可按方式二手动安装依赖。
+>
+>   国内用户推荐从 **Gitee 镜像**克隆（速度更快）:
+>
+>   ```bash
+>   git clone https://gitee.com/chen-bohan3000/ai-gzt.git
+>   ```
 
 **方式一:一键环境安装（推荐，无需手动装任何东西）**
 
