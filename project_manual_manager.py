@@ -305,7 +305,8 @@ class ProjectManualManager:
         result = {
             "code": 200,
             "update_count": 0,
-            "add_count": 0
+            "add_count": 0,
+            "changed": False  # 内容是否真实发生变化（无变化不写盘，供监听层决定是否广播SSE）
         }
         try:
 
@@ -315,10 +316,12 @@ class ProjectManualManager:
                 result["msg"] = "手册不存在"
                 return result
             
-            # 读取手册内容
+            # 读取手册内容，同时记录读取时刻的mtime作为乐观锁基线
+            # （全量AST扫描耗时较长，若期间手册被外部手写修改，写回前会检测到mtime变化并放弃本轮）
             with open(manual_full_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            
+            base_mtime_ns = os.stat(manual_full_path).st_mtime_ns
+
             # 获取项目根目录下的所有文件
             project_root = os.path.dirname(manual_full_path)
             all_files = []
@@ -419,13 +422,42 @@ class ProjectManualManager:
                 flags=re.DOTALL
             )
             
-            # 写入更新后的手册
-            with open(manual_full_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
+            # 根治点1:内容完全相同则短路，不写盘（消除"重写→触发监听→再重写"的自激死循环）
+            if new_content == content:
+                return result
+
+            # 根治点2:乐观锁校验——AST全量扫描期间手册若被外部手写/其他进程修改，放弃本轮，
+            # 等下一个文件事件重新扫描合并，杜绝慢处理把新内容覆盖回旧内容
+            try:
+                current_mtime_ns = os.stat(manual_full_path).st_mtime_ns
+            except OSError:
+                result["code"] = 404
+                result["msg"] = "手册在处理过程中被删除"
+                return result
+            if current_mtime_ns != base_mtime_ns:
+                result["code"] = 409
+                result["msg"] = "手册在扫描期间被外部修改，本轮放弃，等待下次事件合并"
+                print(f"⚠️ {result['msg']}:{manual_path}")
+                return result
+
+            # 根治点3:原子写——先写同目录临时文件再os.replace原子替换，
+            # 避免半写状态被监听线程/其他进程读到
+            tmp_path = f"{manual_full_path}.{os.getpid()}.tmp"
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                os.replace(tmp_path, manual_full_path)
+            finally:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+            result["changed"] = True
             return result
         except Exception as e:
             result["code"] = 500
-            result["msg"] = f"更新明细清单失败：{str(e)}"
+            result["msg"] = f"更新明细清单失败:{str(e)}"
             return result
     
 # 全局单例

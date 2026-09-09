@@ -19,6 +19,7 @@ from project_manual_manager import project_manual_manager
 import logging
 import sys
 import ctypes
+import threading
 
 # Windows COM初始化常量（仅Windows系统生效，解决watchdog打包环境COM线程冲突）
 COINIT_MULTITHREADED = 0x0
@@ -67,7 +68,7 @@ logging.basicConfig(
 CONFIG = {
     "debounce_time": 2,  # 防抖时间：2秒内多次变动仅执行一次
     "trace_window": 2,  # 溯源时间窗口：2秒内的操作链才会判定为关联
-    "ignore_dirs": {".git", ".idea", "__pycache__", "logs", "temp", "dist", ".vscode", "code_rag"},  # 忽略的目录：新增RAG目录过滤
+    "ignore_dirs": {".git", ".idea", "__pycache__", "logs", "temp", "dist", ".vscode", "code_rag", "backup"},  # 忽略的目录:新增RAG目录过滤+编辑器备份目录（备份文件创建/清理不再触发手册重写）
     "ignore_exts": {".tmp", ".log", ".swp", ".~lock", ".crdownload", ".index", ".db", ".DS_Store", ".zip", ".rar", ".7z", ".exe"},  # 忽略的文件后缀：新增RAG索引文件过滤
     "manual_suffix": "项目手册.md",  # 项目手册文件名后缀
     "max_parse_fail_count": 3 # 单个文件最大解析失败次数，超过后24小时内不再重试
@@ -90,6 +91,65 @@ def trigger_file_change_notify():
         logging.warning("⚠️  导入api_server失败，无法发送文件变动通知")
     except Exception as e:
         logging.warning(f"⚠️  发送文件变动通知失败：{str(e)}")
+# ============================================================
+# 手册更新串行调度器（根治并发重写交叉覆盖+自激风暴）
+# 1.文件事件只登记"某手册待处理"标记，不直接执行重写；
+# 2.唯一工作线程串行消费，同一手册同一时刻只有一轮扫描；
+# 3.trailing防抖合并密集事件；4.仅内容真实变化才广播SSE
+# ============================================================
+_MANUAL_PENDING = {}  # key=手册绝对路径, value=最近一次登记时间戳
+_MANUAL_SCHED_LOCK = threading.Lock()
+_MANUAL_WAKEUP = threading.Event()
+
+def request_manual_update(manual_abs_path: str):
+    """文件事件线程调用:登记手册待处理（仅轻量赋值+唤醒，重写由工作线程串行执行）"""
+    manual_abs_path = os.path.normpath(manual_abs_path)
+    with _MANUAL_SCHED_LOCK:
+        _MANUAL_PENDING[manual_abs_path] = time.time()
+    _MANUAL_WAKEUP.set()
+
+
+def _manual_update_worker():
+    """唯一工作线程:串行消费待处理手册，彻底消除并发重写交叉覆盖"""
+    TRAILING_WAIT = 1.0   # trailing防抖:登记后静默1秒，吸收密集事件
+    SETTLE_WAIT = 1.0     # 处理完静默1秒复查，无新事件才收工（防止处理期间事件丢失）
+    while True:
+        # 等待待处理队列非空
+        _MANUAL_WAKEUP.wait(timeout=30)
+        _MANUAL_WAKEUP.clear()
+        time.sleep(TRAILING_WAIT)
+        # 快照当前所有待处理手册（处理期间新来的事件会留在队列里，下一轮兜底）
+        with _MANUAL_SCHED_LOCK:
+            pending_snapshot = dict(_MANUAL_PENDING)
+            _MANUAL_PENDING.clear()
+        for manual_abs_path, register_ts in list(pending_snapshot.items()):
+            try:
+                if not os.path.exists(manual_abs_path):
+                    continue  # 手册已被删除，跳过
+                rel_manual_path = os.path.relpath(manual_abs_path, REPOSITORY_PATH)
+                logging.info(f"🔄 串行调度:更新项目手册 {rel_manual_path}")
+                update_result = project_manual_manager.update_manual_detail_table(rel_manual_path)
+                # 记录自动操作到溯源队列
+                CACHE["recent_operations"].append({
+                    "time": time.time(), "type": "auto_update_manual", "path": manual_abs_path
+                })
+                # 乐观锁冲突（409）:说明扫描期间手册被外部手写，放弃本轮，登记一次让下个事件兜底合并
+                if update_result.get("code") == 409:
+                    logging.info(f"⏳ 手册扫描期间被外部修改，等待下个事件合并:{rel_manual_path}")
+                    continue
+                # 仅内容真实变化才广播SSE，消除前端刷新风暴及次生JS解析报错
+                if update_result.get("code") == 200 and update_result.get("changed"):
+                    logging.info(f"✅ 手册内容已更新:{rel_manual_path}")
+                    trigger_file_change_notify()
+            except Exception as e:
+                logging.error(f"❌ 串行更新手册失败 {manual_abs_path}:{str(e)}")
+        # 处理完静默复查:若等待期间又有新手册/新事件登记，立刻再跑一轮，保证不丢事件
+        time.sleep(SETTLE_WAIT)
+        with _MANUAL_SCHED_LOCK:
+            has_more = bool(_MANUAL_PENDING)
+        if has_more:
+            _MANUAL_WAKEUP.set()
+
 
 class FileChangeHandler(FileSystemEventHandler):
     """普通文件变动事件处理器：反向同步 → 文件变动更新对应项目手册"""
@@ -183,21 +243,11 @@ class FileChangeHandler(FileSystemEventHandler):
         if not manual_path:
             return  # 不属于任何项目，忽略
         
-        try:
-            # 转换为相对路径，适配现有接口
-            rel_manual_path = os.path.relpath(manual_path, REPOSITORY_PATH)
-            logging.info(f"🔄 检测到文件变动，更新项目手册：{rel_manual_path}")
-            # 执行更新
-            project_manual_manager.update_manual_detail_table(rel_manual_path)
-            # 记录操作到溯源队列
-            CACHE["recent_operations"].append({
-                "time": time.time(), "type": "auto_update_manual", "path": manual_path
-            })
-            logging.info(f"✅ 手册更新完成：{rel_manual_path}")
-            # 触发文件变动通知，前端自动刷新
-            trigger_file_change_notify()
-        except Exception as e:
-            logging.error(f"❌ 更新手册失败：{str(e)}")
+        # 【根治改造】事件线程只做"登记待处理"，绝不直接执行重写:
+        # 由唯一串行工作线程 _manual_update_worker 统一 trailing 防抖、串行 AST 扫描、
+        # mtime 乐观锁合并，且仅内容真实变化才广播 SSE——
+        # 彻底消除并发重写交叉覆盖与"重写→触发监听→再重写"的自激风暴
+        request_manual_update(manual_path)
 
 class ManualChangeHandler(FileSystemEventHandler):
     """项目手册变动事件处理器"""
@@ -284,6 +334,9 @@ def start_monitor():
             ole32.CoUninitialize()
             logging.info("✅ COM环境已释放")
 
+# 模块被主程序/api_server导入时即启动唯一串行工作线程（守护线程，主进程退出自动结束）
+_MANUAL_WORKER_THREAD = threading.Thread(target=_manual_update_worker, name="manual-sync-worker", daemon=True)
+_MANUAL_WORKER_THREAD.start()
+
 if __name__ == "__main__":
     start_monitor()
-# auto_sync_monitor.py

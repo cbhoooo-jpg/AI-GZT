@@ -4183,14 +4183,26 @@ class ProjectManualSyncRequest(BaseModel):
 
 @app.post("/api/project-manual/sync-detail")
 async def sync_manual_detail(req: ProjectManualSyncRequest):
-    """同步更新手册的明细清单"""
+    """同步更新手册的明细清单（手动入口:立即执行，不走监听防抖队列）"""
     try:
         result = project_manual_manager.update_manual_detail_table(req.manual_path)
-        # 触发文件变动广播，前端自动刷新
-        broadcast_file_change()
-        return {"code": 200, "msg": "✅ 同步成功", "data": result}
+        result_code = result.get("code", 200)
+        # 乐观锁冲突:AST扫描期间手册被外部手写修改，本轮已放弃，提示前端稍后重试
+        if result_code == 409:
+            return {"code": 409, "msg": f"⚠️ {result.get('msg', '手册在扫描期间被外部修改，本轮已放弃')}，请稍后重试", "data": result}
+        # 手册在处理过程中被删除
+        if result_code == 404:
+            return {"code": 404, "msg": f"❌ {result.get('msg', '手册不存在')}", "data": result}
+        # 管理器内部其他错误
+        if result_code != 200:
+            return {"code": 500, "msg": f"❌ 同步失败:{result.get('msg', '未知错误')}", "data": result}
+        # 仅内容真实变化才广播SSE，无变化不打扰前端（与监听串行调度器广播条件完全对齐）
+        if result.get("changed"):
+            broadcast_file_change()
+            return {"code": 200, "msg": "✅ 同步成功，手册内容已更新", "data": result}
+        return {"code": 200, "msg": "✅ 手册内容无变化，无需更新", "data": result}
     except Exception as e:
-        return {"code": 500, "msg": f"❌ 同步失败：{str(e)}"}
+        return {"code": 500, "msg": f"❌ 同步失败:{str(e)}"}
 
 @app.get("/api/project-manual/backup-list")
 async def get_manual_backup_list(manual_path: str):
