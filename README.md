@@ -16,6 +16,7 @@
 
 ## 仓库地址
 
+- **GitHub 主仓库**:<https://github.com/cbhoooo-jpg/AI-GZT>
 - **Gitee 国内镜像**（推荐国内用户使用，克隆与下载速度更快）:<https://gitee.com/chen-bohan3000/ai-gzt>
 
 ---
@@ -74,7 +75,7 @@
 除上方 123 云盘的 `.exe` 安装包外，另提供 **ZIP 绿色免安装版**（解压即用、不写注册表，与使用说明书中的命名一致）。如有需要，可通过以下方式获取:
 
 - 邮箱联系作者:**602477958@qq.com**（来信请注明"AI智能助手 ZIP 免安装版"，通常 1~2 个工作日内回复）
-- 使用问题与功能建议，欢迎在 [Gitee 仓库 Issue](https://gitee.com/chen-bohan3000/ai-gzt/issues) 公开反馈，便于其他用户参考
+- 使用问题与功能建议，欢迎在 [GitHub Issues](https://github.com/cbhoooo-jpg/AI-GZT/issues) 或 [Gitee 仓库 Issue](https://gitee.com/chen-bohan3000/ai-gzt/issues) 公开反馈（国内用户推荐 Gitee），便于其他用户参考
 
 ---
 

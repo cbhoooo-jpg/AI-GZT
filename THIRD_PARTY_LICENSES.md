@@ -8,40 +8,71 @@
 ### 1. Python 核心依赖
 | 组件名称 | 版本 | 许可证类型 | 版权方 |
 |----------|------|------------|--------|
-| PySide6 | 6.11.1 | LGPL v3 | The Qt Company Ltd. |
-| shiboken6 | 6.11.1 | LGPL v3 | The Qt Company Ltd. |
-| FastAPI | 0.136.3 | MIT | Sebastián Ramírez |
-| uvicorn | 0.48.0 | BSD 3-Clause | Encode |
-| requests | 2.34.2 | Apache 2.0 | Kenneth Reitz |
-| httpx | 0.28.1 | BSD 3-Clause | Encode |
-| numpy | 2.4.6 | BSD 3-Clause | NumPy Developers |
-| pandas | 3.0.3 | BSD 3-Clause | pandas Development Team |
-| torch | 2.5.1+cu121 | BSD 3-Clause | PyTorch Contributors |
-| transformers | 4.37.2 | Apache 2.0 | Hugging Face Inc. |
-| sentence-transformers | 2.3.1 | Apache 2.0 | UKP Lab |
-| faiss-cpu | 1.14.2 | MIT | Facebook Inc. |
-| Pillow | 12.2.0 | HPND (MIT类) | Jeffrey A. Clark et al. |
-| lxml | 6.1.1 | BSD 3-Clause | lxml dev team |
-| beautifulsoup4 | 4.14.3 | MIT | Leonard Richardson |
+| PySide6 | 6.8.0.2 | LGPL v3 | The Qt Company Ltd. |
+| shiboken6 | 6.8.0.2 | LGPL v3 | The Qt Company Ltd. |
+| FastAPI | 0.110.0 | MIT | Sebastián Ramírez |
+| starlette | 0.36.3 | BSD 3-Clause | Encode |
+| uvicorn | 0.29.0 | BSD 3-Clause | Encode |
+| click | 8.1.7 | BSD 3-Clause | Pallets Team |
+| sse-starlette | 2.0.0 | BSD 3-Clause | sysid |
+| python-multipart | 0.0.9 | Apache 2.0 | Andrew Dong |
+| httpx | 0.27.0 | BSD 3-Clause | Encode |
+| httpcore | 1.0.4 | BSD 3-Clause | Encode |
+| h11 | 0.14.0 | MIT | Nathaniel J. Smith |
+| anyio | 4.3.0 | MIT | Alex Grönholm |
+| sniffio | 1.3.1 | MIT | Nathaniel J. Smith |
+| certifi | 2024.2.2 | MPL 2.0 | Kenneth Reitz |
+| idna | 3.6 | BSD 3-Clause | Kim Davies |
+| pydantic | 2.6.4 | MIT | Samuel Colvin |
+| pydantic-core | 2.16.3 | MIT | Pydantic Team |
+| annotated-types | 0.6.0 | MIT | David Steele |
+| typing-extensions | 4.10.0 | PSF License | Python Software Foundation |
+| jiter | 0.4.0 | MIT | Pydantic Team |
+| requests | 2.31.0 | Apache 2.0 | Kenneth Reitz |
+| urllib3 | 2.2.1 | MIT | Andrey Petrov |
+| six | 1.16.0 | MIT | Benjamin Peterson |
+| pypinyin | 0.50.0 | MIT | mozillazg |
+| openai | 1.35.12 | Apache 2.0 | OpenAI |
+| distro | 1.9.0 | Apache 2.0 | Nir Cohen |
+| tqdm | 4.66.2 | MIT | tqdm developers |
+| volcengine | 1.0.0 | 火山引擎SDK许可 | 火山引擎 |
+| tos | 2.1.0 | 火山引擎SDK许可 | 火山引擎 |
 | newspaper3k | 0.2.8 | MIT | Lucas Ou-Yang |
-| openpyxl | 3.1.5 | MIT | Eric Gazoni |
-| python-docx | 1.2.0 | MIT | Steve Canny |
-| python-pptx | 1.0.2 | MIT | Steve Canny |
-| APScheduler | 3.11.3 | MIT | Alex Grönholm |
-| pydantic | 2.13.4 | MIT | Samuel Colvin |
-| loguru | 0.7.3 | MIT | Delgan |
-| tqdm | 4.67.3 | MIT | tqdm developers |
-| PyYAML | 6.0.3 | MIT | Kirill Simonov |
-| certifi | 2026.5.20 | MPL 2.0 | Kenneth Reitz |
-| cryptography | 49.0.0 | Apache 2.0 / BSD | The cryptography developers |
-| edge-tts | 7.2.8 | GPL v3 | Miguel Guthridge |
-| pydub | 0.25.1 | MIT | James Robert |
-| PyAudio | 0.2.14 | MIT | Hubert Pham |
-| pyperclip | 1.11.0 | BSD 3-Clause | Al Sweigart |
-| screeninfo | 0.8.1 | MIT | Pavel Soukup |
-| mss | 10.2.0 | MIT | Mickaël Schoentgen |
-| watchdog | 6.0.0 | Apache 2.0 | Yesudeep Mangalapilly |
-| volcengine-python-sdk | 5.0.36 | 火山引擎SDK许可 | 火山引擎 |
+| lxml | 5.1.0 | BSD 3-Clause | lxml dev team |
+| beautifulsoup4 | 4.12.3 | MIT | Leonard Richardson |
+| tldextract | 5.1.2 | BSD 3-Clause | John Kurkowski |
+| chardet | ≥3.0.2（newspaper3k 传递依赖） | LGPL v2.1 | Daniel Blanchard |
+| APScheduler | 3.10.4 | MIT | Alex Grönholm |
+| pytz | 2021.3 | MIT | Stuart Bishop |
+| tzlocal | 5.2 | MIT | Lennart Regebro |
+| watchdog | 4.0.0 | Apache 2.0 | Yesudeep Mangalapilly |
+| mss | 9.0.1 | MIT | Mickaël Schoentgen |
+| screeninfo | 0.8.1 | MIT | Rhys Elsmore |
+| Pillow | 10.3.0 | HPND (MIT类) | Jeffrey A. Clark et al. |
+| faiss-cpu | 1.8.0 | MIT | Meta AI (Facebook Inc.) |
+| torch | 2.2.2 | BSD 3-Clause | PyTorch Contributors |
+| sentence-transformers | 2.6.1 | Apache 2.0 | UKP Lab |
+| transformers | 4.44.2 | Apache 2.0 | Hugging Face Inc. |
+| tokenizers | 0.19.1 | Apache 2.0 | Hugging Face Inc. |
+| huggingface-hub | 0.23.2 | Apache 2.0 | Hugging Face Inc. |
+| safetensors | 0.4.2 | Apache 2.0 | Hugging Face Inc. |
+| regex | 2023.12.25 | Apache 2.0 | Matthew Barnett |
+| sentencepiece | 0.2.2 | Apache 2.0 | Google |
+| numpy | 1.26.4 | BSD 3-Clause | NumPy Developers |
+| pyinstaller | 6.5.0 | GPL v2 + 链接例外 | PyInstaller Development Team |
+| pywin32-ctypes | 0.2.2 | BSD 3-Clause | Enthought Inc. |
+| pefile | 2023.2.7 | MIT | Ero Carrera |
+| psutil | ≥5.9.0（构建环境实测 7.2.2） | BSD 3-Clause | Giampaolo Rodola |
+
+**插件可选依赖（默认不随安装包分发，用户使用文件转换插件对应功能时按提示自行安装）:**
+
+| 组件名称 | 约定版本 | 许可证类型 | 版权方 |
+|----------|----------|------------|--------|
+| openpyxl | ≥3.1.2 | MIT | Eric Gazoni |
+| python-docx | ≥1.1.0 | MIT | Steve Canny |
+| pypandoc | ≥1.13 | GPL v2 | Jessica Tegner（运行时另需外部 pandoc，同为 GPL v2） |
+
+> 版本核对说明:① 上表直接依赖版本号以项目根目录 `requirements.txt` 的锁定版本为准；间接传递依赖（如 newspaper3k 生态的 chardet/soupsieve/nltk、transformers 生态的 tokenizers/safetensors 等）版本随锁定环境，许可证均为 MIT/Apache/BSD 类宽松许可；② openpyxl、python-docx、pypandoc 仅被文件转换插件在执行对应功能时延迟导入，不随安装包默认分发；其中 pypandoc 及其调用的 pandoc 为 GPL v2 许可，因默认不分发、仅在用户主动安装启用时运行，不构成对主程序的许可传染；③ 本产品不包含 edge-tts、pandas、python-pptx、PyAudio、pydub、pyperclip、cryptography、loguru、PyYAML 等组件。
 
 ### 2. 前端静态资源（static目录）
 | 组件名称 | 版本 | 许可证类型 | 版权方 |

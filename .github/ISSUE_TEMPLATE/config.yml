@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Gitee 国内反馈入口（推荐国内用户使用）
+    url: https://gitee.com/chen-bohan3000/ai-gzt/issues
+    about: GitHub 访问缓慢时，可在 Gitee 镜像仓库提交 Issue，处理时效相同。
+  - name: 使用文档与安装指南
+    url: https://github.com/cbhoooo-jpg/AI-GZT#readme
+    about: 提交问题前，建议先阅读 README 的安装步骤、SmartScreen 说明与常见问题。
+  - name: 参与贡献指南
+    url: https://github.com/cbhoooo-jpg/AI-GZT/blob/main/CONTRIBUTING.md
+    about: 想贡献代码或开发插件？先看贡献指南了解环境准备与规范。

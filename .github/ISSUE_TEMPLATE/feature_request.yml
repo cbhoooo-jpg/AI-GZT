@@ -1,0 +1,62 @@
+name: 功能建议
+description: 提出新功能、改进建议或插件创意
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢建议！本项目由个人开发者与 AI 协作维护，欢迎描述真实使用场景。
+        国内用户也可在 [Gitee Issues](https://gitee.com/chen-bohan3000/ai-gzt/issues) 提交。
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景
+      description: 你在什么情况下需要这个功能？目前是怎么解决的？
+      placeholder: 例如:我经常需要……，目前只能手动……
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的方案
+      description: 描述你希望看到的行为，越具体越好。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及模块
+      options:
+        - 对话与大模型
+        - 记忆 / RAG 向量检索
+        - 内置浏览器 / Agent
+        - 插件市场 / 新插件
+        - 文件编辑与仓库管理
+        - 定时任务
+        - 打包与安装
+        - 界面与交互
+        - 文档
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: willing
+    attributes:
+      label: 是否愿意参与开发
+      options:
+        - 愿意，我可以提交 PR
+        - 愿意，但需要指导（欢迎零基础贡献者）
+        - 暂时只能提建议
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案或补充说明
+      description: 是否考虑过其他实现方式？有无参考产品？
