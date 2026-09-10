@@ -987,45 +987,19 @@ if __name__ == "__main__":
                         request["result"] = result
                     elif action == "extract":
                         keyword = params.get("query", "")
-                        page_text = ""
-                        # 使用 QEventLoop 等待异步回调，在主线程中安全执行
-                        from PySide6.QtCore import QEventLoop, QTimer
-                        loop = QEventLoop()
-                        
-                        def _get_text():
-                            nonlocal page_text
-                            def callback(result):
-                                nonlocal page_text
-                                page_text = result
-                                loop.quit()
-                            main_browser.get_page_text(callback)
-                        
-                        QTimer.singleShot(0, _get_text)
-                        QTimer.singleShot(5000, loop.quit) # 5秒超时兜底
-                        loop.exec()
-                        
+                        # get_page_text/get_page_html 已重构为同步方法（内部通过QEventLoop等待JS回调，自带5秒超时），直接同步调用即可
+                        page_text = main_browser.get_page_text() or ""
+
                         # 降级方案:如果浏览器内核提取失败，改用get_page_html + BeautifulSoup解析
                         if not page_text.strip():
-                            html = ""
-                            loop2 = QEventLoop()
-                            def _get_html():
-                                nonlocal html
-                                def callback_html(result_html):
-                                    nonlocal html
-                                    html = result_html
-                                    loop2.quit()
-                                main_browser.get_page_html(callback_html)
-                            QTimer.singleShot(0, _get_html)
-                            QTimer.singleShot(5000, loop2.quit)
-                            loop2.exec()
-                            
+                            html = main_browser.get_page_html() or ""
                             if html.strip():
                                 from bs4 import BeautifulSoup
                                 soup = BeautifulSoup(html, "html.parser")
                                 for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
                                     tag.decompose()
                                 page_text = soup.get_text(strip=True, separator="\n")
-                        
+
                         # 按关键词过滤提取相关段落
                         if keyword:
                             lines = page_text.split("\n")
@@ -1033,23 +1007,11 @@ if __name__ == "__main__":
                             extracted_content = "\n".join(relevant_lines) if relevant_lines else "未找到与关键词相关的内容"
                         else:
                             extracted_content = page_text
-                        
+
                         request["result"] = extracted_content
                     elif action == "get_html":
-                        html = ""
-                        from PySide6.QtCore import QEventLoop, QTimer
-                        loop = QEventLoop()
-                        def _get_html():
-                            nonlocal html
-                            def callback(result_html):
-                                nonlocal html
-                                html = result_html
-                                loop.quit()
-                            main_browser.get_page_html(callback)
-                        QTimer.singleShot(0, _get_html)
-                        QTimer.singleShot(5000, loop.quit)
-                        loop.exec()
-                        request["result"] = html
+                        # 同步获取当前页面完整HTML源码，or ""兜底防止无活动标签时返回None
+                        request["result"] = main_browser.get_page_html() or ""
                 except Exception as e:
                     request["error"] = str(e)
                 finally:

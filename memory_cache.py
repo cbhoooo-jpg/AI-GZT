@@ -363,20 +363,28 @@ class MemoryCache:
                 score -= entity_match * 0.1
                 # 最终得分必须低于原始阈值才保留，避免加权把不相关内容拉进来
                 if score < threshold:
-                    scored_candidates.append( (score, idx, mem) )
+                    # 元组第4位携带原始L2距离orig_dist，供召回观测台换算余弦相似度展示
+                    scored_candidates.append( (score, idx, mem, orig_dist) )
             
             # 5. 按最终得分从小到大排序（越靠前越相关），取top_k
             scored_candidates.sort(key=lambda x: x[0])
             memory_results = []
             seen_contents = set()
             show_timestamp = self.config.get("show_timestamp_in_context", True)
-            for score, idx, mem in scored_candidates:
+            # 解包4元素元组:score=加权后最终距离分, orig_dist=加权前原始L2距离
+            for score, idx, mem, orig_dist in scored_candidates:
                 if len(memory_results) >= top_k:
                     break
                 if mem["content"] not in seen_contents:
                     seen_contents.add(mem["content"])
                     mem_copy = mem.copy()
-                    mem_copy["id"] = idx
+                    # 强制转Python原生int:FAISS返回的idx是numpy.int64，直接进入JSON序列化会导致观测接口500
+                    mem_copy["id"] = int(idx)
+                    # 注入召回观测台所需分数字段（纯新增，不影响既有注入逻辑）
+                    mem_copy["recall_score"] = round(float(score), 4)
+                    # 归一化向量满足 cos=1-d²/2，clamp到[0,1]后换算为百分比相似度，仅展示用
+                    cos_sim = max(0.0, min(1.0, 1.0 - float(orig_dist) ** 2 / 2.0))
+                    mem_copy["similarity"] = round(cos_sim * 100, 1)
                     # 注入时间戳
                     if show_timestamp and "timestamp" in mem:
                         time_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(mem["timestamp"] / 1000))

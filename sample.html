@@ -314,6 +314,7 @@
         <div class="tab-item" data-tab="memory" onclick="switchTab('memory')">全库记忆管理</div>
         <div class="tab-item" data-tab="library" onclick="switchTab('library')">记忆库管理</div>
         <div class="tab-item" data-tab="file" onclick="switchTab('file')">记忆文件管理</div>
+        <div class="tab-item" data-tab="observe" onclick="switchTab('observe');initObserve()">召回实时观测</div>
     </div>
 
     <!-- Tab3：记忆素材库 -->
@@ -365,6 +366,52 @@
             <div class="empty-state">加载中...</div>
         </div>
     </div>
+    <!-- Tab6:召回实时观测 -->
+    <div class="tab-content" id="tab-observe">
+        <div class="search-area">
+            <span id="obsStatus" style="font-size:14px;color:#999;">● 连接中...</span>
+            <label style="display:flex;align-items:center;gap:6px;font-size:14px;"><input type="checkbox" id="obsOnlyHit" onchange="renderObserve()"> 仅看有召回</label>
+            <button class="btn" onclick="refreshObserve()">刷新</button>
+            <button class="btn danger" onclick="clearObserve()">清空</button>
+        </div>
+        <div class="search-area" id="obsStats" style="font-size:13px;color:#666;">观测 0 次 | 召回触发率 - | 已标注 0 条 | 命中率 -</div>
+        <div class="sample-list" id="observeList"><div class="empty-state">等待对话产生召回数据，请在对话页提问...</div></div>
+    </div>
+    <script>
+    let obsSnaps = [], obsES = null, obsInited = false;
+    function initObserve(){
+        if(obsInited) return; obsInited = true;
+        fetch('/api/memory/recall/recent').then(r=>r.json()).then(d=>{obsSnaps=d.snapshots||[];renderObserve();loadObsStats();});
+        obsES = new EventSource('/api/memory/recall/stream');
+        obsES.onmessage = e=>{const m=JSON.parse(e.data);if(m.type==='connected'){document.getElementById('obsStatus').innerHTML='<span style=color:#00b42a>● 实时已连接</span>';}if(m.type==='recall_snapshot'){obsSnaps.unshift(m.snapshot);if(obsSnaps.length>50)obsSnaps.pop();renderObserve();loadObsStats();}};
+        obsES.onerror=()=>{document.getElementById('obsStatus').innerHTML='<span style=color:#F53F3F>● 连接断开，重连中...</span>';};
+    }
+    // 刷新按钮:整页重载重新走REST拉取最新观测快照(工作台内置浏览器后台标签会被节流,手动刷新最稳妥)
+    // 小窗URL自带observe=1,重载后DOMContentLoaded自动回观测页;内嵌标签用sessionStorage记忆,重载后自动切回(不隐藏导航)
+    function refreshObserve(){
+        if(location.search.indexOf('observe=1')<0){sessionStorage.setItem('refreshObserve','1');}
+        location.reload();
+    }
+    function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+    function renderObserve(){
+        const onlyHit=document.getElementById('obsOnlyHit').checked;
+        let list=obsSnaps.filter(s=>!onlyHit||s.triggered);
+        const box=document.getElementById('observeList');
+        if(!list.length){box.innerHTML='<div class="empty-state">暂无符合条件的观测记录</div>';return;}
+        box.innerHTML=list.map(s=>{
+            const head=s.triggered?'<span class="tag success">已触发召回 '+s.memories.length+' 条</span>':'<span class="tag" style="background:#ffece8;color:#F53F3F;">未触发</span>';
+            const mems=s.memories.map(m=>{const ev=(s.evaluations||{})[String(m.id)];const lb=ev?ev.label:null;
+                return '<div style="border:1px solid #eee;border-radius:6px;padding:10px;margin-top:8px;background:#fcfcfc;"><div style="font-size:12px;color:#888;margin-bottom:6px;">相似度 '+(m.similarity!=null?m.similarity+'%':'-')+' | 距离分 '+(m.recall_score!=null?m.recall_score:'-')+' | '+(m.tags||[]).filter(t=>!t.startsWith('session:')&&!t.startsWith('project:')).join(',')+'</div><div style="white-space:pre-wrap;word-break:break-all;font-size:13px;color:#333;max-height:120px;overflow:auto;">'+esc(m.content)+'</div><div style="margin-top:8px;"><button class="btn small '+(lb===1?'primary':'')+'" onclick="evalRecall(\''+s.id+'\','+m.id+',1)">👍 相关</button> <button class="btn small '+(lb===0?'danger':'')+'" onclick="evalRecall(\''+s.id+'\','+m.id+',0)">👎 不相关</button></div></div>';}).join('');
+            return '<div class="sample-item"><div style="flex:1;"><div style="font-weight:500;color:#111;">['+s.time_str+'] '+esc(s.query)+'</div><div style="font-size:12px;color:#999;margin:4px 0;">项目:'+esc(s.project)+' '+head+(s.reason?' | '+esc(s.reason):'')+'</div>'+mems+'</div></div>';
+        }).join('');
+    }
+    async function evalRecall(sid,mid,label){await fetch('/api/memory/recall/evaluate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({snapshot_id:sid,memory_id:String(mid),label})});const d=await(await fetch('/api/memory/recall/recent')).json();obsSnaps=d.snapshots||[];renderObserve();loadObsStats();}
+    async function loadObsStats(){const d=await(await fetch('/api/memory/recall/stats')).json();document.getElementById('obsStats').innerText=`观测 ${d.total_observations} 次 | 召回触发率 ${d.trigger_rate}% | 已标注 ${d.evaluated_count} 条 | 命中率 ${d.hit_rate==null?'-':d.hit_rate+'%'}`;}
+    async function clearObserve(){if(!confirm('清空观测时间线？（已保存的标注不会删除）'))return;await fetch('/api/memory/recall/clear',{method:'DELETE'});obsSnaps=[];renderObserve();loadObsStats();}
+    if(location.search.indexOf('observe=1')>=0){window.addEventListener('DOMContentLoaded',()=>{document.querySelector('.header').style.display='none';document.querySelector('.tab-nav').style.display='none';document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));document.getElementById('tab-observe').classList.add('active');initObserve();});}
+    // 内嵌标签点「刷新」整页重载后:凭sessionStorage标记自动切回召回实时观测Tab(保留导航栏,与手动点击进入效果一致)
+    if(location.search.indexOf('observe=1')<0){window.addEventListener('DOMContentLoaded',()=>{if(sessionStorage.getItem('refreshObserve')==='1'){sessionStorage.removeItem('refreshObserve');switchTab('observe');initObserve();}});}
+    </script>
 
 
     <script>
@@ -590,7 +637,7 @@
                             <div>
                                 <div style="font-size:16px;font-weight:500;color:#111;margin-bottom:6px;">
                                     ${library.library_name}
-                                    ${library.is_main }
+                                    ${library.library_id === 'default' ? '<span style="font-size:12px;color:#165DFF;background:#e8f3ff;border-radius:4px;padding:1px 6px;margin-left:6px;">主库</span>' : ''}
                                 </div>
                                 <div style="font-size:14px;color:#666;">记忆条数：${library.memory_count} 条</div>
                             </div>

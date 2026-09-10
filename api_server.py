@@ -517,6 +517,79 @@ def push_sse_message(session_id: str, data: dict):
 FILE_CHANGE_CONNECTIONS = set()
 # 全局对话停止信号存储:存储需要强制终止的会话ID
 CHAT_STOP_SIGNALS = set()
+# ========== 召回实时观测台（只读旁路，与对话SSE通道物理隔离） ==========
+from collections import deque
+# 最近50次提问的召回快照环形缓冲，后打开观测台页面也能补看历史
+RECALL_LOG = deque(maxlen=50)
+# 观测台广播订阅池:每个观测页面一个独立队列，支持多页面同时订阅，绝不复用SSE_CONNECTIONS
+RECALL_SUBSCRIBERS = set()
+# 人工标注持久化文件（👍相关/👎不相关），与观测缓冲分离，清空时间线不删标注
+RECALL_EVAL_FILE = os.path.join(BASE_DIR, "recall_evaluations.json")
+RECALL_EVAL_LOCK = threading.Lock()
+if not os.path.exists(RECALL_EVAL_FILE):
+    with open(RECALL_EVAL_FILE, "w", encoding="utf-8") as f:
+        json.dump({}, f, ensure_ascii=False, indent=2)
+
+def broadcast_recall_snapshot(snapshot: dict):
+    """向所有观测台订阅者非阻塞广播召回快照，队列满/页面卡顿直接丢弃该条，绝不阻塞对话主流程"""
+    global global_event_loop
+    if not RECALL_SUBSCRIBERS or not global_event_loop:
+        return
+    async def _push():
+        dead = []
+        for q in list(RECALL_SUBSCRIBERS):
+            try:
+                q.put_nowait(snapshot)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            RECALL_SUBSCRIBERS.discard(q)
+    try:
+        import asyncio
+        asyncio.run_coroutine_threadsafe(_push(), global_event_loop)
+    except Exception:
+        pass
+
+def record_recall_observation(query: str, project_name: str, triggered: bool,
+                              not_triggered_reason: str, memories: list):
+    """组装一次提问的召回快照（含未触发/空召回样本），入环形缓冲并广播，纯只读不改召回结果"""
+    snapshot = {
+        "id": uuid.uuid4().hex,
+        "timestamp": int(time.time() * 1000),
+        "time_str": time.strftime("%H:%M:%S"),
+        "query": query,
+        "project": project_name or "default",
+        "triggered": bool(triggered),
+        "reason": not_triggered_reason or "",
+        "memories": [
+            {
+                # 全部强制转Python原生类型，防御上游混入numpy.int64/numpy.float64导致JSON序列化500
+                "id": int(m.get("id")) if m.get("id") is not None else None,
+                "content": m.get("content", ""),
+                "similarity": float(m["similarity"]) if m.get("similarity") is not None else None,
+                "recall_score": float(m["recall_score"]) if m.get("recall_score") is not None else None,
+                "tags": m.get("tags", []),
+                "timestamp": int(m.get("timestamp", 0)) if m.get("timestamp") is not None else 0
+            }
+            for m in (memories or [])
+        ]
+    }
+    RECALL_LOG.append(snapshot)
+    broadcast_recall_snapshot(snapshot)
+
+def _load_recall_evaluations() -> dict:
+    """读取人工标注，结构:{snapshot_id: {str(memory_id): {label, time}}}"""
+    try:
+        with open(RECALL_EVAL_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+def _save_recall_evaluations(data: dict) -> None:
+    """持久化人工标注"""
+    with open(RECALL_EVAL_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 # 全局事件循环引用，用于同步线程触发async操作
 global_event_loop = None
@@ -711,6 +784,18 @@ async def chat(req: ChatRequest):
     # 会话轮数不足时自动跳过向量召回，避免资源浪费（current_session长度是轮数*2，除以2得到实际轮数）
     if len(current_session) // 2 < trigger_rounds:
         recall_result["memory_recall"] = []
+    # 【召回观测台只读旁路】最终召回状态确定后分叉，含未触发/空召回样本；只读recall_result，绝不修改它
+    _obs_mems = recall_result.get("memory_recall", [])
+    if len(current_session) // 2 < trigger_rounds:
+        _obs_triggered = False
+        _obs_reason = f"会话轮数不足（前{trigger_rounds}轮不触发向量召回）"
+    elif _obs_mems:
+        _obs_triggered = True
+        _obs_reason = ""
+    else:
+        _obs_triggered = False
+        _obs_reason = "无匹配记忆（候选均低于相似度阈值或被近期上下文过滤）"
+    record_recall_observation(req.query, current_project_name, _obs_triggered, _obs_reason, _obs_mems)
     # 固定召回（工具+预留插槽）拼入系统prompt，不占用上下文配额
     fixed_prompt = "\n".join([item["content"] for item in recall_result["fixed_recall"]])
     # 新增:追加已启用插件列表描述
@@ -2359,7 +2444,9 @@ async def get_task_status(task_id: str):
 async def get_train_page():
     return FileResponse(os.path.join(BASE_DIR, "train.html"))
 
+# 同时注册/sample和/sample.html两个路径，前端「在新窗口打开」跳转sample.html?observe=1也能命中，双保险
 @app.get("/sample", include_in_schema=False)
+@app.get("/sample.html", include_in_schema=False)
 async def get_sample_page():
     return FileResponse(os.path.join(BASE_DIR, "sample.html"))
 
@@ -3412,6 +3499,128 @@ async def memory_list(page: int = 1, page_size: int = 20, keyword: str = "", onl
     end = start + page_size
     page_memories = memory_list[start:end]
     return {"memories": page_memories, "total": total, "page": page, "page_size": page_size}
+
+# -------------------------- 样本/训练/记忆接口（兼容原有业务） --------------------------
+    page_memories = memory_list[start:end]
+    return {"memories": page_memories, "total": total, "page": page, "page_size": page_size}
+
+# ========== 召回实时观测台接口（只读旁路 + 人工两档标注） ==========
+@app.get("/api/memory/recall/recent")
+async def recall_recent(limit: int = 50):
+    """拉取最近N次提问的召回快照（倒序最新在前），并合并已有人工标注，供观测台初始化"""
+    evaluations = _load_recall_evaluations()
+    snapshots = list(RECALL_LOG)[-limit:][::-1]
+    result = []
+    for snap in snapshots:
+        item = dict(snap)
+        item["evaluations"] = evaluations.get(snap["id"], {})
+        result.append(item)
+    return {"snapshots": result, "total": len(RECALL_LOG)}
+
+@app.get("/api/memory/recall/stream")
+async def recall_stream():
+    """召回观测台独立广播SSE:订阅池模式支持多页面同时连接，与对话SSE_CONNECTIONS完全隔离互不影响"""
+    global global_event_loop
+    import asyncio
+    global_event_loop = asyncio.get_running_loop()
+    queue = asyncio.Queue(maxsize=100)
+    RECALL_SUBSCRIBERS.add(queue)
+
+    async def event_generator():
+        try:
+            # 连上立即推connected事件，前端据此点亮实时状态灯
+            connected = json.dumps({"type": "connected", "time": time.strftime("%H:%M:%S")}, ensure_ascii=False)
+            yield f"data: {connected}\n\n"
+            while True:
+                get_task = asyncio.create_task(queue.get())
+                done, pending = await asyncio.wait(
+                    [get_task], timeout=30, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+                if done:
+                    snapshot = done.pop().result()
+                    payload = json.dumps({"type": "recall_snapshot", "snapshot": snapshot}, ensure_ascii=False)
+                    payload = payload.replace('\n', '\\n').replace('\r', '\\r')
+                    yield f"data: {payload}\n\n"
+                else:
+                    heartbeat = json.dumps({"type": "heartbeat"}).replace('\n', '\\n').replace('\r', '\\r')
+                    yield f"data: {heartbeat}\n\n"
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"⚠️ 召回观测SSE连接异常断开: {str(e)}")
+        finally:
+            RECALL_SUBSCRIBERS.discard(queue)
+
+    return EventSourceResponse(event_generator(), media_type="text/event-stream")
+
+# -------------------------- 样本/训练/记忆接口（兼容原有业务） --------------------------
+    return EventSourceResponse(event_generator(), media_type="text/event-stream")
+
+class RecallEvalRequest(BaseModel):
+    snapshot_id: str
+    memory_id: str
+    label: int  # 1=👍相关 0=👎不相关，两档单选；重复提交同档视为取消标注
+
+@app.post("/api/memory/recall/evaluate")
+async def recall_evaluate(req: RecallEvalRequest):
+    """保存人工两档标注（👍相关/👎不相关），按快照ID+记忆ID定位，持久化到recall_evaluations.json"""
+    if req.label not in (0, 1):
+        return {"success": False, "error": "label仅支持1(相关)或0(不相关)"}
+    # 校验快照仍在缓冲窗口内，避免给已过期快照写标注
+    if not any(s["id"] == req.snapshot_id for s in RECALL_LOG):
+        return {"success": False, "error": "该观测记录已超出最近50条缓冲窗口，请重新观测后标注"}
+    with RECALL_EVAL_LOCK:
+        data = _load_recall_evaluations()
+        snap_evals = data.setdefault(req.snapshot_id, {})
+        key = str(req.memory_id)
+        # 已存在相同标注则取消（toggle），否则覆盖为新档位
+        if key in snap_evals and snap_evals[key].get("label") == req.label:
+            snap_evals.pop(key, None)
+            action = "cancelled"
+        else:
+            snap_evals[key] = {"label": req.label, "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+            action = "saved"
+        if not snap_evals:
+            data.pop(req.snapshot_id, None)
+        _save_recall_evaluations(data)
+    return {"success": True, "action": action}
+
+@app.get("/api/memory/recall/stats")
+async def recall_stats():
+    """返回观测台量化指标:观测提问数、召回触发率、已标注条数、人工标注命中率（👍占比）"""
+    total = len(RECALL_LOG)
+    triggered = sum(1 for s in RECALL_LOG if s.get("triggered"))
+    evaluations = _load_recall_evaluations()
+    relevant = 0
+    irrelevant = 0
+    for snap_evals in evaluations.values():
+        for ev in snap_evals.values():
+            if ev.get("label") == 1:
+                relevant += 1
+            elif ev.get("label") == 0:
+                irrelevant += 1
+    evaluated = relevant + irrelevant
+    return {
+        "total_observations": total,
+        "triggered_count": triggered,
+        "trigger_rate": round(triggered / total * 100, 1) if total else 0.0,
+        "evaluated_count": evaluated,
+        "relevant_count": relevant,
+        "irrelevant_count": irrelevant,
+        "hit_rate": round(relevant / evaluated * 100, 1) if evaluated else None
+    }
+
+@app.delete("/api/memory/recall/clear")
+async def recall_clear():
+    """清空观测台时间线环形缓冲（不删除已持久化的人工标注）"""
+    RECALL_LOG.clear()
+    return {"success": True}
 
 # -------------------------- 样本/训练/记忆接口（兼容原有业务） --------------------------
 
