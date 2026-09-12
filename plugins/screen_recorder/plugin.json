@@ -1,0 +1,112 @@
+{
+    "plugin_id": "screen_recorder",
+    "name": "屏幕录制插件",
+    "version": "1.1.0",
+    "author": "AI智能助手",
+    "description": "本地屏幕录制插件，支持全屏/鼠标框选区域/指定显示器录制，mss抓屏+ffmpeg直出H.264标准MP4（B站、腾讯视频可直接上传）。对话说「开始录屏/暂停录屏/继续录屏/停止录屏/录屏状态」即可控制，支持录制中随时暂停再继续（暂停片段不进成片），录完可一键变速压缩（如实际60秒指定压到40秒，内容完整不裁剪），另附可脱离工作台双击启动的录屏小控制台（开始/暂停/继续/结束/变速）。数据100%本地处理，只录画面不录声音，适合后期配音的演示视频制作。",
+    "category": "本地操作",
+    "entry": "main.py",
+    "trigger_words": ["录屏", "屏幕录制", "录制视频", "录制屏幕", "开始录屏", "暂停录屏", "继续录屏", "恢复录屏", "停止录屏", "结束录屏", "录屏状态", "屏幕录像", "录制操作演示", "录屏变速", "视频加速", "压缩视频时长", "压到40秒"],
+    "permissions": ["file_read", "file_write"],
+    "config": [
+        {
+            "key": "fps",
+            "label": "默认帧率",
+            "type": "input",
+            "default": "20",
+            "placeholder": "每秒帧数，5-60，参赛演示建议30",
+            "required": false
+        },
+        {
+            "key": "crf",
+            "label": "画质CRF",
+            "type": "input",
+            "default": "23",
+            "placeholder": "x264画质，0-40，数值越小越清晰（建议18-28）",
+            "required": false
+        },
+        {
+            "key": "preset",
+            "label": "编码预设",
+            "type": "select",
+            "default": "veryfast",
+            "options": [
+                {"label": "ultrafast（最快，文件大）", "value": "ultrafast"},
+                {"label": "superfast", "value": "superfast"},
+                {"label": "veryfast（推荐）", "value": "veryfast"},
+                {"label": "faster", "value": "faster"},
+                {"label": "fast", "value": "fast"},
+                {"label": "medium（最慢，文件小）", "value": "medium"}
+            ],
+            "required": false
+        },
+        {
+            "key": "output_dir",
+            "label": "视频输出目录",
+            "type": "input",
+            "default": "",
+            "placeholder": "留空则保存到 系统视频目录/AI智能助手录屏",
+            "required": false
+        },
+        {
+            "key": "max_seconds",
+            "label": "防遗忘自动停止（秒）",
+            "type": "input",
+            "default": "1800",
+            "placeholder": "最长录制秒数，到点自动停止，默认1800秒（30分钟）",
+            "required": false
+        }
+    ],
+    "parameters": [
+        {
+            "name": "action",
+            "type": "string",
+            "required": false,
+            "description": "操作类型:start=开始录屏（默认），pause=暂停（录制进程保留、暂停片段不进成片），resume=继续录制（接续写入同一文件），stop=结束并保存，status=查询录屏状态，speed=成片变速压缩；不传时根据query中的“暂停/继续/停/状态/压到N秒”等词自动判断（“暂停”优先于“停止”识别）"
+        },
+        {
+            "name": "target_seconds",
+            "type": "number",
+            "required": false,
+            "description": "成片变速目标秒数，仅action=speed时生效:如实际录制60秒传40，自动按1.5倍速重编码，内容完整不裁剪；安全倍速区间0.25-4倍"
+        },
+        {
+            "name": "factor",
+            "type": "number",
+            "required": false,
+            "description": "显式变速倍速，仅action=speed时生效，>1加速、<1减速，与target_seconds二选一（优先target_seconds）"
+        },
+        {
+            "name": "video_path",
+            "type": "string",
+            "required": false,
+            "description": "要变速的视频路径，仅action=speed时生效；不传则默认处理最近一次录制的成片"
+        },
+        {
+            "name": "mode",
+            "type": "string",
+            "required": false,
+            "description": "录制范围:full=主屏全屏（默认），region=鼠标拖拽框选区域，monitor或数字=指定显示器（如2表示第2个显示器）"
+        },
+        {
+            "name": "monitor_index",
+            "type": "integer",
+            "required": false,
+            "description": "指定显示器序号（从1开始，1为主屏），仅mode=monitor时生效"
+        },
+        {
+            "name": "fps",
+            "type": "integer",
+            "required": false,
+            "description": "本次录制帧率，5-60，默认取配置页的值（20），参赛演示建议30"
+        },
+        {
+            "name": "query",
+            "type": "string",
+            "required": false,
+            "description": "用户自然语言原话，用于识别“框选区域/副屏/第2个显示器/停止/状态”等意图"
+        }
+    ],
+    "dependencies": ["imageio-ffmpeg==0.5.1"],
+    "enabled": true
+}

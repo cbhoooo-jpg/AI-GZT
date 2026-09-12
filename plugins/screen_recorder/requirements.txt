@@ -1,0 +1,3 @@
+# 屏幕录制插件依赖（mss、screeninfo、Pillow 主程序已自带，此处不重复声明）
+# imageio-ffmpeg 仅提供自带绿色 ffmpeg 二进制，安装插件时自动下载，不随主安装包分发
+imageio-ffmpeg==0.5.1
