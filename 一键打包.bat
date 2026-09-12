@@ -15,7 +15,7 @@ echo.
 :: ===== 配置项 =====
 set PYTHON_INSTALL_PATH=%LOCALAPPDATA%\Programs\Python\Python311
 set VENV_DIR=%~dp0.venv
-set PIP_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple
+set PIP_MIRROR=https://mirrors.aliyun.com/pypi/simple
 
 :: [1/5] 定位 Python 3.11（检测顺序与「Python和依赖安装.bat」保持一致）
 echo [1/5] 正在检测Python 3.11环境...

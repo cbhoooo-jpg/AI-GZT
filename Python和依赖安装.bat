@@ -11,7 +11,7 @@ echo.
 set PYTHON_VERSION=3.11.9
 set PYTHON_DOWNLOAD_URL=https://mirrors.huaweicloud.com/python/%PYTHON_VERSION%/python-%PYTHON_VERSION%-amd64.exe
 set PYTHON_INSTALL_PATH=%LOCALAPPDATA%\Programs\Python\Python311
-set PIP_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple
+set PIP_MIRROR=https://mirrors.aliyun.com/pypi/simple
 
 :: 第一步:检测是否已安装Python 3.11
 echo [1/6] 正在检测Python环境...
