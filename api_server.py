@@ -1955,7 +1955,7 @@ async def chat(req: ChatRequest):
         content = f"用户问:{req.query}\n回答:{final_structured}"
         tags = []
         # 自动判断内容类型打标签
-        if any(key in content for key in ["", ".py", ".md", "函数", "接口", "代码", "变量", "类"]):
+        if any(key in content for key in [".py", ".md", "函数", "接口", "代码", "变量", "类"]):
             tags.append("code")
         if any(key in content for key in ["工具调用", "exec_cmd", "rag_search", "read_file", "write_file"]):
             tags.append("tool")

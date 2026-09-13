@@ -220,7 +220,7 @@
                     <el-col span="12">
                         <el-form-item label="相似度阈值">
                             <el-input-number v-model="memoryConfig.similarity_threshold" :min="0.1" :max="1" :step="0.05" size="large" controls-position="right"></el-input-number>
-                            <div class="tip-text">相似度检索值</div>
+                            <div class="tip-text">余弦相似度门槛，0~1，越高越严格，建议0.85~0.95</div>
                         </el-form-item>
                     </el-col>
                     <el-col span="12">
@@ -365,7 +365,7 @@
                     memoryConfig: {
                         history_context_rounds: 5,
                         recall_top_k: 4,
-                        similarity_threshold: 0.9,
+                        similarity_threshold: 0.85,
                         recall_trigger_rounds: 2,
                         show_timestamp_in_context: true,
                         fixed_recall: {

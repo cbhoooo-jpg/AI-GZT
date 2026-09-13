@@ -123,7 +123,7 @@ class MemoryCache:
                 print(f"🔄 检测到索引为空，正在重建{len(self.meta)}条历史记忆的向量索引...")
                 vectors = []
                 for mem in self.meta.values():
-                    vec = self.encoder.encode([mem["content"]])[0].astype('float32')
+                    vec = self.encoder.encode([self._encode_text(mem["content"])])[0].astype('float32')
                     vec = vec / np.linalg.norm(vec)
                     vectors.append(vec)
                 self.index.add(np.array(vectors))
@@ -169,15 +169,29 @@ class MemoryCache:
         return content
 
     def _clean_recall_content(self, content: str) -> str:
-        """清洗历史关联召回记忆：移除工具调用和执行结果，仅保留对话内容，减少Token消耗"""
+        """清洗历史关联召回记忆:移除工具调用/执行结果/轮次标记等流水账模板，仅保留用户问题与AI自然语言回答"""
         # 1. 移除工具调用块（【工具调用开始】...【工具调用结束】）
         content = re.sub(r'【工具调用开始】.*?【工具调用结束】', '', content, flags=re.DOTALL)
-        # 2. 移除工具执行结果块（兼容多种格式，直到遇到下一个对话标识或文本结束）
-        content = re.sub(r'(🔹 指令\d+执行结果：|工具执行结果：).*?(?=\n【工具调用开始】|\n用户问|\nAI回答|\nAI输出|\Z)', '', content, flags=re.DOTALL)
-        # 3. 清理多余的空行，保持文本紧凑
+        # 2. 移除工具执行结果块（兼容指令/执行结果多种格式与中英文冒号，直到遇到下一个对话标识或文本结束）
+        content = re.sub(r'(🔹 指令\d+执行结果[：:]|🔹 执行结果[：:]|工具执行结果[：:]).*?(?=\n【工具调用开始】|\n用户问|\nAI回答|\nAI输出|\Z)', '', content, flags=re.DOTALL)
+        # 3. 移除多轮交互标记与AI输出前缀等模板噪声
+        content = re.sub(r'【第\d+轮交互】', '', content)
+        content = re.sub(r'AI输出[：:]', '', content)
+        # 4. 移除进度统计行（真实格式为"📊 当前进度:第x次/..."，emoji后与冒号前允许空格，兼容全/半角冒号）
+        content = re.sub(r'📊\s*当前进度\s*[:\uFF1A].*', '', content)
+        # 5. 移除每条记忆共有的对话骨架标签（行首"用户问:/回答:/AI回答:"），仅删标签，问题与回答正文完整保留
+        content = re.sub(r'(?:^|\n)[ \t]*(?:用户问|AI回答|回答)[ \t]*[:\uFF1A][ \t]*', '\n', content)
+        # 6. 清理多余的空行，保持文本紧凑
         content = re.sub(r'\n{3,}', '\n\n', content).strip()
-        return content    
+        return content
 
+    def _encode_text(self, content: str) -> str:
+        """向量编码统一入口:入库文本先去噪（剥离工具调用/执行结果/轮次标记/进度统计等模板噪声），
+        只保留用户问题+AI自然语言回答作为向量语义来源，解决流水账共性文本稀释语义、不同主题向量挤在一起的问题。
+        仅用于向量编码:meta中仍保存完整原文，记忆展示/导出零信息丢失；去噪后为空（纯工具轮次）时回退原文，避免空向量。
+        """
+        cleaned = self._clean_recall_content(content)
+        return cleaned if cleaned else content
     def add_memory(self, content: str, tags: List[str] = None, session_id: str = None) -> int:
         """新增记忆到缓存，支持绑定会话ID，自动加毫秒级时间戳"""
         # 超长记忆自动压缩工具调用冗余内容
@@ -204,8 +218,8 @@ class MemoryCache:
         # 编码器和索引均可用时才写入向量索引，不可用仅存元数据不报错
         if self.encoder is not None and self.index is not None:
             try:
-                # 生成向量并归一化，统一距离尺度到0~2范围
-                vector = self.encoder.encode([content])[0].astype('float32')
+                # 向量编码统一走去噪入口，生成向量并归一化，统一距离尺度到0~2范围
+                vector = self.encoder.encode([self._encode_text(content)])[0].astype('float32')
                 vector = vector / np.linalg.norm(vector)
                 # 写入FAISS
                 self.index.add(np.array([vector]))
@@ -297,9 +311,11 @@ class MemoryCache:
             distances, indices = self.index.search(np.array([query_vector]), search_k)
             candidate_map = {}  # key: idx, value: (distance, mem) 用于去重合并两次检索结果
             
+            # 阈值按余弦相似度解释:归一化向量满足 cos=1-d²/2，换算为L2距离平方硬门槛（如0.85对应d²<=0.3）
+            cos_limit = 1.0 - threshold
             # 处理第一次检索结果
             for i, idx in enumerate(indices[0]):
-                if str(idx) in self.meta and distances[0][i] < threshold * 1.2:  # 放宽阈值到1.2倍，给加权留空间
+                if str(idx) in self.meta and distances[0][i] <= cos_limit:
                     candidate_map[idx] = (distances[0][i], self.meta[str(idx)])
             
             # 3. 模糊query二次检索：如果第一次候选没有匹配到任何实体，且有上一轮用户输入，拼接上下文再搜一次
@@ -319,7 +335,7 @@ class MemoryCache:
                 distances2, indices2 = self.index.search(np.array([enhanced_vector]), search_k)
                 # 合并第二次检索结果，保留更小的距离
                 for i, idx in enumerate(indices2[0]):
-                    if str(idx) in self.meta and distances2[0][i] < threshold * 1.2:
+                    if str(idx) in self.meta and distances2[0][i] <= cos_limit:
                         if idx not in candidate_map or distances2[0][i] < candidate_map[idx][0]:
                             candidate_map[idx] = (distances2[0][i], self.meta[str(idx)])
             
@@ -361,8 +377,9 @@ class MemoryCache:
                         if entity_match >= 3:
                             break
                 score -= entity_match * 0.1
-                # 最终得分必须低于原始阈值才保留，避免加权把不相关内容拉进来
-                if score < threshold:
+                # 余弦相似度硬门槛:加权仅用于排序，原始相似度低于阈值一律不保留
+                cos_sim_raw = 1.0 - float(orig_dist) ** 2 / 2.0
+                if cos_sim_raw >= threshold:
                     # 元组第4位携带原始L2距离orig_dist，供召回观测台换算余弦相似度展示
                     scored_candidates.append( (score, idx, mem, orig_dist) )
             
@@ -468,7 +485,7 @@ class MemoryCache:
         new_meta = {}
         for idx, mem in enumerate(memory_list):
             new_meta[str(idx)] = mem
-            vec = self.encoder.encode([mem["content"]])[0].astype('float32')
+            vec = self.encoder.encode([self._encode_text(mem["content"])])[0].astype('float32')
             vec = vec / np.linalg.norm(vec)
             vectors.append(vec)
         # 更新元数据为连续ID
