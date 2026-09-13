@@ -214,6 +214,25 @@ gte-small-zh/
 
 插件放置于 `plugins/` 目录，每个插件包含 `main.py` + `plugin.json`，模板参考 `plugin_templates/` 目录下的三类标准模板（AIGC 生成类 / 信息采集查询类 / 本地操作类）。
 
+## 社区与贡献
+
+### 反馈与交流
+
+- **问题反馈与功能建议**:优先在 [Gitee Issue](https://gitee.com/chen-bohan3000/ai-gzt/issues) 提交（国内访问稳定），也可使用 [GitHub Issues](https://github.com/cbhoooo-jpg/AI-GZT/issues)
+- **安全漏洞**:请勿公开提 Issue，请按[安全策略](.github/SECURITY.md)私下报告（邮箱 cbhoooo@163.com）
+- **路线图讨论**:欢迎在 Issue 中对 [ROADMAP.md](ROADMAP.md) 的规划方向提出想法，高赞需求会优先排期
+
+### 参与贡献
+
+欢迎提交 Issue、文档改进与合并请求，第一次参与也不必紧张:
+
+1. 先阅读[贡献指南](CONTRIBUTING.md)，了解分支命名、提交规范与自测要求
+2. 参与社区讨论请遵守[行为准则](CODE_OF_CONDUCT.md)
+3. Fork 仓库后新建 `feat/xxx`、`fix/xxx`、`docs/xxx` 分支，提交合并请求（Pull Request / Merge Request）
+4. 按 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)填写变更说明与提交前自查清单
+
+> 国内用户统一推荐使用 Gitee 完成克隆、Issue 反馈与合并请求；GitHub 仓库后续会视网络情况手动同步。
+
 ## 免责声明
 
 本软件按"现状"提供，作者不对使用本工具造成的任何直接或间接损失承担责任。请遵守当地法律法规，勿将本工具用于任何违法用途。

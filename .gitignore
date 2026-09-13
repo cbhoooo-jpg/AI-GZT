@@ -6,8 +6,13 @@ memory_config.json
 # ===== 运行时数据与索引 =====
 code_rag/
 backup/
+# 本地记忆向量索引与元数据（运行时自动生成的私有数据，重建索引即可恢复，不进仓库）
+memory_index.faiss
+memory_meta.json
 logs/
 *.log
+# 崩溃处理器自动生成的运行时日志（main.py 崩溃时自动重建，显式声明便于识别）
+crash_error.log
 __pycache__/
 *.pyc
 *.pyo

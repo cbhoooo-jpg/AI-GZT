@@ -47,6 +47,8 @@ Name: "startupicon"; Description: "开机自动启动AI_GZT"; GroupDescription: 
 Source: "dist\AI_GZT\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; 第三方开源许可证文件（强制打包到程序根目录，合规要求）
 Source: "THIRD_PARTY_LICENSES.md"; DestDir: "{app}"; Flags: ignoreversion
+; 项目自身 Apache 2.0 许可证（二次分发须保留版权声明与 LICENSE，合规要求）
+Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; 开始菜单快捷方式（自动使用exe内嵌图标，无需外部ico文件）
