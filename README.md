@@ -1,5 +1,14 @@
 # AI智能助手
 
+[![License](https://img.shields.io/github/license/cbhoooo-jpg/AI-GZT)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/cbhoooo-jpg/AI-GZT)](https://github.com/cbhoooo-jpg/AI-GZT/releases/latest)
+[![GitHub Downloads](https://img.shields.io/github/downloads/cbhoooo-jpg/AI-GZT/total)](https://github.com/cbhoooo-jpg/AI-GZT/releases)
+![Python](https://img.shields.io/badge/Python-3.11-3776AB)
+![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4)
+[![Gitee 国内镜像](https://img.shields.io/badge/Gitee-国内镜像-c71d23)](https://gitee.com/chen-bohan3000/ai-gzt)
+
+**简体中文** ｜ [English](README.en.md)
+
 > 本地优先、可审计的 Windows 桌面 AI 工作台。基于大语言模型实现自然语言交互，支持本地模型离线部署，内置 RAG 私有知识库与向量记忆，采用插件化扩展架构，所有数据默认本地存储，可以根据需求自行在设置页面更换云端模型，修改后即刻生效。默认使用多模态的模型，非多模态模型使用截图和发送图片给AI会报错。
 
 ## 项目背景:一个"守门员"和 AI 吵出来的软件
@@ -25,7 +34,7 @@
 
 | 文件                      | 说明                                                                                             | 下载链接                                                               |
 | ----------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| AI智能助手 v1.0 Windows 安装包 | 安装包（约 199 MB），已内置 Python 运行环境与全部依赖，安装后开箱即用                                                     | [123 云盘下载](https://4004388641.share.123pan.cn/123pan/NFTTwh-w54xv) |
+| AI智能助手 v1.0 Windows 安装包 | 安装包（约 199 MB），已内置 Python 运行环境与全部依赖，安装后开箱即用                                                     | [123 云盘（国内推荐）](https://4004388641.share.123pan.cn/123pan/NFTTwh-w54xv) ／ [GitHub Release 直链](https://github.com/cbhoooo-jpg/AI-GZT/releases/download/v1.0/AI_GZT_Setup_v1.0.exe) |
 | Python 环境一键安装脚本         | `Python和依赖安装.bat`，完整依赖安装，大约需要3G的C盘空间。*安装完整依赖才可以使用RAG 知识库和向量记忆召回功能，没有安装完整依赖可以在设置中把上下文轮数的参数适当调高* | [123 云盘下载](https://4004388641.share.123pan.cn/123pan/NFTTwh-hLR4v) |
 
 > 📥 123 云盘链接免登录、免费用户下载不限速，浏览器打开即可下载，无需安装客户端。
@@ -218,6 +227,7 @@ gte-small-zh/
 
 ### 反馈与交流
 
+- **常见问题**:先查阅 [FAQ 常见问题](FAQ.md)——安装与 SmartScreen、模型 API 配置、RAG 可选依赖、数据隐私等高频问题已有现成答案
 - **问题反馈与功能建议**:优先在 [Gitee Issue](https://gitee.com/chen-bohan3000/ai-gzt/issues) 提交（国内访问稳定），也可使用 [GitHub Issues](https://github.com/cbhoooo-jpg/AI-GZT/issues)
 - **安全漏洞**:请勿公开提 Issue，请按[安全策略](.github/SECURITY.md)私下报告（邮箱 cbhoooo@163.com）
 - **路线图讨论**:欢迎在 Issue 中对 [ROADMAP.md](ROADMAP.md) 的规划方向提出想法，高赞需求会优先排期
