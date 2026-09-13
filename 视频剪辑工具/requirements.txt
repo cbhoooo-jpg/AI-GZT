@@ -1,0 +1,7 @@
+# Independent Video Editor - dependencies (comments kept in English to avoid pip GBK decode errors)
+# Green ffmpeg binary, same version as the screen recorder plugin
+imageio-ffmpeg==0.5.1
+# Online neural TTS for subtitle-to-speech (requires internet at runtime)
+# IMPORTANT: 6.x is rejected by Microsoft TTS endpoint with HTTP 403 (Sec-MS-GEC token
+# algorithm changed). Must use 7.2.8+ or speech synthesis fails.
+edge-tts>=7.2.8,<8.0.0
