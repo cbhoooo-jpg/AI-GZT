@@ -60,8 +60,15 @@ DEFAULT_PORT = 8000
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
 def get_default_repository_path() -> str:
-    """获取跨平台默认仓库路径:统一使用当前用户文档目录下的AI仓库文件夹（任何Windows/Mac/Linux均存在）"""
-    default_path = os.path.join(os.path.expanduser("~"), "Documents", "AI仓库文件夹")
+    """获取默认仓库路径
+    Windows版统一使用D盘根目录下的AI仓库文件夹（避免首次安装默认建到C盘用户文档目录、占用系统盘空间）；
+    Mac/Linux无盘符概念，沿用当前用户文档目录下的AI仓库文件夹（该目录在任何系统下均存在）
+    """
+    if platform.system() == "Windows":
+        # Windows安装版默认仓库固定到D盘根目录，路径统一使用/分隔符
+        default_path = "D:/AI仓库文件夹"
+    else:
+        default_path = os.path.join(os.path.expanduser("~"), "Documents", "AI仓库文件夹")
     return os.path.normpath(default_path).replace("\\", "/")
 
 # 全局仓库路径（动态从配置读取，支持自定义）
@@ -130,7 +137,8 @@ def load_config() -> Dict:
             # 首次启动/版本升级时自动补全缺失的默认禁止路径，不覆盖用户已有配置
             if "forbidden_paths" not in user_config:
                 user_config["forbidden_paths"] = default_config["forbidden_paths"]
-            if "repository_path" not in user_config:
+            # 配置项缺失或为空串时均自动补全默认仓库路径（Windows为D:/AI仓库文件夹），空串不处理会被解析为当前工作目录
+            if not user_config.get("repository_path"):
                 user_config["repository_path"] = default_config["repository_path"]
             # 自动保存补全后的配置
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -175,7 +183,8 @@ def save_config(config: Dict):
 def init_repository_path():
     global REPOSITORY_PATH
     config = load_config()
-    repo_path = config.get("repository_path", get_default_repository_path())
+    # 配置缺失/为空串时兜底默认仓库路径（Windows为D:/AI仓库文件夹），避免空串被解析为当前工作目录
+    repo_path = config.get("repository_path") or get_default_repository_path()
     # 标准化路径格式
     REPOSITORY_PATH = os.path.normpath(repo_path).replace("\\", "/")
     # 自动创建仓库目录
@@ -4127,7 +4136,8 @@ class PluginGenerateRequest(BaseModel):
     config_list: Optional[List[Dict[str, Any]]] = None
     param_list: Optional[List[Dict[str, Any]]] = None
     permission: str = "none"
-    save_dir: str = os.path.join(os.path.expanduser("~"), "Documents", "AI仓库文件夹", "插件开发").replace("\\", "/")
+    # 插件开发默认目录复用统一仓库默认路径（Windows为D:/AI仓库文件夹），避免两处默认值不一致
+    save_dir: str = os.path.join(get_default_repository_path(), "插件开发").replace("\\", "/")
     preset_template_id: Optional[str] = None
 
 # 插件预制模板接口
