@@ -1494,18 +1494,8 @@ async def chat(req: ChatRequest):
                                 all_exec_results.append(exec_result)
                                 continue
 
-                            # 校验下载命令域名白名单
-                            ALLOWED_DOWNLOAD_DOMAINS = ["volces.com", "openai.com", "open-meteo.com", "github.com", "huggingface.co"]
-                            if "curl" in cmd.lower() or "wget" in cmd.lower():
-                                import re
-                                domain_match = re.search(r'https?://([^/]+)', cmd)
-                                if domain_match:
-                                    domain = domain_match.group(1)
-                                    if not any(domain.endswith(d) for d in ALLOWED_DOWNLOAD_DOMAINS):
-                                        exec_result = "❌ 禁止访问未授权域名，仅允许访问白名单内公开域名"
-                                        add_operation_log("AI执行命令", exec_result, "error")
-                                        all_exec_results.append(exec_result)
-                                        continue
+                            # 域名白名单已于2026-09-15按用户要求取消:curl/wget允许访问任意网站
+                            # 危险命令关键字拦截（rm/format/rd等）仍然生效，不受影响
                             try:
                                 import subprocess
                                 # 执行命令，超时10秒避免阻塞
@@ -3845,6 +3835,85 @@ async def save_prompt_template(req: PromptSaveRequest):
     return {"code": 200, "msg": "模板保存成功"}
 
 # -------------------------- 插件管理接口 --------------------------
+
+# ===== 云端插件市场（MVP方案C:整仓archive分发，配置可改，不硬编码市场地址） =====
+# 网络访问策略（2026-09-15用户拍板）:市场源/插件下载源不做域名白名单限制，允许任意网站
+# 仅保留http/https协议校验，拦截file://、ftp://等非HTTP协议；200MB体积上限与zip-slip防护仍然生效
+# 市场清单默认地址（公开仓库raw文件，匿名可访问）；可在config.json的plugin_market.manifest_url覆盖
+DEFAULT_MARKET_MANIFEST_URL = "https://gitee.com/chen-bohan3000/ai-gzt-plugins/raw/main/market_manifest.json"
+# 整仓archive下载体积上限（200MB），超过中止，防止异常超大响应占满磁盘
+MARKET_ARCHIVE_MAX_BYTES = 200 * 1024 * 1024
+# 清单内存缓存（避免每次打开市场页都请求远程），5分钟TTL
+_plugin_market_cache = {"data": None, "ts": 0.0}
+_PLUGIN_MARKET_CACHE_TTL = 300
+
+def get_plugin_market_config() -> dict:
+    """读取插件市场配置:config.json的plugin_market节点，缺省值兜底，不硬编码业务地址以外的内容"""
+    cfg = load_config()
+    market_cfg = cfg.get("plugin_market", {}) if isinstance(cfg.get("plugin_market"), dict) else {}
+    return {
+        "manifest_url": market_cfg.get("manifest_url") or DEFAULT_MARKET_MANIFEST_URL,
+        "enabled": market_cfg.get("enabled", True)
+    }
+
+def _is_valid_http_url(url: str) -> bool:
+    """校验市场请求URL:域名白名单已取消（允许任意网站），仅校验必须为http/https协议的合法URL"""
+    return bool(re.match(r'^https?://[^/\s]+', url or ""))
+
+def _compare_plugin_versions(v1: str, v2: str) -> int:
+    """语义化版本号比较:返回-1(v1<v2)/0(相等)/1(v1>v2)；非标准版本号退化为字符串比较"""
+    def parse(v):
+        parts = re.findall(r'\d+', str(v or ""))
+        return tuple(int(p) for p in parts[:3]) if parts else None
+    p1, p2 = parse(v1), parse(v2)
+    if p1 is None or p2 is None:
+        return -1 if str(v1) < str(v2) else (1 if str(v1) > str(v2) else 0)
+    # 补齐长度后按元组比较
+    n = max(len(p1), len(p2))
+    p1, p2 = p1 + (0,) * (n - len(p1)), p2 + (0,) * (n - len(p2))
+    return -1 if p1 < p2 else (1 if p1 > p2 else 0)
+
+def _safe_extract_zip(zip_path: str, target_dir: str) -> int:
+    """
+    统一安全解压函数:
+    1. zip-slip防护:每个成员解压后的绝对路径必须落在target_dir内，拒绝../../路径穿越；
+    2. 自动剥公共顶层目录:zip内所有文件若共享同一层顶层目录（如Gitee整仓包的ai-gzt-plugins-main/、
+       手工打包多套的一层插件目录），自动剥掉，修复原extractall要求文件必须在zip根目录的隐患；
+    返回成功解压的文件数。
+    """
+    import zipfile
+    files = []
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            norm = info.filename.replace("\\", "/")
+            parts = [p for p in norm.split("/") if p and p not in (".", "..")]
+            if parts:
+                files.append((info, parts))
+        if not files:
+            raise ValueError("压缩包内没有可解压的文件")
+        # 判断是否共享唯一公共顶层目录（全部成员首段相同且至少有成员路径>=2段才剥离）
+        first_segments = {parts[0] for _, parts in files}
+        has_nested = any(len(parts) >= 2 for _, parts in files)
+        strip_top = len(first_segments) == 1 and has_nested
+        target_abs = os.path.abspath(target_dir)
+        os.makedirs(target_abs, exist_ok=True)
+        count = 0
+        for info, parts in files:
+            rel_parts = parts[1:] if strip_top else parts
+            if not rel_parts:
+                continue
+            dest_abs = os.path.abspath(os.path.join(target_abs, *rel_parts))
+            # zip-slip核心校验:目标路径必须是target_dir的子路径
+            if dest_abs != target_abs and not dest_abs.startswith(target_abs + os.sep):
+                raise ValueError(f"压缩包存在非法路径，已拦截:{info.filename}")
+            os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
+            with zf.open(info) as src, open(dest_abs, "wb") as dst:
+                dst.write(src.read())
+            count += 1
+    return count
+
 class PluginInstallRequest(BaseModel):
     plugin_path: str # 本地插件路径/云端插件ID
     is_local: bool = True
@@ -3893,34 +3962,327 @@ async def install_plugin(req: PluginInstallRequest):
             add_operation_log("插件管理", f"✅ 安装插件成功:{plugin_name}")
             return {"code": 200, "msg": "插件安装成功"}
         else:
-            # 云端插件后续扩展
-            return {"code": 400, "msg": "云端插件市场开发中"}
+            # 云端插件统一走独立的市场安装接口（支持整仓archive分发），旧入口给出明确引导
+            return {"code": 400, "msg": "请使用插件市场「可安装」列表中的安装按钮（接口:/api/plugin/market/install）"}
     except Exception as e:
         return {"code": 500, "msg": f"安装失败:{str(e)}"}
+
+class MarketInstallRequest(BaseModel):
+    plugin_id: str # 云端市场插件ID
+
+def _fetch_market_manifest(force_refresh: bool = False) -> dict:
+    """
+    拉取云端插件市场清单（同步阻塞函数，调用方须用asyncio.to_thread包裹）:
+    5分钟内存缓存，force_refresh=True跳过缓存；域名白名单校验；返回manifest字典。
+    """
+    import requests
+    now = time.time()
+    if not force_refresh and _plugin_market_cache["data"] is not None:
+        if now - _plugin_market_cache["ts"] < _PLUGIN_MARKET_CACHE_TTL:
+            return _plugin_market_cache["data"]
+    cfg = get_plugin_market_config()
+    if not cfg.get("enabled", True):
+        raise ValueError("插件市场已在配置中关闭（plugin_market.enabled=false）")
+    url = cfg["manifest_url"]
+    # 域名白名单已取消（允许任意网站），仅做http/https协议校验
+    if not _is_valid_http_url(url):
+        raise ValueError("插件市场清单地址必须是http/https开头的合法URL，已中止请求")
+    resp = requests.get(url, timeout=10, headers={"User-Agent": "AI-GZT-PluginMarket/1.0"})
+    resp.raise_for_status()
+    manifest = resp.json()
+    # 清单结构基础校验
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("plugins"), list):
+        raise ValueError("市场清单格式无效:缺少plugins数组")
+    for p in manifest["plugins"]:
+        if not p.get("plugin_id") or not p.get("version"):
+            raise ValueError("市场清单存在缺少plugin_id/version的插件条目")
+    _plugin_market_cache["data"] = manifest
+    _plugin_market_cache["ts"] = now
+    return manifest
+
+@app.get("/api/plugin/market/list")
+async def get_market_plugin_list(force: bool = False):
+    """获取云端市场插件清单，与本地已安装列表按plugin_id合并，输出未安装/可更新/已最新三态"""
+    import asyncio
+    try:
+        manifest = await asyncio.to_thread(_fetch_market_manifest, force)
+        # 本地已安装插件版本映射
+        installed_versions = {
+            pid: tpl["plugin_config"].get("version", "1.0.0")
+            for pid, tpl in tool_template_manager._plugin_templates.items()
+        }
+        plugins = []
+        for p in manifest["plugins"]:
+            item = dict(p)
+            pid = item["plugin_id"]
+            installed_ver = installed_versions.get(pid)
+            if installed_ver is None:
+                item["status"] = "not_installed"
+            elif _compare_plugin_versions(item["version"], installed_ver) > 0:
+                item["status"] = "update_available"
+                item["installed_version"] = installed_ver
+            else:
+                item["status"] = "installed"
+                item["installed_version"] = installed_ver
+            plugins.append(item)
+        return {"code": 200, "data": {
+            "market_name": manifest.get("market_name", "云端插件市场"),
+            "distribution": manifest.get("distribution", ""),
+            "updated_at": manifest.get("updated_at", ""),
+            "plugins": plugins,
+            "count": len(plugins)
+        }}
+    except Exception as e:
+        # 市场拉取失败不影响已安装Tab，前端据此显示明确错误
+        return {"code": 502, "msg": f"无法获取云端插件清单:{str(e)}"}
+# 市场逐文件下载防护:单插件文件数上限，防止异常清单/递归失控
+MARKET_PLUGIN_MAX_FILES = 500
+
+def _parse_repo_info_from_manifest(manifest: dict) -> dict:
+    """解析市场仓库信息:优先清单显式repo_url/ref，缺省从manifest_url推导，适配Gitee匿名contents API+raw通道"""
+    cfg = get_plugin_market_config()
+    manifest_url = cfg.get("manifest_url", "")
+    repo_url = (manifest.get("repo_url") or "").rstrip("/")
+    ref = manifest.get("ref") or "main"
+    if not repo_url:
+        # 形如 https://gitee.com/{owner}/{repo}/raw/{ref}/market_manifest.json
+        m = re.match(r'^(https?://[^/]+/[^/]+/[^/]+)/raw/([^/]+)/', manifest_url)
+        if m:
+            repo_url, ref = m.group(1).rstrip("/"), m.group(2)
+    if not repo_url:
+        raise ValueError("市场清单缺少repo_url，且无法从manifest_url推导仓库地址")
+    m = re.match(r'^(https?://[^/]+)/(.+?)(?:\.git)?$', repo_url)
+    if not m:
+        raise ValueError("市场清单repo_url格式无效")
+    origin, slug = m.group(1), m.group(2).strip("/")
+    return {
+        "origin": origin,
+        "slug": slug,
+        "ref": ref,
+        "raw_base": f"{repo_url}/raw/{ref}",
+        "contents_api": f"{origin}/api/v5/repos/{slug}/contents",
+    }
+
+def _download_market_plugin_files(plugin_id: str, dest_parent_dir: str, manifest: dict) -> str:
+    """
+    方案C修复版（2026-09-15）:Gitee整仓archive端点对非浏览器会话返回405/HTML导致"File is not a zip file"，
+    改用匿名contents API递归列出目标插件子目录 + raw地址逐文件下载，在临时目录还原插件结构。
+    三重防护:文件数上限MARKET_PLUGIN_MAX_FILES、总体积上限MARKET_ARCHIVE_MAX_BYTES、路径穿越校验。
+    返回还原后的插件目录绝对路径。
+    """
+    import requests
+    repo = _parse_repo_info_from_manifest(manifest)
+    dest_dir = os.path.abspath(os.path.join(dest_parent_dir, plugin_id))
+    os.makedirs(dest_dir, exist_ok=True)
+    api_headers = {"User-Agent": "AI-GZT-PluginMarket/1.0", "Accept": "application/json"}
+    collected = []  # (插件内相对路径posix, 下载URL)
+    queue = [plugin_id]
+    visited = set()
+    while queue:
+        rel_dir = queue.pop(0)
+        if rel_dir in visited:
+            continue
+        visited.add(rel_dir)
+        api_url = f"{repo['contents_api']}/{rel_dir}?ref={repo['ref']}"
+        resp = requests.get(api_url, timeout=30, headers=api_headers)
+        if resp.status_code == 404:
+            raise ValueError(f"远程仓库中不存在插件目录:{plugin_id}")
+        resp.raise_for_status()
+        items = resp.json()
+        if not isinstance(items, list):
+            raise ValueError("市场仓库目录接口返回格式无效")
+        for it in items:
+            typ, path = it.get("type"), it.get("path") or ""
+            # 路径规范化:拒绝..穿越，且只接受plugin_id前缀内的条目
+            parts = [p for p in path.replace("\\", "/").lstrip("/").split("/") if p and p not in (".", "..")]
+            if not parts or parts[0] != plugin_id:
+                continue
+            safe_rel = "/".join(parts)
+            if typ == "dir":
+                queue.append(safe_rel)
+            elif typ == "file":
+                if len(collected) >= MARKET_PLUGIN_MAX_FILES:
+                    raise ValueError(f"插件文件数超过{MARKET_PLUGIN_MAX_FILES}上限，已中止下载")
+                dl = it.get("download_url") or f"{repo['raw_base']}/{safe_rel}"
+                if not _is_valid_http_url(dl):
+                    raise ValueError(f"文件下载地址非法:{safe_rel}")
+                collected.append((safe_rel, dl))
+    if not collected:
+        raise ValueError(f"远程插件目录为空:{plugin_id}")
+    # 逐文件下载并按原目录结构写入临时目录
+    total_bytes = 0
+    for safe_rel, dl in collected:
+        r = requests.get(dl, timeout=60, headers={"User-Agent": "AI-GZT-PluginMarket/1.0"})
+        r.raise_for_status()
+        content = r.content
+        total_bytes += len(content)
+        if total_bytes > MARKET_ARCHIVE_MAX_BYTES:
+            raise ValueError("插件总体积超过200MB上限，已中止下载")
+        rel_parts = safe_rel.split("/")[1:]  # 去掉首段plugin_id，dest_dir本身已以plugin_id命名
+        target_abs = os.path.abspath(os.path.join(dest_dir, *rel_parts))
+        if target_abs != dest_dir and not target_abs.startswith(dest_dir + os.sep):
+            raise ValueError(f"非法文件路径，已拦截:{safe_rel}")
+        os.makedirs(os.path.dirname(target_abs), exist_ok=True)
+        with open(target_abs, "wb") as f:
+            f.write(content)
+    return dest_dir
+
+def _install_market_plugin(plugin_id: str) -> dict:
+    """
+    从云端市场安装/更新单个插件（同步阻塞函数，路由层用asyncio.to_thread包裹）:
+    方案C修复版——contents API递归列目录+raw逐文件下载（Gitee archive端点匿名返回405/HTML）；
+    全程http/https协议校验+文件数/总体积上限+路径穿越防护+plugin.json校验。
+    """
+    import requests
+    import shutil
+    import tempfile
+    manifest = _fetch_market_manifest(False)
+    plugin_info = next((p for p in manifest["plugins"] if p.get("plugin_id") == plugin_id), None)
+    if not plugin_info:
+        return {"code": 404, "msg": f"市场清单中不存在插件:{plugin_id}"}
+    # 下载方式:插件级download_url独立zip包（未来Release形态）优先；缺省走仓库contents API逐文件通道
+    plugin_pkg_url = plugin_info.get("download_url")
+    tmp_zip = None
+    tmp_extract_dir = None
+    try:
+        if plugin_pkg_url:
+            # 独立zip包通道（预留）:http/https协议校验→流式下载(200MB上限)→安全解压(防zip-slip)
+            if not _is_valid_http_url(plugin_pkg_url):
+                return {"code": 400, "msg": "下载地址必须是http/https开头的合法URL，已中止下载"}
+            with requests.get(plugin_pkg_url, stream=True, timeout=30,
+                              headers={"User-Agent": "AI-GZT-PluginMarket/1.0"}) as resp:
+                resp.raise_for_status()
+                # 下载内容必须是zip，拦截HTML错误页（历史BUG:Gitee返回HTML导致File is not a zip file）
+                ctype = (resp.headers.get("Content-Type") or "").lower()
+                fd, tmp_zip = tempfile.mkstemp(suffix=".zip", prefix="aigt_plugin_")
+                total = 0
+                with os.fdopen(fd, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=64 * 1024):
+                        if not chunk:
+                            continue
+                        total += len(chunk)
+                        if total > MARKET_ARCHIVE_MAX_BYTES:
+                            raise ValueError("插件包超过200MB体积上限，已中止下载")
+                        f.write(chunk)
+                if total < 2 or (total >= 2 and open(tmp_zip, "rb").read(2) != b"PK"):
+                    raise ValueError("下载内容不是有效的zip包（远程可能返回了错误页面），已中止安装")
+            tmp_extract_dir = tempfile.mkdtemp(prefix="aigt_plugin_extract_")
+            _safe_extract_zip(tmp_zip, tmp_extract_dir)
+            src_plugin_dir = os.path.join(tmp_extract_dir, plugin_id)
+        else:
+            # 默认通道:contents API递归列目录+raw逐文件下载，规避Gitee archive端点匿名405/HTML问题
+            tmp_extract_dir = tempfile.mkdtemp(prefix="aigt_plugin_extract_")
+            src_plugin_dir = _download_market_plugin_files(plugin_id, tmp_extract_dir, manifest)
+        src_manifest_path = os.path.join(src_plugin_dir, "plugin.json")
+        if not os.path.isfile(src_manifest_path):
+            return {"code": 400, "msg": f"插件包中未找到{plugin_id}/plugin.json，安装中止"}
+        with open(src_manifest_path, "r", encoding="utf-8") as f:
+            pcfg = json.load(f)
+        # 4.校验plugin.json必填字段与ID一致性
+        for field in ("plugin_id", "name", "description", "parameters", "entry"):
+            if field not in pcfg:
+                return {"code": 400, "msg": f"插件plugin.json缺少必填字段:{field}"}
+        if pcfg["plugin_id"] != plugin_id:
+            return {"code": 400, "msg": f"插件ID不一致:目录为{plugin_id}，plugin.json为{pcfg['plugin_id']}"}
+        # 5.备份旧版user_config.json（更新不丢配置），清理旧目录后移入新版
+        target_dir = os.path.join(tool_template_manager.PLUGIN_DIR, plugin_id)
+        user_config_backup = None
+        if os.path.isdir(target_dir):
+            old_user_cfg = os.path.join(target_dir, "user_config.json")
+            if os.path.isfile(old_user_cfg):
+                fd2, user_config_backup = tempfile.mkstemp(suffix=".json", prefix="aigt_usercfg_")
+                with os.fdopen(fd2, "wb") as dst, open(old_user_cfg, "rb") as src:
+                    dst.write(src.read())
+            shutil.rmtree(target_dir)
+        os.makedirs(tool_template_manager.PLUGIN_DIR, exist_ok=True)
+        shutil.move(src_plugin_dir, target_dir)
+        if user_config_backup:
+            shutil.copy2(user_config_backup, os.path.join(target_dir, "user_config.json"))
+        # 6.热重载并确认插件确实加载成功
+        tool_template_manager.load_plugins()
+        if plugin_id not in tool_template_manager._plugin_templates:
+            return {"code": 500, "msg": "文件安装完成但插件加载失败，请检查插件依赖是否安装完整"}
+        add_operation_log("插件管理", f"✅ 云端市场安装插件成功:{plugin_id} v{plugin_info.get('version')}")
+        return {"code": 200, "msg": f"插件[{plugin_info.get('name', plugin_id)}]安装成功"}
+    finally:
+        # 7.无条件清理临时文件与临时解压目录
+        if tmp_zip and os.path.exists(tmp_zip):
+            try:
+                os.remove(tmp_zip)
+            except Exception:
+                pass
+        if tmp_extract_dir and os.path.exists(tmp_extract_dir):
+            try:
+                shutil.rmtree(tmp_extract_dir)
+            except Exception:
+                pass
+
+@app.post("/api/plugin/market/install")
+async def install_market_plugin(req: MarketInstallRequest):
+    """从云端插件市场安装/更新插件（阻塞IO放线程池，不卡事件循环）"""
+    import asyncio
+    try:
+        result = await asyncio.to_thread(_install_market_plugin, req.plugin_id)
+        return result
+    except Exception as e:
+        return {"code": 500, "msg": f"安装失败:{str(e)}"}
+
 @app.post("/api/plugin/install/local")
 async def install_local_plugin(plugin_file: UploadFile = File(...)):
-    """上传本地zip插件包安装"""
+    """上传本地zip插件包安装（统一走_safe_extract_zip安全解压，防zip-slip并自动剥顶层目录）"""
     try:
-        import zipfile
         import shutil
-        # 临时保存zip文件
-        temp_path = f"./temp_{plugin_file.filename}"
-        with open(temp_path, "wb") as f:
+        import tempfile
+        # 1.上传内容写入临时zip（不使用用户文件名拼路径，避免文件名注入/中文路径问题）
+        fd, temp_zip = tempfile.mkstemp(suffix=".zip", prefix="aigt_upload_")
+        with os.fdopen(fd, "wb") as f:
             f.write(await plugin_file.read())
-        # 解压到plugins目录
-        plugin_name = os.path.splitext(plugin_file.filename)[0]
-        target_path = os.path.join(tool_template_manager.PLUGIN_DIR, plugin_name)
-        if os.path.exists(target_path):
-            shutil.rmtree(target_path)
-        os.makedirs(target_path, exist_ok=True)
-        with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-            zip_ref.extractall(target_path)
-        # 删除临时文件
-        os.remove(temp_path)
-        # 重新加载插件
-        tool_template_manager.load_plugins()
-        add_operation_log("插件管理", f"✅ 上传安装插件成功:{plugin_name}")
-        return {"code": 200, "msg": "插件安装成功"}
+        # 2.安全解压到临时目录（zip-slip路径穿越校验+自动剥公共顶层目录）
+        temp_extract_dir = tempfile.mkdtemp(prefix="aigt_upload_extract_")
+        try:
+            _safe_extract_zip(temp_zip, temp_extract_dir)
+            # 3.读取plugin.json确定真实插件ID，不再用zip文件名作为安装目录名
+            manifest_path = os.path.join(temp_extract_dir, "plugin.json")
+            if not os.path.isfile(manifest_path):
+                return {"code": 400, "msg": "压缩包根目录缺少plugin.json，请确认打包结构（插件文件需在zip根目录或同一层目录内）"}
+            with open(manifest_path, "r", encoding="utf-8") as mf:
+                pcfg = json.load(mf)
+            plugin_name = pcfg.get("plugin_id")
+            if not plugin_name or not all(k in pcfg for k in ("name", "description", "parameters", "entry")):
+                return {"code": 400, "msg": "plugin.json缺少必填字段（plugin_id/name/description/parameters/entry）"}
+            # 4.备份旧版user_config.json，更新安装不丢用户配置
+            target_path = os.path.join(tool_template_manager.PLUGIN_DIR, plugin_name)
+            user_config_backup = None
+            if os.path.isdir(target_path):
+                old_cfg = os.path.join(target_path, "user_config.json")
+                if os.path.isfile(old_cfg):
+                    fd2, user_config_backup = tempfile.mkstemp(suffix=".json", prefix="aigt_usercfg_")
+                    with os.fdopen(fd2, "wb") as dst, open(old_cfg, "rb") as src:
+                        dst.write(src.read())
+                shutil.rmtree(target_path)
+            os.makedirs(tool_template_manager.PLUGIN_DIR, exist_ok=True)
+            shutil.move(temp_extract_dir, target_path)
+            temp_extract_dir = None
+            if user_config_backup:
+                shutil.copy2(user_config_backup, os.path.join(target_path, "user_config.json"))
+            # 5.重新加载插件并确认加载成功
+            tool_template_manager.load_plugins()
+            if plugin_name not in tool_template_manager._plugin_templates:
+                return {"code": 500, "msg": "文件解压完成但插件加载失败，请检查plugin.json与插件依赖"}
+            add_operation_log("插件管理", f"✅ 上传安装插件成功:{plugin_name}")
+            return {"code": 200, "msg": "插件安装成功"}
+        finally:
+            # 6.无条件清理临时文件
+            if os.path.exists(temp_zip):
+                try:
+                    os.remove(temp_zip)
+                except Exception:
+                    pass
+            if temp_extract_dir and os.path.exists(temp_extract_dir):
+                try:
+                    shutil.rmtree(temp_extract_dir)
+                except Exception:
+                    pass
     except Exception as e:
         return {"code": 500, "msg": f"安装失败:{str(e)}"}
 @app.post("/api/plugin/install/folder")

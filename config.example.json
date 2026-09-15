@@ -24,5 +24,9 @@
         "project_root_absolute_path": ""
     },
     "show_debug_console": false,
-    "lastCloudProvider": "火山方舟"
+    "lastCloudProvider": "火山方舟",
+    "plugin_market": {
+        "enabled": true,
+        "manifest_url": "https://gitee.com/chen-bohan3000/ai-gzt-plugins/raw/main/market_manifest.json"
+    }
 }

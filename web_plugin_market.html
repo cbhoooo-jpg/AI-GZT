@@ -94,14 +94,33 @@
             </div>
         </div>
 
-        <!-- 可安装插件列表 -->
+        <!-- 可安装插件列表（云端插件市场） -->
         <div id="available-panel" class="hidden">
+            <!-- 市场信息栏:市场名称/更新时间 + 纯文字刷新按钮（无图标） -->
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+                <div class="text-sm text-gray-500">
+                    <span id="market-name">云端插件市场</span>
+                    <span id="market-updated" class="ml-2"></span>
+                </div>
+                <button id="market-refresh-btn" onclick="loadMarketPlugins(true)" class="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary/5 transition text-sm whitespace-nowrap">刷新市场列表</button>
+            </div>
+            <!-- 市场加载态 -->
+            <div id="market-loading" class="text-center py-20">
+                <i class="fas fa-circle-notch fa-spin text-primary text-4xl mb-4"></i>
+                <p class="text-gray-500">正在获取云端插件清单...</p>
+            </div>
+            <!-- 市场错误提示区（拉取失败不影响已安装Tab） -->
+            <div id="market-error" class="hidden text-center py-20">
+                <i class="fas fa-exclamation-circle text-danger text-5xl mb-4"></i>
+                <p id="market-error-msg" class="text-gray-600 text-base mb-4">无法获取云端插件清单</p>
+                <button onclick="loadMarketPlugins(true)" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition text-sm">重新加载</button>
+            </div>
             <div id="available-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <!-- 插件卡片动态生成 -->
+                <!-- 市场插件卡片动态生成 -->
             </div>
             <div id="available-empty" class="hidden text-center py-20">
                 <i class="fas fa-store text-gray-300 text-6xl mb-4"></i>
-                <p class="text-gray-500 text-lg">暂无可用插件，云端插件市场开发中</p>
+                <p class="text-gray-500 text-lg">市场暂无可安装插件</p>
             </div>
         </div>
         <!-- 开发新插件面板 -->
@@ -199,6 +218,10 @@
     </div>
     <script>
         let pluginData = { installed: [], available: [] };
+        // 云端插件市场状态:plugins为后端合并三态后的清单，loaded标记是否已成功拉取过
+        let marketData = { plugins: [], marketName: '云端插件市场', updatedAt: '', loaded: false, loading: false };
+        // 当前正在安装的市场插件ID（用于按钮loading与防重复点击），空串表示空闲
+        let marketInstallingId = '';
 
         // 页面加载完成
         document.addEventListener('DOMContentLoaded', () => {
@@ -317,6 +340,8 @@
             } else if (tab === 'available') {
                 availableTab.classList.add('border-primary', 'text-primary');
                 availablePanel.classList.remove('hidden');
+                // 进入市场Tab自动拉取云端清单:已成功加载过则直接用缓存，避免重复请求
+                loadMarketPlugins(false);
             } else if (tab === 'develop') {
                 developTab.classList.add('border-primary', 'text-primary');
                 developPanel.classList.remove('hidden');
@@ -599,17 +624,42 @@
             `).join('');
         }
 
-        // 渲染可安装插件
+        // 渲染云端市场插件卡片（后端已按plugin_id合并出未安装/可更新/已最新三态）
         function renderAvailablePlugins() {
             const list = document.getElementById('available-list');
             const empty = document.getElementById('available-empty');
-            if (pluginData.available.length === 0) {
+            const plugins = marketData.plugins || [];
+            if (plugins.length === 0) {
                 list.innerHTML = '';
                 empty.classList.remove('hidden');
                 return;
             }
             empty.classList.add('hidden');
-            list.innerHTML = pluginData.available.map(plugin => `
+            list.innerHTML = plugins.map(plugin => {
+                // 三态徽标与按钮文案/样式
+                let badgeHtml = '';
+                let actionHtml = '';
+                const isInstalling = marketInstallingId === plugin.plugin_id;
+                if (plugin.status === 'installed') {
+                    // 已安装且为最新:灰色禁用按钮，不可重复点击
+                    badgeHtml = '<span class="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-500">已安装</span>';
+                    actionHtml = `<button disabled class="w-full px-3 py-2 rounded-lg text-sm bg-gray-100 text-gray-400 cursor-not-allowed">已安装（最新）</button>`;
+                } else if (plugin.status === 'update_available') {
+                    // 可更新:橙色描边按钮，显示版本跨度
+                    badgeHtml = `<span class="px-2 py-1 rounded-full text-xs bg-warning/10 text-warning">可更新</span>`;
+                    actionHtml = isInstalling
+                        ? `<button disabled class="w-full px-3 py-2 rounded-lg text-sm bg-warning text-white cursor-wait">正在更新...</button>`
+                        : `<button onclick="installMarketPlugin('${plugin.plugin_id}')" class="w-full px-3 py-2 rounded-lg text-sm border border-warning text-warning hover:bg-warning/5 transition">更新到 v${plugin.version}（当前 v${plugin.installed_version || '?'}）</button>`;
+                } else {
+                    // 未安装:主色实心按钮
+                    badgeHtml = '<span class="px-2 py-1 rounded-full text-xs bg-primary/10 text-primary">可安装</span>';
+                    actionHtml = isInstalling
+                        ? `<button disabled class="w-full px-3 py-2 rounded-lg text-sm bg-primary text-white cursor-wait">正在安装...</button>`
+                        : `<button onclick="installMarketPlugin('${plugin.plugin_id}')" class="w-full bg-primary text-white px-3 py-2 rounded-lg hover:bg-primary/90 transition text-sm">安装</button>`;
+                }
+                const perms = Array.isArray(plugin.permissions) ? plugin.permissions : [];
+                const category = plugin.category ? `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">${plugin.category}</span>` : '';
+                return `
                 <div class="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition">
                     <div class="flex items-start justify-between mb-4">
                         <div class="flex items-center">
@@ -618,22 +668,101 @@
                             </div>
                             <div class="ml-3">
                                 <h3 class="font-bold text-lg text-dark">${plugin.name}</h3>
-                                <p class="text-xs text-gray-500">v${plugin.version} · 作者:${plugin.author}</p>
+                                <p class="text-xs text-gray-500">v${plugin.version} · 作者:${plugin.author || '未知'}</p>
                             </div>
                         </div>
-                        <span class="px-2 py-1 rounded-full text-xs bg-primary/10 text-primary">
-                            官方
-                        </span>
+                        ${badgeHtml}
                     </div>
-                    <p class="text-gray-600 text-sm mb-4 h-12 overflow-hidden">${plugin.description}</p>
+                    <p class="text-gray-600 text-sm mb-4 h-12 overflow-hidden">${plugin.description || ''}</p>
                     <div class="flex flex-wrap gap-2 mb-4">
-                        ${plugin.permissions.map(p => `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">${p}</span>`).join('')}
+                        ${category}
+                        ${perms.map(p => `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">${p}</span>`).join('')}
                     </div>
-                    <button onclick="installPlugin('${plugin.plugin_id}')" class="w-full bg-primary text-white px-3 py-2 rounded-lg hover:bg-primary/90 transition text-sm">
-                        <i class="fas fa-download mr-1"></i> 安装
-                    </button>
-                </div>
-            `).join('');
+                    ${actionHtml}
+                </div>`;
+            }).join('');
+        }
+
+        // 拉取云端插件市场清单（force=true跳过后端5分钟缓存与前端已加载标记）
+        async function loadMarketPlugins(force) {
+            const loadingEl = document.getElementById('market-loading');
+            const errorEl = document.getElementById('market-error');
+            const listEl = document.getElementById('available-list');
+            const emptyEl = document.getElementById('available-empty');
+            const refreshBtn = document.getElementById('market-refresh-btn');
+            // 非强制刷新且已成功加载过，直接渲染缓存数据
+            if (!force && marketData.loaded) {
+                renderAvailablePlugins();
+                return;
+            }
+            marketData.loading = true;
+            loadingEl.classList.remove('hidden');
+            errorEl.classList.add('hidden');
+            listEl.innerHTML = '';
+            emptyEl.classList.add('hidden');
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            try {
+                const res = await fetch(`/api/plugin/market/list?force=${force ? 'true' : 'false'}`);
+                const data = await res.json();
+                if (data.code === 200) {
+                    marketData.plugins = data.data.plugins || [];
+                    marketData.marketName = data.data.market_name || '云端插件市场';
+                    marketData.updatedAt = data.data.updated_at || '';
+                    marketData.loaded = true;
+                    document.getElementById('market-name').textContent = marketData.marketName;
+                    document.getElementById('market-updated').textContent = marketData.updatedAt ? `清单更新时间:${marketData.updatedAt}` : '';
+                    renderAvailablePlugins();
+                } else {
+                    // 拉取失败:显示错误区，不影响已安装Tab
+                    document.getElementById('market-error-msg').textContent = data.msg || '无法获取云端插件清单';
+                    errorEl.classList.remove('hidden');
+                }
+            } catch (e) {
+                document.getElementById('market-error-msg').textContent = '网络错误，请检查服务是否正常';
+                errorEl.classList.remove('hidden');
+            } finally {
+                marketData.loading = false;
+                loadingEl.classList.add('hidden');
+                refreshBtn.disabled = false;
+                refreshBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        // 从云端市场安装/更新插件，成功后联动刷新已安装列表与市场三态
+        async function installMarketPlugin(pluginId) {
+            if (marketInstallingId) return; // 安装中防重复点击
+            const plugin = marketData.plugins.find(p => p.plugin_id === pluginId);
+            const isUpdate = plugin && plugin.status === 'update_available';
+            if (isUpdate && !confirm('更新将卸载旧版并安装新版，插件配置会自动保留，是否继续？')) {
+                return;
+            }
+            marketInstallingId = pluginId;
+            renderAvailablePlugins();
+            try {
+                showToast(isUpdate ? '正在从云端市场更新插件...' : '正在从云端市场安装插件...', 'info');
+                const res = await fetch('/api/plugin/market/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plugin_id: pluginId })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    showToast(data.msg || '操作成功', 'success');
+                    marketInstallingId = '';
+                    // 联动刷新:已安装Tab + 市场三态（强制拉最新清单）
+                    await loadPluginList();
+                    loadMarketPlugins(true);
+                } else {
+                    marketInstallingId = '';
+                    renderAvailablePlugins();
+                    showToast(data.msg || '操作失败', 'error');
+                }
+            } catch (e) {
+                marketInstallingId = '';
+                renderAvailablePlugins();
+                showToast('安装失败，请检查网络或服务是否正常', 'error');
+            }
         }
 
         // 插件操作
