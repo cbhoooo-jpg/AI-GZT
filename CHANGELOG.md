@@ -4,6 +4,15 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 变更
+
+- 项目手册代码元数据提取升级为多格式统一提取架构（`project_manual_manager.py`）:提取器注册表按扩展名分发，Python 沿用 AST 精确解析；新增 HTML 内嵌 JS（Vue methods/computed 一层直接子键 + 顶层 function）、独立 JS/TS、PowerShell、BAT/CMD、Inno Setup 五类提取器
+- 修复 HTML 方法提取两处缺陷:① 方法键固定缩进上限（2~16 空格）误杀深缩进页面，`web_log.html` 的 10 个方法曾全部漏提，改为花括号配平取块体后只收相对 option 键最浅一层的直接子键；② 注释/字符串掩码状态机不识别正则字面量，含引号的正则（如 `inputPattern: /^[^\\/:*?"<>|]+$/`）会导致其后到文件尾全部被掩码，`web_file_repo.html` 曾漏提 3 个方法，状态机新增正则体与字符类 `[...]` 识别并按前置 token 区分正则与除号
+- 统一防护:第三方压缩库三重排除（`*.min.js` / static 等目录 / 512KB 体积）、UTF-8→GBK 编码兜底、单文件条目上限 80 条、解析失败 24 小时缓存不阻塞手册同步
+- 2026-09-15 真机全量同步复测通过:`web_log.html` 10 个方法、`web_file_repo.html` 20 个方法全部正确入库，其余页面与 PS1/BAT/ISS 提取结果零回归
+
 ## [1.0.1] - 2026-09-15
 
 ### 修复

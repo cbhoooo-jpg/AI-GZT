@@ -48,6 +48,190 @@ REPOSITORY_PATH = get_repository_path()
 
 # 全局解析失败缓存：key=文件路径，value=(失败次数, 下次可重试时间戳)
 PARSE_FAIL_CACHE = {}
+# ===== 第二阶段:多格式代码元数据提取统一配置（策略模式，新增格式只需注册提取器） =====
+# 单文件类/函数条目上限，防止异常文件/第三方库灌爆手册第三章
+MAX_METADATA_ITEMS = 80
+# 独立JS/TS结构提取体积阈值（512KB），超过视为压缩/大文件，仅给文件描述不扫结构
+MAX_SCAN_FILE_SIZE = 512 * 1024
+# 第三方库目录名:其下的独立js/ts不做结构提取（本项目static下全是vue/element-ui/xlsx等压缩库）
+THIRD_PARTY_DIR_NAMES = {"static", "node_modules", "dist", "lib", "libs", "vendor", "third_party"}
+# 压缩库/打包产物文件名模式:*.min.js、*.bundle.js、*-vendor-*.js等跳过结构提取
+MIN_JS_FILE_PATTERN = re.compile(r"\.min\.(js|ts)$|[.\-](bundle|pack|vendor|runtime)([.\-]|$)", re.IGNORECASE)
+# JS语法保留字:扫描Vue methods对象键时排除，避免if/for/return等被误判为方法名
+JS_RESERVED_WORDS = {"if", "for", "while", "switch", "catch", "function", "return", "else", "do",
+                     "try", "new", "delete", "typeof", "in", "of", "let", "const", "var", "class",
+                     "default", "export", "import", "break", "continue", "this", "super", "yield", "await"}
+
+
+# 正则字面量允许出现位置的前置关键字（这些关键字后'/'是正则起点而非除号，如 return /x/）
+REGEX_ALLOWED_KEYWORDS = {"return", "case", "typeof", "instanceof", "in", "of",
+                          "delete", "void", "throw", "new", "else", "do", "yield", "await"}
+# '/'前一个有效字符为这些符号时处于"期待表达式"位置，'/'视为正则字面量起点
+REGEX_ALLOWED_CHARS = set("=(,:[!&|?{;}>+-*%~^<>")
+
+
+def _is_regex_allowed(prev_char: str, prev_word: str) -> bool:
+    """判定'/'在当前位置是正则字面量起点(True)还是除号(False)。
+    依据JS词法:运算符/分隔符后、return等关键字后、文件开头为期待表达式位置→正则；
+    标识符/数字/字符串/右括号/右方括号/点号后→除法。"""
+    if not prev_char:
+        return True
+    if prev_char in REGEX_ALLOWED_CHARS:
+        return True
+    if prev_char in ")]'\"`.":
+        return False
+    if prev_char.isalnum() or prev_char in "_$":
+        return prev_word in REGEX_ALLOWED_KEYWORDS
+    # 其余罕见位置（如}后）按语句起点处理，允许正则
+    return True
+
+
+def mask_js_comments_strings(code: str) -> str:
+    """保守状态机:把JS/TS类代码中的注释、字符串、模板串、正则字面量内容替换为空格
+    （保留换行与引号/斜杠位置，保证行号与花括号配平不错位）。
+    后续结构正则只在真实代码上匹配，避免字符串/注释里的"function"等被误提。
+    第二阶段BUG修复:识别正则字面量，避免正则体内的引号或/*被误判为字符串/块注释起点，
+    导致其后整段代码被掩码（web_file_repo.html第477行 inputPattern: /^[^\\/:*?"<>|]+$/ 即此问题，
+    曾使477行到文件尾全部被掩码，3个方法漏提）。"""
+    out = []
+    i, n = 0, len(code)
+    state = "normal"
+    prev_char = ""    # normal态下最近一个有效（非空白）字符，用于区分正则/除号
+    prev_word = ""    # normal态下最近一个标识符单词，用于return /x/等关键字场景
+    while i < n:
+        ch = code[i]
+        nxt = code[i + 1] if i + 1 < n else ""
+        if state == "normal":
+            if ch == "/" and nxt == "/":
+                out.append("  ")
+                i += 2
+                state = "line_comment"
+                continue
+            if ch == "/" and nxt == "*":
+                out.append("  ")
+                i += 2
+                state = "block_comment"
+                continue
+            if ch == "/" and _is_regex_allowed(prev_char, prev_word):
+                # 正则字面量起点:整体掩码，内部引号/*不再误导状态机
+                out.append(" ")
+                i += 1
+                state = "regex"
+                continue
+            if ch in ("'", '"', "`"):
+                out.append(ch)
+                i += 1
+                state = "sq" if ch == "'" else ("dq" if ch == '"' else "tpl")
+                prev_char = ch
+                prev_word = ""
+                continue
+            if ch in ("\n", " ", "\t", "\r"):
+                # 空白不改变上一个有效token
+                out.append(ch)
+                i += 1
+                continue
+            if ch.isalpha() or ch in "_$":
+                # 标识符整体消费并记录单词（供return/case等关键字后的正则判定）
+                j = i + 1
+                while j < n and (code[j].isalnum() or code[j] in "_$"):
+                    j += 1
+                word = code[i:j]
+                out.append(word)
+                i = j
+                prev_char = word[-1]
+                prev_word = word
+                continue
+            # 数字/标点等普通字符
+            out.append(ch)
+            i += 1
+            prev_char = ch
+            if not (ch.isalnum() or ch in "_$"):
+                prev_word = ""
+        elif state == "line_comment":
+            out.append("\n" if ch == "\n" else " ")
+            if ch == "\n":
+                state = "normal"
+            i += 1
+        elif state == "block_comment":
+            if ch == "*" and nxt == "/":
+                out.append("  ")
+                i += 2
+                state = "normal"
+                continue
+            out.append("\n" if ch == "\n" else " ")
+            i += 1
+        elif state == "regex":
+            # 正则字面量体:转义符整体跳过；[..]字符类内部的/与引号无语法意义，进入专属状态
+            if ch == "\\":
+                out.append("  " if nxt else " ")
+                i += 2
+                continue
+            if ch == "[":
+                out.append(" ")
+                i += 1
+                state = "regex_class"
+                continue
+            if ch == "/":
+                # 正则结束，继续掩码flags字母（g/i/m/s/u/y/d）
+                out.append(" ")
+                i += 1
+                while i < n and code[i].isalpha():
+                    out.append(" ")
+                    i += 1
+                state = "normal"
+                # 正则整体是一个原子值，后续'/'按除法处理
+                prev_char = ")"
+                prev_word = ""
+                continue
+            # JS正则字面量不允许裸换行，出现说明判定异常，回退普通态保安全
+            if ch == "\n":
+                out.append(ch)
+                i += 1
+                state = "normal"
+                prev_char = "\n"
+                continue
+            out.append(" ")
+            i += 1
+        elif state == "regex_class":
+            # 正则字符类[...]:仅]结束，转义符整体跳过，其余（含引号/*）一律掩码
+            if ch == "\\":
+                out.append("  " if nxt else " ")
+                i += 2
+                continue
+            if ch == "]":
+                out.append(" ")
+                i += 1
+                state = "regex"
+                continue
+            if ch == "\n":
+                out.append(ch)
+                i += 1
+                state = "normal"
+                prev_char = "\n"
+                continue
+            out.append(" ")
+            i += 1
+        else:
+            # 字符串态（sq/dq/tpl）:转义符整体掩码，换行保留以保证行号不错位
+            if ch == "\\":
+                out.append(" ")
+                if nxt:
+                    out.append("\n" if nxt == "\n" else " ")
+                    i += 2
+                else:
+                    i += 1
+                continue
+            if ((state == "sq" and ch == "'") or (state == "dq" and ch == '"')
+                    or (state == "tpl" and ch == "`")):
+                out.append(ch)
+                i += 1
+                state = "normal"
+                prev_char = ch
+                prev_word = ""
+                continue
+            out.append("\n" if ch == "\n" else " ")
+            i += 1
+    return "".join(out)
 
 class ProjectManualManager:
     def __init__(self):
@@ -125,6 +309,269 @@ class ProjectManualManager:
             return False, f"生成模板失败：{str(e)}"
     
 
+    # ==================== 第二阶段:多格式提取器（策略模式，统一返回metadata结构） ====================
+
+    def _read_text_with_fallback(self, abs_file_path: str) -> Optional[str]:
+        """文本读取统一入口:优先UTF-8，失败回退GBK（bat/ps1老文件常见GBK编码），全失败返回None"""
+        for enc in ("utf-8", "gbk"):
+            try:
+                with open(abs_file_path, "r", encoding=enc) as f:
+                    return f.read()
+            except UnicodeDecodeError:
+                continue
+        # 最终兜底:忽略非法字节，保证不抛异常阻塞同步
+        with open(abs_file_path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+
+    def _is_third_party_js(self, rel_path: str, file_size: int) -> bool:
+        """独立JS/TS三重排除判定:压缩库文件名 / 第三方目录 / 超大文件，命中任一不做结构提取"""
+        lower_path = rel_path.lower()
+        base_name = lower_path.split("/")[-1]
+        if MIN_JS_FILE_PATTERN.search(base_name):
+            return True
+        path_parts = set(lower_path.split("/")[:-1])
+        if path_parts & THIRD_PARTY_DIR_NAMES:
+            return True
+        if file_size > MAX_SCAN_FILE_SIZE:
+            return True
+        return False
+
+    def _append_capped(self, bucket: List[Dict], name: str, desc: str = "暂无描述",
+                       item_type: str = "函数") -> None:
+        """按上限追加条目（保序去重），防止异常文件灌爆手册第三章"""
+        if len(bucket) >= MAX_METADATA_ITEMS:
+            return
+        if any(item["name"] == name for item in bucket):
+            return
+        bucket.append({"name": name, "desc": desc, "type": item_type})
+
+    def _scan_vue_option_methods(self, clean_code: str, option_name: str, prefix: str,
+                                 function_list: List[Dict]) -> None:
+        """扫描Vue选项对象（methods/computed）内一层方法名。
+        第二阶段BUG修复:废弃"固定缩进上限\\s{2,16}"过滤（web_log.html的methods键嵌在第16列、
+        方法键在第20列，曾被一刀切误杀导致10个方法全部漏提），改为:
+        花括号配平取块体→严格方法形态匹配收集候选→只收"相对option键缩进深一级（最浅层）"的方法键；
+        方法体内的if(...)、setTimeout(...)等因缩进更深天然排除，CSS属性因不在script段不会进入这里。"""
+        match = re.search(r"(?m)^([ \t]*)\b" + option_name + r"\s*:\s*\{", clean_code)
+        if not match:
+            return
+        # option键自身缩进（tab按4空格折算），直接子方法键必须比它深
+        base_indent = len(match.group(1).expandtabs(4))
+        # 从'{'开始做花括号配平，定位该选项对象的闭合'}'
+        start = match.end() - 1
+        depth, i, n = 0, start, len(clean_code)
+        while i < n:
+            if clean_code[i] == "{":
+                depth += 1
+            elif clean_code[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = clean_code[start + 1:i]
+        # 严格方法键形态（不限制缩进上限）:简写name(){ / async name(){ / name: function / name: (..)=> / name: arg=>
+        key_pattern = re.compile(
+            r"^([ \t]*)(?:async\s+)?([A-Za-z_$][\w$]*)\s*"
+            r"(?:\([^)]*\)\s*\{|:\s*(?:async\s+)?function\b|:\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>)"
+        )
+        candidates = []
+        for line in body.splitlines():
+            key_match = key_pattern.match(line)
+            if not key_match:
+                continue
+            indent = len(key_match.group(1).expandtabs(4))
+            name = key_match.group(2)
+            if name in JS_RESERVED_WORDS or indent <= base_indent:
+                continue
+            candidates.append((indent, name))
+        if not candidates:
+            return
+        # 最浅层即option键的直接子键，只收这一层；深层回调内的同名方法不进入手册
+        first_layer_indent = min(indent for indent, _ in candidates)
+        for indent, name in candidates:
+            if indent == first_layer_indent:
+                self._append_capped(function_list, f"{prefix}.{name}")
+
+    def _prev_comment_desc(self, lines: List[str], idx: int, markers: Tuple[str, ...]) -> str:
+        """向上跳过空行，取最近一条注释行的清理文本（ps1的#、bat的rem、pascal的//），无则暂无描述"""
+        j = idx - 1
+        while j >= 0 and not lines[j].strip():
+            j -= 1
+        if j >= 0:
+            stripped = lines[j].strip()
+            low = stripped.lower()
+            for mk in markers:
+                if low.startswith(mk):
+                    desc = stripped[len(mk):].strip(" *").split("\n")[0][:80]
+                    return desc or "暂无描述"
+        return "暂无描述"
+
+    def _js_leading_desc(self, raw: str) -> str:
+        """提取JS/TS文件头部注释首行作为文件描述:优先块注释，其次连续行注释"""
+        block = re.match(r"\s*/\*(.*?)\*/", raw, re.DOTALL)
+        if block:
+            for line in block.group(1).splitlines():
+                text = line.strip().lstrip("*").strip()
+                if text:
+                    return text[:100]
+        line_comment = re.match(r"\s*//(.*)", raw)
+        if line_comment:
+            return line_comment.group(1).strip()[:100]
+        return ""
+
+    def _extract_python(self, abs_file_path: str, metadata: Dict) -> None:
+        """Python提取器:AST解析类/顶层函数/类方法+docstring（第二阶段从原逻辑原样搬迁，判定规则零改动）"""
+        content = self._read_text_with_fallback(abs_file_path)
+        if not content or not content.strip():
+            return
+        tree = ast.parse(content)
+        # 提取类名和顶层函数名（带Docstring）
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                class_desc = ast.get_docstring(node) or "暂无描述"
+                metadata["class_list"].append({"name": node.name, "desc": class_desc.strip().split("\n")[0], "type": "类"})
+            elif isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):  # 过滤私有函数
+                func_desc = ast.get_docstring(node) or "暂无描述"
+                metadata["function_list"].append({"name": node.name, "desc": func_desc.strip().split("\n")[0], "type": "函数"})
+        # 提取类内部的公共方法（带Docstring）
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for sub_node in node.body:
+                    if isinstance(sub_node, ast.FunctionDef) and not sub_node.name.startswith("_"):
+                        func_desc = ast.get_docstring(sub_node) or "暂无描述"
+                        metadata["function_list"].append({
+                            "name": f"{node.name}.{sub_node.name}",
+                            "desc": func_desc.strip().split("\n")[0], "type": "函数"
+                        })
+        # 提取模块注释作为功能描述
+        docstring = ast.get_docstring(tree)
+        if docstring:
+            metadata["description"] = docstring.strip().split("\n")[0][:100]
+
+    def _extract_js_ts(self, abs_file_path: str, rel_path: str, metadata: Dict) -> None:
+        """独立JS/TS提取器:三重排除第三方库后，提顶层function/class，TS顺带interface/type，不深入回调"""
+        if self._is_third_party_js(rel_path, os.path.getsize(abs_file_path)):
+            return
+        raw = self._read_text_with_fallback(abs_file_path)
+        if not raw or not raw.strip():
+            return
+        metadata["description"] = self._js_leading_desc(raw)
+        clean = mask_js_comments_strings(raw)
+        # 顶层函数:function foo / async function / export function（强制行首，避开回调内匿名函数）
+        for m in re.finditer(r"(?m)^[ \t]*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", clean):
+            self._append_capped(metadata["function_list"], m.group(1), item_type="函数")
+        # 顶层类:class Foo / export class / abstract class
+        for m in re.finditer(r"(?m)^[ \t]*(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)", clean):
+            self._append_capped(metadata["class_list"], m.group(1), item_type="类")
+        # TS专属结构:interface（归入结构声明列表）、type别名
+        for m in re.finditer(r"(?m)^[ \t]*(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)", clean):
+            self._append_capped(metadata["class_list"], m.group(1), desc="TypeScript接口", item_type="接口")
+        for m in re.finditer(r"(?m)^[ \t]*(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=", clean):
+            self._append_capped(metadata["class_list"], m.group(1), desc="TypeScript类型别名", item_type="类型别名")
+
+    def _extract_html(self, abs_file_path: str, metadata: Dict) -> None:
+        """HTML提取器:描述沿用 注释→title→meta 优先级；结构只扫内联<script>段（先剥<style>天然规避CSS误匹配），
+        提Vue methods/computed方法与顶层function/class；外链src脚本无内容自动跳过"""
+        raw = self._read_text_with_fallback(abs_file_path)
+        if not raw or not raw.strip():
+            return
+        # 优先级1:HTML头部首个注释第一行
+        comment_match = re.search(r"^\s*<!--(.*?)-->", raw, re.DOTALL)
+        if comment_match:
+            desc = comment_match.group(1).strip().split("\n")[0][:100]
+            if desc:
+                metadata["description"] = desc
+        # 优先级2:title标签
+        if not metadata["description"]:
+            title_match = re.search(r"<title>(.*?)</title>", raw, re.IGNORECASE | re.DOTALL)
+            if title_match:
+                metadata["description"] = title_match.group(1).strip()[:100]
+        # 优先级3:meta description
+        if not metadata["description"]:
+            meta_match = re.search(r'<meta\s+name="description"\s+content="(.*?)"', raw, re.IGNORECASE | re.DOTALL)
+            if meta_match:
+                metadata["description"] = meta_match.group(1).strip()[:100]
+        # 只收集内联脚本段:开标签带src=的外链库（vue/element-ui CDN）整段跳过
+        script_blocks = []
+        for tag_match in re.finditer(r"<script([^>]*)>(.*?)</script>", raw, re.IGNORECASE | re.DOTALL):
+            attrs, body = tag_match.group(1), tag_match.group(2)
+            if re.search(r"\bsrc\s*=", attrs, re.IGNORECASE):
+                continue
+            if body.strip():
+                script_blocks.append(body)
+        if not script_blocks:
+            return
+        clean = mask_js_comments_strings("\n;\n".join(script_blocks))
+        # Vue选项对象方法（methods/computed），花括号配平只取一层
+        self._scan_vue_option_methods(clean, "methods", "methods", metadata["function_list"])
+        self._scan_vue_option_methods(clean, "computed", "computed", metadata["function_list"])
+        # 内联脚本顶层函数/类
+        for m in re.finditer(r"(?m)^[ \t]*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", clean):
+            self._append_capped(metadata["function_list"], m.group(1), item_type="函数")
+        for m in re.finditer(r"(?m)^[ \t]*class\s+([A-Za-z_$][\w$]*)", clean):
+            self._append_capped(metadata["class_list"], m.group(1), item_type="类")
+
+    def _extract_powershell(self, abs_file_path: str, metadata: Dict) -> None:
+        """PowerShell提取器:提 function Name / Name-Verb（含参数行），描述取上方#行或<##>块注释首行"""
+        raw = self._read_text_with_fallback(abs_file_path)
+        if not raw or not raw.strip():
+            return
+        lines = raw.splitlines()
+        for idx, line in enumerate(lines):
+            m = re.match(r"^\s*function\s+([A-Za-z_][\w-]*)", line, re.IGNORECASE)
+            if not m:
+                continue
+            desc = "暂无描述"
+            j = idx - 1
+            while j >= 0 and not lines[j].strip():
+                j -= 1
+            if j >= 0:
+                stripped = lines[j].strip()
+                if stripped.startswith("#") and not stripped.startswith("#>"):
+                    desc = stripped.lstrip("#").strip()[:80] or "暂无描述"
+                elif stripped.startswith("#>"):
+                    # 向上定位<#块注释起点，取块内第一条非空文本
+                    k = j - 1
+                    while k >= 0 and not lines[k].strip().startswith("<#"):
+                        k -= 1
+                    for text_line in lines[k + 1:j]:
+                        text = text_line.strip().lstrip("#").strip()
+                        if text:
+                            desc = text[:80]
+                            break
+            self._append_capped(metadata["function_list"], m.group(1), desc, item_type="函数")
+
+    def _extract_batch(self, abs_file_path: str, metadata: Dict) -> None:
+        """BAT/CMD提取器:提 :label 子程序（::注释行天然排除），描述取上方rem注释；bat无真正函数概念"""
+        raw = self._read_text_with_fallback(abs_file_path)
+        if not raw or not raw.strip():
+            return
+        lines = raw.splitlines()
+        for idx, line in enumerate(lines):
+            # 标签独占一行，冒号后必须是标识符首字符，::开头的注释行不匹配
+            m = re.match(r"^[ \t]*:([A-Za-z_]\w*)\s*(?:rem\b|$)", line, re.IGNORECASE)
+            if not m:
+                m = re.match(r"^[ \t]*:([A-Za-z_]\w*)\s*$", line, re.IGNORECASE)
+            if m:
+                desc = self._prev_comment_desc(lines, idx, ("rem",))
+                self._append_capped(metadata["function_list"], m.group(1), desc, item_type="子程序")
+
+    def _extract_inno_setup(self, abs_file_path: str, metadata: Dict) -> None:
+        """Inno Setup脚本提取器:仅扫描[Code]段内的Pascal function/procedure，无[Code]段则无结构元数据"""
+        raw = self._read_text_with_fallback(abs_file_path)
+        if not raw or not raw.strip():
+            return
+        code_match = re.search(r"(?mi)^\s*\[Code\]\s*$", raw)
+        if not code_match:
+            return
+        code_part = raw[code_match.end():]
+        lines = code_part.splitlines()
+        for idx, line in enumerate(lines):
+            m = re.match(r"^\s*(?:function|procedure)\s+([A-Za-z_]\w*)", line, re.IGNORECASE)
+            if m:
+                desc = self._prev_comment_desc(lines, idx, ("//",))
+                self._append_capped(metadata["function_list"], m.group(1), desc, item_type="函数")
+
     def extract_code_metadata(self, file_path: str) -> Dict:
         """
         提取代码文件的元数据：类名、函数名、功能描述
@@ -158,71 +605,28 @@ class ProjectManualManager:
             if len(path_parts) >= 2:
                 metadata["module"] = "/".join(path_parts[:-1])
             
-            # 处理Python代码文件提取元数据，其他文件直接返回基本信息
+            # ===== 第二阶段:按扩展名从提取器注册表分发（新增格式只需在此注册一个分支） =====
             ext = os.path.splitext(abs_file_path)[1].lower()
             if ext == ".py":
-                # 读取文件内容
-                with open(abs_file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                
-                if not content.strip():
-                    return metadata
-                
-                # 用AST解析代码
-                tree = ast.parse(content)
-                
-                # 提取类名和顶层函数名（带Docstring）
-                for node in tree.body:
-                    if isinstance(node, ast.ClassDef):
-                        class_desc = ast.get_docstring(node) or "暂无描述"
-                        metadata["class_list"].append({"name": node.name, "desc": class_desc.strip().split("\n")[0]})
-                    elif isinstance(node, ast.FunctionDef) and not node.name.startswith("_"): # 过滤私有函数
-                        func_desc = ast.get_docstring(node) or "暂无描述"
-                        metadata["function_list"].append({"name": node.name, "desc": func_desc.strip().split("\n")[0]})
-                # 提取类内部的公共方法（带Docstring）
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.ClassDef):
-                        for sub_node in node.body:
-                            if isinstance(sub_node, ast.FunctionDef) and not sub_node.name.startswith("_"):
-                                func_desc = ast.get_docstring(sub_node) or "暂无描述"
-                                metadata["function_list"].append({
-                                    "name": f"{node.name}.{sub_node.name}",
-                                    "desc": func_desc.strip().split("\n")[0]
-                                })
-                # 提取模块注释作为功能描述
-                docstring = ast.get_docstring(tree)
-                if docstring:
-                    metadata["description"] = docstring.strip().split("\n")[0][:100]
-            elif ext == ".html" or ext == ".htm":
-                # 读取HTML文件内容，按优先级提取功能描述
-                with open(abs_file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                if content.strip():
-                    # 优先级1：提取HTML头部首个注释的第一行
-                    comment_pattern = re.compile(r"^\s*<!--(.*?)-->", re.DOTALL)
-                    comment_match = comment_pattern.search(content)
-                    if comment_match:
-                        desc = comment_match.group(1).strip().split("\n")[0][:100]
-                        if desc:
-                            metadata["description"] = desc
-                    # 优先级2：提取title标签内容
-                    if not metadata["description"]:
-                        title_pattern = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-                        title_match = title_pattern.search(content)
-                        if title_match:
-                            desc = title_match.group(1).strip()[:100]
-                            if desc:
-                                metadata["description"] = desc
-                    # 优先级3：提取meta description内容
-                    if not metadata["description"]:
-                        meta_pattern = re.compile(r'<meta\s+name="description"\s+content="(.*?)"', re.IGNORECASE | re.DOTALL)
-                        meta_match = meta_pattern.search(content)
-                        if meta_match:
-                            desc = meta_match.group(1).strip()[:100]
-                            if desc:
-                                metadata["description"] = desc
-           
-            # 非Python/HTML文件自动填充文件类型描述
+                # Python:AST提取（原逻辑原样搬迁到_extract_python，判定规则零改动）
+                self._extract_python(abs_file_path, metadata)
+            elif ext in (".html", ".htm"):
+                # HTML:描述沿用注释→title→meta，结构只扫内联<script>段
+                self._extract_html(abs_file_path, metadata)
+            elif ext in (".js", ".mjs", ".ts"):
+                # 独立JS/TS:三重排除第三方库后提顶层function/class（TS顺带interface/type）
+                self._extract_js_ts(abs_file_path, rel_path, metadata)
+            elif ext == ".ps1":
+                # PowerShell:function Name + 上方注释
+                self._extract_powershell(abs_file_path, metadata)
+            elif ext in (".bat", ".cmd"):
+                # BAT/CMD::label子程序 + rem注释
+                self._extract_batch(abs_file_path, metadata)
+            elif ext == ".iss":
+                # Inno Setup:仅[Code]段Pascal function/procedure
+                self._extract_inno_setup(abs_file_path, metadata)
+
+            # 无结构元数据/无描述的文件统一兜底文件类型描述
             if not metadata["description"]:
                 # 特殊处理项目手册，返回专属功能描述
                 if "项目手册.md" in os.path.basename(abs_file_path):
@@ -232,7 +636,11 @@ class ProjectManualManager:
                         ".jpg": "图片资源", ".jpeg": "图片资源", ".png": "图片资源", ".gif": "图片资源",
                         ".md": "Markdown文档", ".txt": "文本文件", ".json": "配置文件",
                         ".csv": "数据文件", ".docx": "Word文档", ".xlsx": "Excel表格",
-                        ".html": "HTML页面/前端组件", ".htm": "HTML页面/前端组件"
+                        ".html": "HTML页面/前端组件", ".htm": "HTML页面/前端组件",
+                        ".js": "JavaScript脚本", ".mjs": "JavaScript模块", ".ts": "TypeScript脚本",
+                        ".css": "CSS样式表", ".ps1": "PowerShell脚本",
+                        ".bat": "Windows批处理脚本", ".cmd": "Windows命令脚本",
+                        ".iss": "Inno Setup安装脚本"
                     }
                     metadata["description"] = ext_map.get(ext, "其他文件")
             
