@@ -16,7 +16,10 @@ rem    1) 绝不自动 commit，只有已提交的内容才会被同步；
 rem    2) 未提交的已跟踪改动先 stash 保护，同步后自动恢复；
 rem    3) 两台机器都有新提交（分叉）时立即停止，不强行合并；
 rem    4) stash 恢复发生冲突时保留 stash 不丢弃，交由人工处理；
-rem    5) GitHub 推送失败只警告，不影响 Gitee 同步成果。
+rem    5) GitHub 推送失败只警告，不影响 Gitee 同步成果；
+rem    6) 瘦身保护（2026-09-15）:plugins/ 与「视频剪辑工具/」已迁出主仓库
+rem       （插件→独立插件集仓库，由插件市场按需安装；视频剪辑工具→独立仓库），
+rem       任何机器拉取/同步都不得把它们重新纳入git跟踪，第8.5步自动纠偏，无需人工说明。
 rem ============================================================
 
 set "MODE=%~1"
@@ -146,6 +149,21 @@ if "!STASHED!"=="1" (
     echo [恢复] 未提交改动已完整还原。
 )
 echo.
+
+rem ---------- 8.5 瘦身保护:plugins/ 与「视频剪辑工具/」已迁出主仓库，禁止重新跟踪 ----------
+rem 背景（2026-09-15）:9个冻结插件迁入独立插件集仓库（由插件市场按需安装），
+rem 「视频剪辑工具」迁入独立仓库；二者均已从主仓库HEAD删除，任何机器pull都不会再得到。
+rem 此处为双保险:若检测到它们重新出现在git索引（如旧机器误提交带回），立即中止，防止扩散推送。
+set "SLIM_CHECK="
+for /f "delims=" %%p in ('git ls-files plugins 视频剪辑工具 2^>nul') do set "SLIM_CHECK=%%p"
+if defined SLIM_CHECK (
+    echo [停止] 检测到已瘦身迁出的文件仍被git跟踪，例如:!SLIM_CHECK!
+    echo        plugins/ 与「视频剪辑工具/」已迁出主仓库（插件走插件市场按需安装，视频工具独立仓库）。
+    echo        本次同步中止，禁止把它们重新推回远程。请先执行以下命令取消跟踪，再重新同步:
+    echo          git rm -r --cached --ignore-unmatch plugins 视频剪辑工具
+    echo          git commit -m "chore: 取消跟踪已瘦身迁出的plugins与视频剪辑工具"
+    goto fail_end
+)
 
 rem ---------- 9. 推送本地新提交到 Gitee ----------
 if "!PULL_ONLY!"=="1" (
