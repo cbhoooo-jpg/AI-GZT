@@ -207,6 +207,16 @@ def terminate_tree(handle):
     return {"terminated": True, "returncode": proc.returncode}
 
 
+def finalize_finished(handle):
+    """
+    P1 收尾原语:后台任务【自然结束】后由任务管理器调用。
+    关闭日志文件句柄并按上限截断（幂等）；cancel/超时路径由 terminate_tree 内部完成，无需调用。
+    """
+    handle.status = "finished"
+    _close_log(handle)
+    _truncate_if_oversize(handle)
+
+
 def _close_log(handle):
     """关闭日志文件句柄（幂等），确保缓冲区落盘"""
     try:

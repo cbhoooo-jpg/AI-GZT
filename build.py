@@ -53,6 +53,7 @@ hidden_imports = [
     'screenshot_tool', 'project_manual_manager', 'scheduler_manager',
     'file_filter_config',   # 文件扫描噪音过滤统一配置模块（任务12新增，6处扫盘链路复用，显式声明确保打包收集）
     'command_runner',       # 长命令后台任务机制P0:进程树命令执行器（api_server顶层import，显式登记不依赖自动扫描）
+    'background_task_manager',  # 长命令后台任务机制P1:后台任务管理器（api_server顶层import，显式登记不依赖自动扫描）
     # === FastAPI/Starlette/Web服务依赖的标准库模块（因第三方库被exclude，静态分析无法识别，强制收集） ===
     'http', 'http.cookies', 'http.client', 'http.server',
     'email', 'email.mime', 'email.mime.multipart', 'email.mime.text',
