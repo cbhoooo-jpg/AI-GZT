@@ -295,6 +295,62 @@
                         <el-button slot="append" icon="el-icon-folder" @click="selectDownloadPath">选择文件夹</el-button>
                     </el-input>
                 </el-form-item>
+                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">工具输出与任务防中断</h3>
+                <div style="padding: 12px; background-color: #ecf5ff; border: 1px solid #d9ecff; border-radius: 8px; margin-bottom: 16px; font-size: 15px; color: #409EFF; line-height: 1.5;">
+                    控制工具超长输出的截断、落盘与跨轮老化策略，防止上下文溢出导致任务中途中断；保存后重启工作台生效
+                </div>
+
+                <el-form-item label="入口超长截断">
+                    <el-switch v-model="form.tool_output.truncate_enabled" active-text="开启" inactive-text="关闭" style="font-size: 18px;"></el-switch>
+                    <div class="tip-text">单条工具输出超过触发阈值时，按整行保留头部+尾部、中间部分落盘并替换为指针</div>
+                </el-form-item>
+                <el-form-item label="截断触发阈值（字符）">
+                    <el-input-number v-model="form.tool_output.trigger_chars" :min="1000" :step="1000" :precision="0" style="max-width: 320px;"></el-input-number>
+                    <div class="tip-text">单条输出字符数超过该值才触发头尾截断，默认40000</div>
+                </el-form-item>
+                <el-form-item label="头部保留字符数">
+                    <el-input-number v-model="form.tool_output.head_chars" :min="0" :step="1000" :precision="0" style="max-width: 320px;"></el-input-number>
+                    <div class="tip-text">截断时保留输出开头的字符数，默认24000</div>
+                </el-form-item>
+                <el-form-item label="尾部保留字符数">
+                    <el-input-number v-model="form.tool_output.tail_chars" :min="0" :step="1000" :precision="0" style="max-width: 320px;"></el-input-number>
+                    <div class="tip-text">截断时保留输出结尾的字符数，默认8000</div>
+                </el-form-item>
+
+                <el-form-item label="超长内容落盘">
+                    <el-switch v-model="form.tool_output.save_to_disk" active-text="开启" inactive-text="关闭" style="font-size: 18px;"></el-switch>
+                    <div class="tip-text">截断的中段与完整输出写入本地目录，对话中仅保留指针，需要时可按路径取回</div>
+                </el-form-item>
+                <el-form-item label="落盘目录名">
+                    <el-input v-model="form.tool_output.output_dir_name" style="max-width: 320px;" placeholder="tool_outputs"></el-input>
+                    <div class="tip-text">落盘目录名（相对项目根目录），默认tool_outputs</div>
+                </el-form-item>
+                <el-form-item label="落盘文件份数上限">
+                    <el-input-number v-model="form.tool_output.max_saved_files" :min="10" :step="10" :precision="0" style="max-width: 320px;"></el-input-number>
+                    <div class="tip-text">落盘文件超过该份数后自动清理最旧文件，默认200</div>
+                </el-form-item>
+
+                <el-form-item label="命令执行超时（秒）">
+                    <el-input-number v-model="form.tool_output.exec_cmd_timeout" :min="5" :step="5" :precision="0" style="max-width: 320px;"></el-input-number>
+                    <div class="tip-text">exec_cmd终端命令的超时时间，超时自动终止并回收，默认60秒</div>
+                </el-form-item>
+
+                <el-form-item label="跨轮老化归档">
+                    <el-switch v-model="form.tool_output.aging_enabled" active-text="开启" inactive-text="关闭" style="font-size: 18px;"></el-switch>
+                    <div class="tip-text">最近若干代对话的工具结果完整保留，更早的超长结果在总量超阈值时归档为"一行结论+落盘指针"，支撑长任务不中断</div>
+                </el-form-item>
+                <el-form-item label="完整保留最近轮数">
+                    <el-input-number v-model="form.tool_output.aging_keep_rounds" :min="0" :step="1" :precision="0" style="max-width: 320px;"></el-input-number>
+                    <div class="tip-text">最近多少代对话的工具消息始终完整保留、不老化，默认2轮</div>
+                </el-form-item>
+                <el-form-item label="老化触发阈值（字符）">
+                    <el-input-number v-model="form.tool_output.aging_trigger_chars" :min="1000" :step="1000" :precision="0" style="max-width: 320px;"></el-input-number>
+                    <div class="tip-text">历史工具结果总量超过该字符数才触发老化归档，默认60000</div>
+                </el-form-item>
+                <el-form-item label="每轮单文件归档上限">
+                    <el-input-number v-model="form.tool_output.aging_max_per_round" :min="1" :step="1" :precision="0" style="max-width: 320px;"></el-input-number>
+                    <div class="tip-text">同一轮对话中最多归档多少条超长工具结果，避免单次归档过多，默认3</div>
+                </el-form-item>
 
                 <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">运行设置</h3>
                 <el-form-item label="显示调试控制台">
@@ -349,7 +405,22 @@
                         default_local_model: '',
                         lastCloudProvider: '火山方舟',
                         forbidden_paths: [],
-                        show_debug_console: false // 默认关闭调试控制台显示
+                        show_debug_console: false, // 默认关闭调试控制台显示
+                        // 工具输出截断/落盘/跨轮老化配置（任务防中断），老配置缺该节点时由loadConfig兜底补齐
+                        tool_output: {
+                            truncate_enabled: true,
+                            head_chars: 24000,
+                            tail_chars: 8000,
+                            trigger_chars: 40000,
+                            save_to_disk: true,
+                            output_dir_name: 'tool_outputs',
+                            max_saved_files: 200,
+                            exec_cmd_timeout: 60,
+                            aging_enabled: true,
+                            aging_keep_rounds: 2,
+                            aging_trigger_chars: 60000,
+                            aging_max_per_round: 3
+                        }
                     },
                     apiBase: '/api',
                     localModelList: [],
@@ -410,6 +481,14 @@
                         const res = await axios.get(`${this.apiBase}/config/get`)
                         if (res.data.code === 200) {
                             this.form = { ...this.form, ...res.data.data }
+                            // 老配置可能缺少tool_output节点，用默认值兜底补齐，避免v-model绑定undefined
+                            this.form.tool_output = {
+                                truncate_enabled: true, head_chars: 24000, tail_chars: 8000, trigger_chars: 40000,
+                                save_to_disk: true, output_dir_name: 'tool_outputs', max_saved_files: 200,
+                                exec_cmd_timeout: 60, aging_enabled: true, aging_keep_rounds: 2,
+                                aging_trigger_chars: 60000, aging_max_per_round: 3,
+                                ...(res.data.data.tool_output || {})
+                            }
                             // 读取系统级配置（TOS对象存储等）
                             if (res.data.data.system) {
                                 this.systemConfig = { ...this.systemConfig, ...res.data.data.system }

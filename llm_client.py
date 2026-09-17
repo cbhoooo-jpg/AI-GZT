@@ -92,6 +92,18 @@ def _get_config_hash(config: dict) -> str:
     """计算配置哈希，用于检测变更"""
     config_str = json.dumps(config, sort_keys=True, ensure_ascii=False)
     return hashlib.md5(config_str.encode()).hexdigest()
+
+def _extract_model_max_tokens(error_msg: str):
+    """P0-4: 从max_tokens超限报错中提取模型支持的最大token数，兼容中英文厂商错误格式，提取失败返回None"""
+    # 英文厂商: expected a value <= 128000 / must be <= 128000 / less than or equal to 128000 / maximum of 128000
+    m = re.search(r'(?:<=|less than or equal to|no (?:more|larger) than|maximum[^0-9]{0,20}?)\s*(\d{3,7})', error_msg, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # 中文厂商（火山方舟等）: 最大值为128000 / 不能超过128000 / 上限为128000 / 小于等于128000 / 最多128000
+    m = re.search(r'(?:最大值?(?:为|是)?|不能超过|不得超过|不超过|上限(?:为|是)?|小于等于|最多(?:为|是)?|不能大于)\s*(\d{3,7})', error_msg)
+    if m:
+        return int(m.group(1))
+    return None
 def get_config() -> dict:
     """对外公开的配置读取接口，和内部逻辑完全一致，保证配置统一"""
     config = _get_config()
@@ -388,8 +400,9 @@ class UnifiedLLM:
         if self.is_loaded:
             self.current_model_name = self.config.get("model_name", "doubao-seed-2-1-pro-260628")
 
-    def create_chat_completion(self, messages, temperature=0.5, max_tokens=250000, stream=False, **kwargs):
-        """完全兼容原有调用接口，纯云端模型调用，支持流式/非流式、配置热更新、自动重试"""
+    def create_chat_completion(self, messages, temperature=0.5, max_tokens=None, stream=False, **kwargs):
+        """完全兼容原有调用接口，纯云端模型调用，支持流式/非流式、配置热更新、自动重试
+        P0-4: max_tokens默认None——不传该字段，由模型端使用其支持的最大输出长度；仅上层显式传入正整数时才携带"""
         global _model_instance, _model_type
         max_retries = 1
         current_retry = 0
@@ -427,14 +440,18 @@ class UnifiedLLM:
                 dynamic_timeout = min(base_timeout + (estimated_tokens // 10000) * 30, 600)
                 # 自动处理多模态消息，识别本地图片路径
                 messages = _process_multimodal_messages(messages)
-                response = _model_instance.chat.completions.create(
-                    model=self.config.get("model_name", "doubao-seed-2-1-pro-260628"),
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=stream,
-                    timeout=dynamic_timeout
-                )
+                # P0-4: 默认不传max_tokens（None），由模型端使用其支持的最大输出长度；
+                # 仅当上层显式传入正整数时才携带该字段，彻底避免硬编码250000超过部分模型上限导致首轮直接400
+                request_kwargs = {
+                    "model": self.config.get("model_name", "doubao-seed-2-1-pro-260628"),
+                    "messages": messages,
+                    "temperature": temperature,
+                    "stream": stream,
+                    "timeout": dynamic_timeout
+                }
+                if max_tokens:
+                    request_kwargs["max_tokens"] = max_tokens
+                response = _model_instance.chat.completions.create(**request_kwargs)
 
                 # 流式模式：包装为统一格式迭代器，全链路异常捕获，避免流迭代异常向上抛出导致连接断开
                 if stream:
@@ -489,12 +506,15 @@ class UnifiedLLM:
                 error_msg = str(e)
                 print(f"❌ 云端模型调用失败（第{current_retry+1}次）:{error_msg}")
                 
-                # 🔹 AI自动补全:max_tokens超出上限自动容错，自动提取模型支持的最大值并重试
-                if "max_tokens" in error_msg.lower() and ("above maximum" in error_msg.lower() or "invalid" in error_msg.lower() or "exceed" in error_msg.lower()):
-                    # 尝试从错误信息中提取最大支持的token数
-                    max_match = re.search(r'expected a value <=\s*(\d+)', error_msg)
-                    if max_match:
-                        model_max_tokens = int(max_match.group(1))
+                # 🔹 P0-4: max_tokens超出模型上限自动容错，兼容中英文错误信息，提取模型支持的最大值后按90%重试
+                _msg_low = error_msg.lower()
+                _is_max_tokens_err = ("max_tokens" in _msg_low) and any(
+                    k in error_msg for k in ("above maximum", "invalid", "exceed", "less than",
+                                            "超过", "上限", "最大", "不能大于", "小于等于")
+                )
+                if _is_max_tokens_err:
+                    model_max_tokens = _extract_model_max_tokens(error_msg)
+                    if model_max_tokens:
                         # 取上限的90%作为实际使用值，预留安全余量
                         safe_max_tokens = int(model_max_tokens * 0.9)
                         print(f"🔧 自动修正max_tokens:模型最大支持{model_max_tokens}，自动调整为{safe_max_tokens}并重试")

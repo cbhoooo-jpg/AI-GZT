@@ -2,6 +2,9 @@
 config.json
 rsa_keys.json
 memory_config.json
+# Cookie加密密钥与加密后的浏览器Cookie（敏感凭据，禁止提交，2026-09-17补登）
+.cookie_key
+browser_cookies_encrypted.json
 
 # ===== 运行时数据与索引 =====
 code_rag/
@@ -10,6 +13,8 @@ backup/
 memory_index.faiss
 memory_meta.json
 logs/
+# 工具超长输出的完整结果落盘目录（P0-1截断配套，运行时自动生成，不进仓库）
+tool_outputs/
 *.log
 # 崩溃处理器自动生成的运行时日志（main.py 崩溃时自动重建，显式声明便于识别）
 crash_error.log
@@ -62,6 +67,8 @@ release_info.json
 file_upload_map.json
 pending_samples.json
 system_prompt_config.json
+# 召回效果评测运行时数据（自动生成，空文件起步，不进仓库）
+recall_evaluations.json
 
 # ===== Gitee 推送临时日志（推送脚本生成，不进仓库） =====
 push_gitee_err.txt
@@ -72,3 +79,6 @@ push_gitee_out.txt
 
 # ===== 内部项目管理资料（含参赛策略/内部风险评估，禁止同步到开源社区） =====
 AI智能助手项目手册.md
+# 长命令后台任务机制内部讨论稿与结构图（开发中方案，确认实施并测试通过前不进仓库）
+长命令后台任务机制_详细方案.md
+长命令后台任务机制_结构图.html

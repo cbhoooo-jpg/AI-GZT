@@ -120,6 +120,21 @@ def load_config() -> Dict:
             "tos_bucket": "",
             "tos_ak": "",
             "tos_sk": ""
+        },
+        # 工具输出截断/落盘/跨轮老化配置（P0-1/P0-5），用户config.json缺失时自动补全
+        "tool_output": {
+            "truncate_enabled": True,        # 总开关
+            "head_chars": 24000,             # 头部保留字符数
+            "tail_chars": 8000,              # 尾部保留字符数
+            "trigger_chars": 40000,          # 超过此字符数才触发截断
+            "save_to_disk": True,            # 完整结果是否落盘
+            "output_dir_name": "tool_outputs", # 落盘目录名（打包时exe同级）
+            "max_saved_files": 200,          # 落盘文件最多保留个数
+            "exec_cmd_timeout": 60,          # exec_cmd超时秒数
+            "aging_enabled": True,           # 跨轮老化总开关
+            "aging_keep_rounds": 2,          # 保护代数:最近N代工具结果完整保留
+            "aging_trigger_chars": 60000,    # messages总字符超此值才触发老化
+            "aging_max_per_round": 3         # 单轮最多归档条数
         }
     }
     if os.path.exists(CONFIG_PATH):
@@ -303,6 +318,13 @@ def init_whitelist_paths():
         os.path.normpath(FILE_UPLOAD_MAP_PATH), # 上传映射文件永远放行
         os.path.normpath(CONFIG_PATH), # 配置文件永远放行
     ]
+    # 工具完整输出落盘目录永远放行（frozen时在exe同级、开发时在BASE_DIR，与save_full_tool_output路径一致）
+    try:
+        _to_dir_name = (load_config().get("tool_output") or {}).get("output_dir_name") or "tool_outputs"
+    except Exception:
+        _to_dir_name = "tool_outputs"
+    _to_base = os.path.dirname(_sys.executable) if getattr(_sys, "frozen", False) else BASE_DIR
+    whitelist.append(os.path.normpath(os.path.join(_to_base, _to_dir_name)))
     # 标准化所有白名单路径，统一/分隔符
     GLOBAL_WHITELIST_PATHS = [os.path.normpath(p).replace("\\", "/") for p in whitelist if p]
     # 自动创建白名单中不存在的目录
@@ -709,6 +731,213 @@ def add_file_operation_log(op_type: str, file_path: str, status: str, detail: st
     log_content = f"[{op_type.upper()}] {status_text} | 文件：{file_path} | 详情：{detail[:200]}"
     add_operation_log("文件操作", log_content, status)
 
+# ==================== 工具输出截断/落盘/跨轮老化（P0-1/P0-5）====================
+def _get_tool_output_config() -> Dict:
+    """读取tool_output配置节点，缺失值用默认值兜底，任何异常都不影响主流程"""
+    defaults = {
+        "truncate_enabled": True,          # 总开关
+        "head_chars": 24000,               # 头部保留字符数
+        "tail_chars": 8000,                # 尾部保留字符数
+        "trigger_chars": 40000,            # 超过此字符数才触发截断
+        "save_to_disk": True,              # 完整结果是否落盘
+        "output_dir_name": "tool_outputs", # 落盘目录名（打包时exe同级）
+        "max_saved_files": 200,            # 落盘文件最多保留个数
+        "exec_cmd_timeout": 60,            # exec_cmd超时秒数
+        "aging_enabled": True,             # 跨轮老化总开关
+        "aging_keep_rounds": 2,            # 保护代数:最近N代工具结果完整保留
+        "aging_trigger_chars": 60000,      # messages总字符超此值才触发老化
+        "aging_max_per_round": 3,          # 单轮最多归档条数
+    }
+    try:
+        cfg = load_config().get("tool_output") or {}
+        defaults.update(cfg)
+    except Exception:
+        pass
+    return defaults
+
+def _cleanup_tool_output_dir(dir_path: str, max_files: int):
+    """落盘文件超量时按修改时间从最早开始删除，只清理.txt，任何异常不外抛"""
+    try:
+        if not os.path.isdir(dir_path):
+            return
+        files = [os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(".txt")]
+        if len(files) <= max_files:
+            return
+        files.sort(key=lambda p: os.path.getmtime(p))
+        for p in files[:len(files) - max_files]:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"⚠️ 清理tool_outputs目录失败:{e}")
+
+def save_full_tool_output(tool_name: str, index, full_text) -> Optional[str]:
+    """完整工具结果落盘，返回绝对路径；任何失败只返回None，绝不抛异常影响主流程。
+    打包环境存exe同级目录，开发环境存BASE_DIR，与config.json路径策略一致。"""
+    try:
+        cfg = _get_tool_output_config()
+        if getattr(_sys, "frozen", False):
+            base = os.path.dirname(_sys.executable)
+        else:
+            base = BASE_DIR
+        dir_path = os.path.join(base, str(cfg.get("output_dir_name") or "tool_outputs"))
+        os.makedirs(dir_path, exist_ok=True)
+        _cleanup_tool_output_dir(dir_path, int(cfg.get("max_saved_files", 200)))
+        safe_name = re.sub(r'[\\/:*?"<>|\s]+', "_", str(tool_name))[:30] or "tool"
+        # 加毫秒防止同秒同名覆盖
+        ms = int(time.time() * 1000) % 1000
+        fname = f"{time.strftime('%Y%m%d_%H%M%S')}_{ms:03d}_{safe_name}_{index}.txt"
+        fpath = os.path.join(dir_path, fname)
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(full_text if isinstance(full_text, str) else str(full_text))
+        return fpath
+    except Exception as e:
+        print(f"⚠️ 工具输出落盘失败:{e}")
+        return None
+
+def truncate_tool_output(tool_name: str, index, full_text) -> str:
+    """工具输出统一截断:超阈值保留头尾、中间替换为带地图的省略提示，完整结果落盘。
+    只作用于进messages的副本；严格按行边界切分，绝不截断半行代码。"""
+    text = full_text if isinstance(full_text, str) else str(full_text)
+    try:
+        cfg = _get_tool_output_config()
+        if not cfg.get("truncate_enabled", True):
+            return text
+        trigger = int(cfg.get("trigger_chars", 40000))
+        if len(text) <= trigger:
+            return text
+        head_chars = int(cfg.get("head_chars", 24000))
+        tail_chars = int(cfg.get("tail_chars", 8000))
+        lines = text.split("\n")
+        total_lines = len(lines)
+        # 头部按整行累计到head_chars
+        hc, head_end = 0, 0
+        for i, ln in enumerate(lines):
+            add = len(ln) + 1
+            if hc + add > head_chars and head_end > 0:
+                break
+            hc += add
+            head_end = i + 1
+        # 尾部按整行累计到tail_chars
+        tc, tail_start = 0, total_lines
+        for i in range(total_lines - 1, -1, -1):
+            add = len(lines[i]) + 1
+            if tc + add > tail_chars and tail_start < total_lines:
+                break
+            tc += add
+            tail_start = i
+        # 头尾重叠说明全文不长到需要截断，原样返回
+        if head_end >= tail_start:
+            return text
+        head_part = "\n".join(lines[:head_end])
+        tail_part = "\n".join(lines[tail_start:])
+        omitted = tail_start - head_end
+        saved_path = ""
+        if cfg.get("save_to_disk", True):
+            saved_path = save_full_tool_output(tool_name, index, text) or ""
+        if saved_path:
+            retrieve = (f"完整结果已保存:{saved_path}\n"
+                        f"取回方式:①read_file 加 start_line/end_line 参数按行翻页读取；"
+                        f"②exec_cmd 用 findstr / Select-String 按关键词定位"
+                        f"（例:Select-String -Path \"{saved_path}\" -Pattern \"关键词\" -Context 3,3）。")
+        else:
+            retrieve = "完整结果未落盘，请缩小命令输出范围（如加过滤条件/分页参数）后重新执行。"
+        omit_tip = (
+            f"\n⚠️ 输出过长已省略中间部分:原始共 {total_lines} 行 / {len(text)} 字符，\n"
+            f"当前保留第 1-{head_end} 行与第 {tail_start + 1}-{total_lines} 行，省略 {omitted} 行。\n"
+            f"{retrieve}\n"
+        )
+        return head_part + "\n" + omit_tip + "\n" + tail_part
+    except Exception as e:
+        print(f"⚠️ 截断工具输出失败:{e}")
+        return text
+
+def _contains_dangerous_command(cmd: str) -> bool:
+    """危险命令判定:拆分管道/分号后逐段检查段首程序名，避免\\bformat\\b误杀Format-Table等
+    PowerShell cmdlet（段首token含连字符不命中纯单词黑名单）。段首为rm/rd/del/erase/format/
+    mkfs/dd等危险程序才拦截；含&的命令拼接拦截由调用方维持原逻辑。判定异常时保守放行。"""
+    try:
+        dangerous_progs = {"rm", "rmdir", "rd", "del", "erase", "format", "mkfs", "dd"}
+        segments = re.split(r'\|\|?|&&?|;', cmd)
+        for seg in segments:
+            seg = seg.strip().strip('"').strip("'")
+            if not seg:
+                continue
+            parts = seg.split()
+            first = parts[0].strip('"').strip("'") if parts else ""
+            prog = first.replace("\\", "/").split("/")[-1].lower()
+            if "." in prog:
+                prog = prog.split(".")[0]
+            if prog in dangerous_progs:
+                return True
+        return False
+    except Exception:
+        return False
+
+# P1-9.3: 不计入连续错误计数的结果标记——参数/指令格式纠正信号、系统保护路径提示属于给AI的
+# 纠正信号而非系统故障，累计到3次会误杀长任务；其余真正含❌的执行失败才计数（阈值3不变）
+_NON_FATAL_RESULT_MARKERS = (
+    "参数错误",        # read_file翻页参数非法、edit_file必填参数/操作类型校验等
+    "参数解析失败",    # 必填参数值为空等通用解析通道提示
+    "指令解析失败",    # 工具块缺字段、JSON语法错误等格式纠正信号
+    "工具指令生成失败", # 工具名/参数不合法
+    "禁止操作",        # 系统保护目录/用户自定义禁止路径提示（reason中固定含此语）
+    "请向用户说明",    # 编辑/读取失败引导语（锚点错误等已内含"重试一次后停止"指令）
+)
+
+def age_tool_messages(messages: list, current_round: int = 0) -> int:
+    """跨轮老化（P0-5）:最近aging_keep_rounds代工具结果完整保留；更早的消息仅在messages
+    总字符超阈值时，把最老的最多aging_max_per_round条原地替换为'一行结论+落盘指针'。
+    只处理role=user且以🔹执行结果标记开头的消息，不删消息、不破坏角色配对；
+    归档后消息不以🔹开头，天然退出代际序列且幂等；落盘失败的消息本轮不老化。返回归档条数。"""
+    try:
+        cfg = _get_tool_output_config()
+        if not cfg.get("aging_enabled", True):
+            return 0
+        keep = int(cfg.get("aging_keep_rounds", 2))
+        trigger = int(cfg.get("aging_trigger_chars", 60000))
+        max_per_round = int(cfg.get("aging_max_per_round", 3))
+        total_chars = sum(len(m.get("content") or "") for m in messages)
+        if total_chars <= trigger:
+            return 0
+        # 仅识别真实工具结果消息（归档后的指针消息不以🔹开头，天然退出代际序列、幂等）
+        tool_positions = [i for i, m in enumerate(messages)
+                          if m.get("role") == "user" and str(m.get("content") or "").lstrip().startswith("🔹")]
+        # 最近keep代完整保留，其余按时间从老到新作为候选
+        candidates = tool_positions[:-keep] if len(tool_positions) > keep else []
+        if not candidates:
+            return 0
+        archived = 0
+        for idx in candidates:
+            if archived >= max_per_round:
+                break
+            content = messages[idx].get("content") or ""
+            if "工具结果已归档" in content:
+                continue
+            saved = save_full_tool_output("age_archive", f"r{current_round}_{idx}", content)
+            if not saved:
+                continue  # 失败安全:落盘失败本轮不老化，保持原文，下轮再试
+            lines = content.split("\n")
+            first_line = lines[0].strip()[:100]
+            last_line = ""
+            for ln in reversed(lines):
+                if ln.strip():
+                    last_line = ln.strip()[:100]
+                    break
+            k = tool_positions.index(idx) + 1  # 该消息为第几条工具结果（代次序号）
+            messages[idx]["content"] = (
+                f"[第{k}轮工具结果已归档] {first_line}；"
+                f"结论/要点:{last_line or '见存盘文件'}；"
+                f"原始共{len(lines)}行已存盘:{saved}，"
+                f"需要时用 read_file 的 start_line/end_line 翻页或 Select-String 关键词检索取回。"
+            )
+            archived += 1
+        return archived
+    except Exception as e:
+        print(f"⚠️ 跨轮老化失败:{e}")
+        return 0
+
 def update_current_project_file_list():
     """更新当前项目的文件清单内存缓存，操作文件后自动调用，无需用户手动刷新"""
     global CURRENT_PROJECT
@@ -1031,14 +1260,14 @@ async def chat(req: ChatRequest):
                         params_str_norm = params_str.replace('：', ':', 50)
                         if tool_name == "edit_file":
                             # 提取短参数:file_name、operation
-                            fn_match = re.search(r'^[ \t]*file_name[::][ \t]*(.*?)(?=\n[ \t]*(operation|gzt_anchor|gzt_newtext|target_block|content)[::]|\Z)', params_str_norm, re.S | re.M)
+                            fn_match = re.search(r'^[ \t]*file_name[：:][ \t]*(.*?)(?=\n[ \t]*(operation|gzt_anchor|gzt_newtext|target_block|content)[：:]|\Z)', params_str_norm, re.S | re.M)
                             if fn_match:
                                 params["file_name"] = fn_match.group(1).strip()
-                            op_match = re.search(r'^[ \t]*operation[::][ \t]*(.*?)(?=\n[ \t]*(gzt_anchor|gzt_newtext|target_block|content)[::]|\Z)', params_str_norm, re.S | re.M)
+                            op_match = re.search(r'^[ \t]*operation[：:][ \t]*(.*?)(?=\n[ \t]*(gzt_anchor|gzt_newtext|target_block|content)[：:]|\Z)', params_str_norm, re.S | re.M)
                             if op_match:
                                 params["operation"] = op_match.group(1).strip()
                             # 提取gzt_anchor:从gzt_anchor:后到gzt_newtext:前/块结束的所有内容，完全保留原始格式
-                            tb_match = re.search(r'^[ \t]*gzt_anchor[::][ \t]*(.*?)(?=\n[ \t]*gzt_newtext[::]|\Z)', params_str_norm, re.S | re.M)
+                            tb_match = re.search(r'^[ \t]*gzt_anchor[：:][ \t]*(.*?)(?=\n[ \t]*gzt_newtext[：:]|\Z)', params_str_norm, re.S | re.M)
                             if tb_match:
                                 tb_content = tb_match.group(1)
                                 # 修复:如果内容以换行开头，去掉第一个换行符（保留后续缩进）
@@ -1046,7 +1275,7 @@ async def chat(req: ChatRequest):
                                     tb_content = tb_content[1:]
                                 params["gzt_anchor"] = tb_content.rstrip('\n')
                             # 提取gzt_newtext:从gzt_newtext:后一直到块结束，一字不差保留
-                            ct_match = re.search(r'^[ \t]*gzt_newtext[::](.*)', params_str_norm, re.S | re.M)
+                            ct_match = re.search(r'^[ \t]*gzt_newtext[：:](.*)', params_str_norm, re.S | re.M)
                             if ct_match:
                                 ct_content = ct_match.group(1)
                                 # 修复:如果内容以换行开头，去掉第一个换行符（保留后续缩进）
@@ -1093,6 +1322,9 @@ async def chat(req: ChatRequest):
                     ALL_PARAM_NAMES = {"file_name", "operation", "target_block", "content", "gzt_anchor", "gzt_newtext", "path", "is_dir", "old_path", "new_name", "query", "cmd"}
                     # 动态添加当前插件的所有参数名（如果是插件调用）
                     current_param_names = ALL_PARAM_NAMES.copy()
+                    # 翻页参数仅read_file需要，按工具名放行，避免进入全局白名单污染其它工具的参数解析
+                    if tool_name == "read_file":
+                        current_param_names.update({"start_line", "end_line"})
                     plugin_config = tool_template_manager.get_plugin_config(tool_name)
                     if plugin_config:
                         plugin_params = [p["name"] for p in plugin_config["parameters"]]
@@ -1315,7 +1547,8 @@ async def chat(req: ChatRequest):
                             }
                             exec_result = f"✅ 文件列表读取成功:{json.dumps(return_data, ensure_ascii=False, indent=2)}"
                             add_operation_log("文件操作", f"✅ 文件列表读取成功，共返回{len(path_map)}个路径条目")
-                            all_exec_results.append(exec_result)
+                            # P0-1: 进messages前统一截断+完整结果落盘（大仓库目录树兜底）
+                            all_exec_results.append(truncate_tool_output("get_project_tree", len(all_exec_results) + 1, exec_result))
                             continue
 
                         elif func_call.get("name") == "edit_file":
@@ -1386,18 +1619,38 @@ async def chat(req: ChatRequest):
                                     broadcast_file_change()
                                 else:
                                     add_operation_log("文件操作", f"❌ {operation}操作失败：{file_name}，错误：{msg}", "error")          
-                                    exec_result = f"❌ {operation}操作失败：{file_name}\n{msg}\n⚠️ 分析工具调用失败原因：\n1.指令执行错误（锚点错误，：符号大小写错误导致匹配不上或者是锚点内容太少缺少唯一性），请向用户说明并执行一次重试；\n2. 工作台系统错误无法执行，已经执行第二次重试，请停止任务执行并向用户说明，给出可能性分析。"                                               
+                                    exec_result = f"❌ {operation}操作失败：{file_name}\n{msg}\n⚠️ 分析工具调用失败原因：\n1.指令执行错误（锚点错误，：符号大小写错误导致匹配不上或者是锚点内容太少缺少唯一性，锚点内容必须整行），请向用户说明并执行一次重试；\n2. 工作台系统错误无法执行，已经执行第二次重试，请停止任务执行并向用户说明，给出可能性分析。"                                               
                             except Exception as e:
-                                exec_result = f"❌ 编辑文件异常：{str(e)}\n⚠️ 分析工具调用失败原因：\n1. 指令执行错误（锚点错误，：符号大小写错误导致匹配不上或者是锚点内容太少缺少唯一性），请向用户说明并执行一次重试；\n2. 工作台系统错误无法执行，已经执行第二次重试，请停止任务执行并向用户说明，给出可能性分析。"
+                                exec_result = f"❌ 编辑文件异常：{str(e)}\n⚠️ 分析工具调用失败原因：\n1. 指令执行错误（锚点错误，：符号大小写错误导致匹配不上或者是锚点内容太少缺少唯一性锚点内容必须整行），请向用户说明并执行一次重试；\n2. 工作台系统错误无法执行，已经执行第二次重试，请停止任务执行并向用户说明，给出可能性分析。"
                                 add_operation_log("文件操作", f"❌ 编辑文件异常：{file_name}，错误：{str(e)}", "error")
                             
                             all_exec_results.append(exec_result)
                             continue
                         if func_call.get("name") == "read_file":
                             file_name = func_call["parameters"]["file_name"].strip()
-                            # 新增：记录AI读取文件日志
+                            # P0-2: 可选按行翻页参数（大文件分段读取，避免全量内容撑爆上下文）
+                            raw_start_line = func_call["parameters"].get("start_line")
+                            raw_end_line = func_call["parameters"].get("end_line")
+                            # 宿主层可能为未传的可选翻页参数注入空串，统一归一化为None，避免被误判为"已传参"
+                            if isinstance(raw_start_line, str) and not raw_start_line.strip():
+                                raw_start_line = None
+                            if isinstance(raw_end_line, str) and not raw_end_line.strip():
+                                raw_end_line = None
+                            page_start, page_end = None, None
+                            if raw_start_line is not None or raw_end_line is not None:
+                                try:
+                                    if raw_start_line is None or raw_end_line is None:
+                                        raise ValueError("必须同时提供start_line和end_line")
+                                    page_start = int(raw_start_line)
+                                    page_end = int(raw_end_line)
+                                    if page_start < 1 or page_end < page_start:
+                                        raise ValueError("行号范围非法")
+                                except (TypeError, ValueError):
+                                    all_exec_results.append("❌ 参数错误:read_file翻页参数非法，start_line/end_line必须同时为正整数且end_line≥start_line（行号从1开始），请修正参数后重试")
+                                    continue
+                            # 新增:记录AI读取文件日志
                             # 安全读取文件（优先读取当前选中项目下的文件，符合项目隔离要求）
-                            def read_file_safe(fname):
+                            def read_file_safe(fname, page_start=None, page_end=None):
                                 # 标准化路径，自动处理绝对/相对路径、斜杠格式、相对符号
                                 target_file_path = get_real_physical_path(fname)
                                 if not target_file_path:
@@ -1442,6 +1695,27 @@ async def chat(req: ChatRequest):
                                     # 非图片文件按原有文本逻辑读取
                                     with open(target_file_path, "r", encoding="utf-8", errors="ignore") as f:
                                         content = f.read()
+                                    # P0-2: 按行翻页（严格行边界切片，保证edit_file整行锚点不被截断）
+                                    if page_start is not None:
+                                        all_lines = content.split("\n")
+                                        total_lines = len(all_lines)
+                                        if page_start > total_lines:
+                                            add_operation_log("文件操作", f"⚠️ 翻页超出文件末尾:{fname}，共{total_lines}行")
+                                            return f"❌ 参数错误:start_line={page_start}超出文件总行数{total_lines}，请用1-{total_lines}范围内的行号重新读取"
+                                        seg_start = max(1, page_start)
+                                        seg_end = min(page_end, total_lines)
+                                        sliced = "\n".join(all_lines[seg_start - 1:seg_end])
+                                        if CURRENT_PROJECT["project_root"] and target_file_path.startswith(os.path.normpath(CURRENT_PROJECT["project_root"]).replace("\\", "/")):
+                                            page_log_msg = f"✅ 读取当前项目文件成功:{fname}（绝对路径:{target_file_path}）"
+                                        else:
+                                            page_log_msg = f"✅ 读取文件成功:{fname}（绝对路径:{target_file_path}）"
+                                        step = seg_end - seg_start + 1
+                                        prev_tip = f"上一段start_line={max(1, seg_start - step)}&end_line={seg_start - 1}" if seg_start > 1 else "已是文件开头"
+                                        next_tip = f"下一段start_line={seg_end + 1}&end_line={min(total_lines, seg_end + step)}" if seg_end < total_lines else "已是文件末尾"
+                                        add_operation_log("文件操作", page_log_msg + f"，翻页第{seg_start}-{seg_end}行/共{total_lines}行")
+                                        return (f"{page_log_msg}\n📄 文件共{total_lines}行，当前显示第{seg_start}-{seg_end}行\n"
+                                                f"📍 翻页提示:{prev_tip}；{next_tip}\n内容:\n{sliced}\n"
+                                                f"📢 以上为文件第{seg_start}-{seg_end}行片段，需要其他段落用start_line/end_line继续翻页；根据读取信息执行下一步指令（注意:修改指令代码缩进要和原文匹配）。")
                                     # 判断文件所属位置，返回对应提示
                                     if CURRENT_PROJECT["project_root"] and target_file_path.startswith(os.path.normpath(CURRENT_PROJECT["project_root"]).replace("\\", "/")):
                                         log_msg = f"✅ 读取当前项目文件成功:{fname}（绝对路径:{target_file_path}）"
@@ -1455,8 +1729,9 @@ async def chat(req: ChatRequest):
                                     err_msg = f"❌ 读取文件失败:{fname}（绝对路径:{target_file_path}），错误:{str(e)}\n⚠️ 分析工具调用失败原因:\n1. 指令执行错误（文件权限不足/文件被占用），请向用户说明并执行一次重试；\n2. 工作台系统错误无法执行或者已经执行第二次重试，请停止任务执行并向用户说明，给出可能性分析。"
                                     add_operation_log("文件操作", f"❌ 读取文件失败:{fname}，错误:{str(e)}", "error")
                                     return err_msg
-                            file_content = read_file_safe(file_name)
-                            all_exec_results.append(file_content)
+                            file_content = read_file_safe(file_name, page_start, page_end)
+                            # P0-1: 进messages前统一截断+完整结果落盘（翻页片段通常不超长，截断为兜底）
+                            all_exec_results.append(truncate_tool_output("read_file", len(all_exec_results) + 1, file_content))
                             continue                
 
                         elif func_call.get("name") == "rag_search":
@@ -1473,33 +1748,34 @@ async def chat(req: ChatRequest):
                                 exec_result += f"📄 文件:{res['file_name']}（绝对路径:{file_abs_path}）\n```\n{res['content']}\n```\n"
                                 add_operation_log("文件操作",f"📄 文件:{res['file_name']}（绝对路径:{file_abs_path}）\n```\n{res['content']}\n```\n")
                             exec_result += "\n💡 检索结果已自动补全文件绝对路径，直接使用abs_path字段调用文件操作工具即可，无需自行拼接路径"
-                            all_exec_results.append(exec_result)
+                            # P0-1: 进messages前统一截断+完整结果落盘（RAG命中大文件片段时兜底）
+                            all_exec_results.append(truncate_tool_output("rag_search", len(all_exec_results) + 1, exec_result))
                             continue
                         elif func_call.get("name") == "exec_cmd":
                             cmd = func_call["parameters"]["cmd"].strip()
                             exec_result = ""
-                            # 安全白名单校验，禁止执行危险命令和命令注入
-                            # 使用正则全词匹配，避免子字符串误判（如chardet包含rd，format包含rm）
+                            # P0-3: 危险命令判定改用段首程序名匹配，避免\bformat\b误杀Format-Table等PowerShell cmdlet
                             lower_cmd = cmd.lower()
-                            danger_keywords = ["rm", "format", "rd", "erase", "mkfs", "dd"]
-                            # 非curl/wget命令额外禁止&，避免命令拼接，curl/wget允许URL参数带&
-                            if not (lower_cmd.startswith("curl") or lower_cmd.startswith("wget")):
-                                danger_keywords.append("&")
-                            # 构建正则全词匹配模式，\b确保只匹配独立单词
-                            import re as _re
-                            danger_pattern = _re.compile(r'\b(?:' + '|'.join(_re.escape(k) for k in danger_keywords) + r')\b')
-                            if danger_pattern.search(lower_cmd):
+                            is_dangerous = _contains_dangerous_command(cmd)
+                            # 非curl/wget命令额外禁止&命令拼接（curl/wget的URL参数允许带&），维持原有拼接拦截策略
+                            if not is_dangerous and not (lower_cmd.startswith("curl") or lower_cmd.startswith("wget")):
+                                is_dangerous = ("&" in cmd)
+                            if is_dangerous:
                                 exec_result = "❌ 禁止执行危险命令/命令拼接，仅允许执行单条查询类命令"
                                 add_operation_log("AI执行命令", exec_result, "error")
                                 all_exec_results.append(exec_result)
                                 continue
 
                             # 域名白名单已于2026-09-15按用户要求取消:curl/wget允许访问任意网站
-                            # 危险命令关键字拦截（rm/format/rd等）仍然生效，不受影响
+                            # P0-3: 超时时间从配置读取（默认60秒，前端配置中心可调）
+                            try:
+                                _exec_timeout = int(_get_tool_output_config().get("exec_cmd_timeout", 60))
+                            except Exception:
+                                _exec_timeout = 60
                             try:
                                 import subprocess
-                                # 执行命令，超时10秒避免阻塞
-                                result = subprocess.run(cmd, shell=True, capture_output=True, timeout=10)
+                                # 执行命令，超时时间读配置，避免长查询类命令被10秒误杀
+                                result = subprocess.run(cmd, shell=True, capture_output=True, timeout=_exec_timeout)
                                 # 自动兼容多编码，解决Windows CMD中文乱码问题
                                 def decode_content(content: bytes) -> str:
                                     try:
@@ -1508,18 +1784,31 @@ async def chat(req: ChatRequest):
                                         return content.decode('gbk', errors='ignore')
                                 stdout = decode_content(result.stdout)
                                 stderr = decode_content(result.stderr)
-                                exec_result = f"✅ 命令执行成功：命令：{cmd} 标准输出：{stdout} "
-                                if stderr.strip():
-                                    exec_result += f"标准错误：{stderr}向用户说明执行指令后得到结构化信息"
-                                    add_operation_log("AI执行命令", f"执行命令：{cmd}，错误信息：{stderr[:200]}", "error")
+                                # P0-3: returncode≠0必须如实报❌失败（原逻辑无视返回码永远报成功，AI拿着假成功继续干活导致任务跑偏）
+                                if result.returncode == 0:
+                                    exec_result = f"✅ 命令执行成功:命令:{cmd} 标准输出:{stdout} "
+                                    if stderr.strip():
+                                        exec_result += f"标准错误（returncode=0，程序正常退出但有警告输出）:{stderr}"
+                                        add_operation_log("AI执行命令", f"执行命令:{cmd}，stderr警告:{stderr[:200]}", "warning")
+                                    else:
+                                        add_operation_log("AI执行命令", f"执行命令成功:{cmd}")
                                 else:
-                                    add_operation_log("AI执行命令", f"执行命令成功：{cmd}")
+                                    exec_result = (f"❌ 命令执行失败:命令:{cmd}，返回码:{result.returncode}\n"
+                                                  f"标准输出:{stdout}\n标准错误:{stderr}\n"
+                                                  f"⚠️ 请根据返回码和错误信息分析失败原因、修正命令后重试，不要重复执行完全相同的失败命令")
+                                    add_operation_log("AI执行命令", f"❌ 命令执行失败:{cmd}，返回码:{result.returncode}，错误:{stderr[:200]}", "error")
                             except subprocess.TimeoutExpired:
-                                exec_result = f"❌ 命令执行超时（超过10秒）：{cmd}"
+                                # P0-3: 超时多为输出过大/耗时过长，不是AI指令错误:用⏱️标记（不含❌/⚠️），不进连续错误计数
+                                exec_result = (f"⏱️ 命令执行超时（超过{_exec_timeout}秒）已被系统终止:{cmd}\n"
+                                              f"建议:①缩小输出范围（加过滤条件/head/tail/Select-Object -First等）；"
+                                              f"②改用read_file的start_line/end_line分页读取文件；"
+                                              f"③确属长耗时命令，可在配置tool_output.exec_cmd_timeout调大超时秒数")
+                                add_operation_log("AI执行命令", f"⏱️ 命令执行超时（{_exec_timeout}秒）:{cmd}", "warning")
                             except Exception as e:
-                                exec_result = f"❌ 命令执行失败：{str(e)}向用户说明执行指令后得到结构化信息"
-                                add_operation_log("AI执行命令",f"❌ 命令执行失败：{str(e)}")
-                            all_exec_results.append(exec_result)
+                                exec_result = f"❌ 命令执行失败:{str(e)}向用户说明执行指令后得到结构化信息"
+                                add_operation_log("AI执行命令",f"❌ 命令执行失败:{str(e)}")
+                            # P0-1: 进messages前统一截断+完整结果落盘（超长终端输出的核心兜底）
+                            all_exec_results.append(truncate_tool_output("exec_cmd", len(all_exec_results) + 1, exec_result))
                             continue
 
                         elif func_call.get("name") == "write_file":
@@ -1810,7 +2099,9 @@ async def chat(req: ChatRequest):
                                         "status": "success",
                                         "timestamp": time.time()
                                     })
-                                    all_exec_results.append(f"✅ 插件执行成功:{current_tool_name}\n{exec_result}")
+                                    # P0-1: 插件返回进messages前统一截断+完整结果落盘（插件输出不可控，必须兜底）
+                                    plugin_exec_result = f"✅ 插件执行成功:{current_tool_name}\n{exec_result}"
+                                    all_exec_results.append(truncate_tool_output(current_tool_name, len(all_exec_results) + 1, plugin_exec_result))
                                     continue
                                 except Exception as e:
                                     exec_result = f"❌ 插件执行失败:{str(e)}"
@@ -1847,8 +2138,12 @@ async def chat(req: ChatRequest):
 
             # 所有工具执行完成后，合并结果加入上下文继续推理
             if all_exec_results:
-                # 更新连续错误计数
-                has_error = any("❌" in res or "⚠️" in res for res in all_exec_results)
+                # P1-9.3: 错误计数精细化——仅真正的执行失败（含❌且非参数/路径/格式纠正提示）才计数；
+                # 路径拦截⚠️、参数错误、解析失败等给AI的纠正信号一律不计，避免长任务被连续3次误杀
+                has_error = any(
+                    "❌" in res and not any(marker in res for marker in _NON_FATAL_RESULT_MARKERS)
+                    for res in all_exec_results
+                )
                 if has_error:
                     consecutive_errors += 1
                 else:
@@ -1864,7 +2159,14 @@ async def chat(req: ChatRequest):
                 
                 # 注入回复进度信息，让AI助手感知当前调用次数和剩余次数，自主规划收尾
                 remaining_calls = max_tool_calls - current_calls
-                if remaining_calls <= 3:
+                if remaining_calls == 1:
+                    # 倒数第二次工具结果回灌时注入强制收尾指令（上限10即第9次工具后、上限20即第19次后，自动适配任意max_chat_rounds配置）
+                    progress_info = (
+                        f"\n🛑【系统强制提示】工具调用轮次已经用完，当前第{current_calls}次/当前轮次回复次数上限{max_tool_calls}次，仅剩1次回复机会。"
+                        "下一轮禁止再出现【工具调用开始】等任何工具调用标记，必须立即停止调用工具，"
+                        "直接输出当前任务的阶段性总结:①已完成的内容与执行结果；②未完成的事项明确告知用户，顺延到下一轮任务中执行。"
+                    )
+                elif remaining_calls <= 3:
                     progress_info = f"\n⚠️ 当前轮次回复次数即将用尽，当前第{current_calls}次/当前轮次回复次数上限{max_tool_calls}次（剩余{remaining_calls}次），请优先完成核心任务并准备收尾总结，收尾总结内容中向用户说明任务进度"
                 else:
                     progress_info = f"\n📊 当前进度:第{current_calls}次/当前轮次回复次数上限{max_tool_calls}次（剩余{remaining_calls}次）"
@@ -1874,6 +2176,8 @@ async def chat(req: ChatRequest):
                 structured_content += f"工具执行结果:{final_result}\n"
                 messages.append({"role": "assistant", "content": current_response})
                 messages.append({"role": "user", "content": final_result})
+                # P0-5: 跨轮老化——messages总字符超60000时，把最老的工具结果（保护最近2代）原地替换为一行结论+落盘指针，单轮最多归档3条
+                age_tool_messages(messages, current_round)
                 continue
             # ========== 无工具调用直接停止 ==========
             # 没有任何工具执行结果，说明AI已经返回最终答案，直接停止循环
@@ -1907,12 +2211,15 @@ async def chat(req: ChatRequest):
             print(f"❌ LLM调用异常:{str(llm_e)}")
             traceback.print_exc()
             response = error_msg
-        finally:
-            # 统一推送结束信号
-            push_sse_message(req.session_id, {
-                "type": "done",
-                "timestamp": time.time()
-            })
+            # P0-4: 致命错误必须跳出while，否则下一轮带着异常上下文继续推理，造成任务假死/中途断流
+            break
+
+    # P0-4: done事件从循环内finally移到while外，整轮任务只推送一次
+    # （原位置每轮工具调用都推done，前端误判任务结束提前关闭通道/熄灭能量条，是任务中断的核心原因之一）
+    push_sse_message(req.session_id, {
+        "type": "done",
+        "timestamp": time.time()
+    })
     CHAT_STOP_SIGNALS.discard(req.session_id)
 
     # 4. 自动将所有对话内容写入记忆库，无任何限制
@@ -1970,7 +2277,15 @@ async def chat(req: ChatRequest):
     # 同步更新全局持久化历史，自动按配置轮数轮动
     save_global_history(req.query, final_structured, memory_cache.config["history_context_rounds"])
 
-    # 新增：记录AI回复完成日志
+    # 记忆落盘后推送"整轮真正结束"信号:前端收到memory_saved事件才熄灭能量条
+    # add_memory在全部工具链完成后同步执行，是比ai_output/done更晚的业务终态；
+    # 置于if块外无条件发送（即使本轮无记忆写入），对话确实结束，能量条不会卡死
+    push_sse_message(req.session_id, {
+        "type": "memory_saved",
+        "timestamp": time.time()
+    })
+
+    # 新增:记录AI回复完成日志
     return {"response": response, "recalled_memory_count": len(recall_result["memory_recall"]), "session_id": req.session_id}
 
 @app.get("/api/chat/stream/{session_id}")

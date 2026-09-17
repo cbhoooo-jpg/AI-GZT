@@ -28,5 +28,19 @@
     "plugin_market": {
         "enabled": true,
         "manifest_url": "https://gitee.com/chen-bohan3000/ai-gzt-plugins/raw/main/market_manifest.json"
+    },
+    "tool_output": {
+        "truncate_enabled": true,
+        "head_chars": 24000,
+        "tail_chars": 8000,
+        "trigger_chars": 40000,
+        "save_to_disk": true,
+        "output_dir_name": "tool_outputs",
+        "max_saved_files": 200,
+        "exec_cmd_timeout": 60,
+        "aging_enabled": true,
+        "aging_keep_rounds": 2,
+        "aging_trigger_chars": 60000,
+        "aging_max_per_round": 3
     }
 }

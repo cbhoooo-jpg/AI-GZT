@@ -147,6 +147,10 @@
 
         /* 输入区 */
         .input-area { background: #ffffff; padding: 12px 16px; }
+        /* 连接状态能量条:3px单色蓝细长条，AI执行中流光循环，结束/中断静止变淡，无文字无图标 */
+        .conn-energy-bar { height: 3px; width: 100%; border-radius: 2px; margin: 0 0 8px 0; background: #e9ebf0; opacity: 0.5; overflow: hidden; transition: opacity 0.3s ease; }
+        .conn-energy-bar.active { opacity: 1; background: linear-gradient(90deg, rgba(22,93,255,0.12) 0%, #165DFF 50%, rgba(22,93,255,0.12) 100%); background-size: 200% 100%; animation: energyFlow 1.1s linear infinite; }
+        @keyframes energyFlow { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
         .input-toolbar { display: flex; gap: 6px; margin-bottom: 10px; }
         .input-row { display: flex; gap: 8px; }
         .input-row textarea { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; resize: none; min-height: 45px; outline: none; }
@@ -204,6 +208,8 @@
 
     <!-- 输入区域 -->
     <div class="input-area">
+        <!-- 连接状态能量条:AI执行中蓝色流光，结束/中断静止变淡，无文字无图标 -->
+        <div id="connEnergyBar" class="conn-energy-bar" title="AI连接状态"></div>
         <div class="input-toolbar">
             <button id="screenshotBtn" class="btn primary">截图</button>
             <button id="selectFileBtn" class="btn primary">上传文件</button>
@@ -595,22 +601,111 @@
             // 全局SSE流连接对象
             let sseSource = null;
 
-            // 对齐chat_ui流式输出逻辑：存储当前正在流式输出的消息对象
+            // ===== 连接状态能量条 + 断线自愈（2026-09-15，对齐chat_ui）=====
+            const connEnergyBar = document.getElementById('connEnergyBar');
+            let taskActive = false;          // AI任务执行中标志:发送置true，memory_saved/error置false（对齐chat_ui）
+            let currentTaskId = null;        // 当前任务ID，重连后查询终态兜底
+            let reconnectCount = 0;          // 连续重连计数
+            const MAX_RECONNECT = 5;         // 最多重连5次（1/2/3/4/5秒指数退避）
+            let lastEventAt = Date.now();    // 最后收到任意SSE消息时间（含30秒心跳）
+            let reconnectTimer = null;       // 重连退避定时器
+            let watchdogTimer = null;        // 心跳看门狗巡检定时器
+            const WATCHDOG_TIMEOUT = 45000;  // 45秒无任何消息判僵死（1.5个30秒心跳周期）
+            const WATCHDOG_CHECK = 10000;    // 看门狗每10秒巡检一次
+            // 能量条开关:true蓝色流光（执行中/重连中），false静止变淡（结束/连续5次失败）
+            function setEnergyBar(active) {
+                if (connEnergyBar) connEnergyBar.classList.toggle('active', !!active);
+            }
+            function markTaskActive() { taskActive = true; setEnergyBar(true); }
+            function markTaskIdle() { taskActive = false; currentTaskId = null; setEnergyBar(false); }
+            // 心跳看门狗:专治TCP半开/后端假死（浏览器不触发onerror），超时主动关闭并重连
+            function startWatchdog() {
+                stopWatchdog();
+                watchdogTimer = setInterval(() => {
+                    if (sseSource && sseSource.readyState === EventSource.OPEN && Date.now() - lastEventAt > WATCHDOG_TIMEOUT) {
+                        console.warn('悬浮窗SSE心跳看门狗:45秒无任何消息，判定连接僵死，主动重连');
+                        lastEventAt = Date.now(); // 重置时间，避免close到重连期间重复触发
+                        reconnectSSE();
+                    }
+                }, WATCHDOG_CHECK);
+            }
+            function stopWatchdog() { if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; } }
+            // 统一重连:指数退避1/2/3/4/5秒，重连期间保持蓝色流动，连续5次失败静止（不刷新页面、不丢对话记录）
+            function reconnectSSE() {
+                try { if (sseSource) sseSource.close(); } catch (e) {}
+                if (reconnectCount >= MAX_RECONNECT) {
+                    setEnergyBar(false);
+                    console.error('悬浮窗SSE连续5次重连失败，能量条静止；网络恢复后将自动重试');
+                    return;
+                }
+                reconnectCount++;
+                setEnergyBar(true); // 重连期间保持蓝色流动
+                if (reconnectTimer) clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(initSSE, 1000 * reconnectCount);
+            }
+            // 重连成功后兜底:任务若在断线期间已结束（SSE历史不补发），查一次状态让能量条静止
+            async function checkTaskAfterReconnect() {
+                if (!currentTaskId) return;
+                try {
+                    const r = await fetch(`/api/task/status?task_id=${currentTaskId}`);
+                    const d = await r.json();
+                    if (d.code === 200 && d.data && (d.data.status === 'success' || d.data.status === 'failed')) {
+                        markTaskIdle();
+                    }
+                } catch (e) {}
+            }
+
+            // 对齐chat_ui流式输出逻辑:存储当前正在流式输出的消息对象
             let currentStreamMsg = null;
-            // 初始化SSE流式消息监听，接收后端AI回复
+            // 初始化SSE流式消息监听，接收后端AI回复（页面加载即建立长连接，不再等发送时才连接）
             function initSSE() {
                 if (sseSource) sseSource.close();
                 sseSource = new EventSource(`/api/chat/stream/${SESSION_ID}`);
+                // 连接建立（含重连成功）:重置退避计数，按任务状态恢复能量条，并兜底查询断线期间任务是否已结束
+                sseSource.onopen = () => {
+                    reconnectCount = 0;
+                    lastEventAt = Date.now();
+                    startWatchdog();
+                    setEnergyBar(taskActive);
+                    checkTaskAfterReconnect();
+                };
                 sseSource.onmessage = (event) => {
                     try {
                         let rawData = event.data.trim();
                         // 去掉后端返回的多余data:前缀
                         rawData = rawData.replace(/^data:\s*/g, '').trim();
-                        // 过滤空内容/心跳包
-                        if (!rawData || rawData === 'heartbeat' || rawData === ':') return;
+                        // 过滤空内容
+                        if (!rawData || rawData === ':') return;
                         // 解析JSON，完全对齐chat_ui事件处理逻辑
                         const data = JSON.parse(rawData);
+                        lastEventAt = Date.now(); // 收到任意消息都刷新看门狗时间戳（心跳/业务事件）
                         const content = data.content || data.text || data.answer || '';
+                        // 心跳包:仅刷新连接状态，不渲染
+                        if (data.type === 'heartbeat' || rawData === 'heartbeat') {
+                            reconnectCount = 0;
+                            return;
+                        }
+                        // 后端错误事件:把"正在思考中..."气泡替换为红色错误提示，能量条静止
+                        if (data.type === 'error') {
+                            const errText = content || '任务执行失败';
+                            if (currentStreamMsg && currentStreamMsg.el) {
+                                currentStreamMsg.el.innerHTML = `<span style="color:#F53F3F">❌ ${errText}</span>`;
+                                currentStreamMsg = null;
+                            } else {
+                                const lastAi = document.querySelector('.msg.ai:last-child .content-inner');
+                                if (lastAi) lastAi.innerHTML = `<span style="color:#F53F3F">❌ ${errText}</span>`;
+                            }
+                            markTaskIdle();
+                            updateMessageFoldStates();
+                            scrollToBottom();
+                            return;
+                        }
+                        // 记忆落盘事件:整轮对话(含全部工具链)真正结束的终态信号，此时才熄灭能量条（对齐chat_ui）
+                        // 必须放在"if (!content) return"之前:后端memory_saved载荷只有type+timestamp，无content
+                        if (data.type === 'memory_saved') {
+                            markTaskIdle();
+                            return;
+                        }
                         if (!content) return;
 
                         // 处理记忆召回标记，对齐主界面显示逻辑（不修改UI样式）
@@ -657,6 +752,7 @@
                             } else {
                                 addMessage('ai', content);
                             }
+                            // 注意:ai_output不熄灭能量条，等后端memory_saved（记忆落盘=工具链全部完成）再熄灭，对齐chat_ui
                             scrollToBottom();
                         }
                     } catch (e) {
@@ -664,7 +760,22 @@
                         console.debug('SSE解析跳过:', event.data);
                     }
                 };
-                sseSource.onerror = () => sseSource.close();
+                // 网络断开/连接失败:走统一重连（指数退避，重连中保持蓝色流动，5次失败静止，不刷新页面不丢对话）
+                sseSource.onerror = () => reconnectSSE();
+            }
+            // 提交前确保SSE通道已连通:正常时复用页面加载建立的常驻连接（OPEN），零重建零握手；
+            // 仅在连接不存在/已关闭/中断时才重建并等待onopen，消除"任务先跑、通道后建"真空期内
+            // 早期rag_recall/tool_call/ai_output_stream事件被后端单队列覆盖丢弃导致的回复延迟
+            async function ensureSSEConnected() {
+                if (sseSource && sseSource.readyState === EventSource.OPEN) return;
+                if (sseSource) { try { sseSource.close(); } catch (e) {} }
+                await new Promise((resolve) => {
+                    initSSE();
+                    let settled = false;
+                    const finish = () => { if (!settled) { settled = true; resolve(); } };
+                    sseSource.addEventListener('open', finish, { once: true });
+                    setTimeout(finish, 3000); // 兜底:最多等3秒，后端不可用时不阻塞发送
+                });
             }
             // 发送消息
             async function sendMessage() {
@@ -679,8 +790,10 @@
                 addMessage('ai', '正在思考中...');
                 scrollToBottom();
                 try {
+                    // 提交前确保SSE通道已连通（复用常驻连接，未连通才重建并等待onopen），避免早期流式事件丢失
+                    await ensureSSEConnected();
                     // 真实调用后端对话接口，传入自定义SESSION_ID和主界面完全隔离
-                    await fetch(`/api/task/submit?session_id=${SESSION_ID}`, {
+                    const subRes = await fetch(`/api/task/submit?session_id=${SESSION_ID}`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
@@ -698,11 +811,16 @@
                     // 清空已上传的附件缓存
                     chatAttachments = [];
                     renderAttachments();
-                    // 启动SSE监听接收AI回复
-                    initSSE();
+                    // 解析任务提交响应，记录任务ID供重连后查询终态
+                    try {
+                        const subData = await subRes.json();
+                        if (subData && subData.task_id) currentTaskId = subData.task_id;
+                    } catch (e2) {}
+                    markTaskActive(); // 任务开始:能量条蓝色流光（SSE为页面加载时建立的常驻连接，此处不再每轮重建）
                 } catch (e) {
                     const lastAiMsg = document.querySelector('.msg.ai:last-child .content');
-                    lastAiMsg.textContent = '请求失败，请稍后重试：' + e.message;
+                    lastAiMsg.textContent = '请求失败，请稍后重试:' + e.message;
+                    markTaskIdle(); // 请求失败:能量条静止变淡
                 }
             }
 
@@ -833,6 +951,22 @@
             }
             // 加载Prompt模板
             await loadPromptTemplates();
+
+            // 页面加载即建立SSE长连接（onopen中自动启动心跳看门狗），不再等首次发送才连接
+            initSSE();
+            // 监听页面唤醒/网络恢复事件，重置退避计数后立即重建连接
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    console.log('悬浮窗从休眠唤醒，重建SSE连接');
+                    reconnectCount = 0;
+                    reconnectSSE();
+                }
+            });
+            window.addEventListener('online', () => {
+                console.log('悬浮窗网络恢复，重建SSE连接');
+                reconnectCount = 0;
+                reconnectSSE();
+            });
         });
     </script>
 </body>
