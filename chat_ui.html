@@ -236,8 +236,9 @@
     margin: 12px 0;
 }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <!-- markdown解析库与截图库本地化:打包离线环境可用，避免CDN不可达时脚本阻塞/初始化中断 -->
+    <script src="/static/marked.min.js"></script>
+    <script src="/static/html2canvas.min.js"></script>
 </head>
 <body>
     <div class="header">
@@ -1006,12 +1007,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 // 全局配置marked，移除已废弃的sanitize参数
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-  mangle: false,
-  headerIds: false
-});
+// B方案容错:marked加载失败时不得中断后续脚本（事件绑定/初始化），Markdown降级为纯文本展示
+window.__markedAvailable = false;
+try {
+    if (typeof marked !== 'undefined' && marked && typeof marked.setOptions === 'function') {
+        marked.setOptions({
+          breaks: true,
+          gfm: true,
+          mangle: false,
+          headerIds: false
+        });
+        window.__markedAvailable = (typeof marked.parse === 'function');
+    }
+} catch (e) {
+    console.warn('marked初始化失败，Markdown降级为纯文本展示:', e);
+}
 
 // HTML特殊字符转义函数，彻底避免代码块内HTML被渲染为DOM
 function escapeHtml(str) {
@@ -1043,7 +1053,15 @@ function renderMarkdown(txt) {
     const decodedTxt = decodeEscapeChars(txt);
     const closedTxt = autoCloseToolBlocks(decodedTxt);
     // 移除所有指令块的特殊样式包裹，完全以普通markdown代码文本展示
-    return marked.parse(closedTxt);
+    // B方案兜底:marked不可用时降级为转义纯文本（保留换行），不抛错、不中断渲染
+    if (window.__markedAvailable) {
+        try {
+            return marked.parse(closedTxt);
+        } catch (e) {
+            console.warn('marked解析异常，降级纯文本:', e);
+        }
+    }
+    return escapeHtml(closedTxt).replace(/\n/g, '<br>');
 }
 
     // 全局模板变量

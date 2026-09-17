@@ -29,8 +29,13 @@ import platform
 from pypinyin import pinyin, Style
 # 文件扫描噪音过滤统一配置（虚拟环境/打包产物/.git/缓存目录等），所有扫盘链路复用同一黑名单
 import file_filter_config
+# 长命令后台任务机制 P0:进程树命令执行器（根治Windows下subprocess.run超时只杀cmd.exe、
+# 孙进程持管道导致communicate永久阻塞，以及pause/set /p无控制台输入挂死）
+import command_runner
 
 # 全局配置，基于当前脚本路径生成绝对路径，避免工作目录错误导致找不到资源
+# 长命令后台任务机制 P1:后台任务管理器（超时不杀转后台、完成跨轮回灌、query/cancel）
+import background_task_manager
 # 兼容PyInstaller打包环境:打包后静态资源从_internal读取，用户配置统一存在exe同级目录（升级不丢失、多模块读写一致）
 import sys as _sys
 if getattr(_sys, 'frozen', False):
@@ -544,6 +549,9 @@ def push_sse_message(session_id: str, data: dict):
         except Exception:
             pass
 
+# P1:把线程安全的SSE推送函数注入后台任务管理器（监控线程在提升/完成/取消/超时时推送事件，P2卡片消费）
+background_task_manager.background_task_manager.set_sse_pusher(push_sse_message)
+
 # 全局文件变动SSE连接存储
 FILE_CHANGE_CONNECTIONS = set()
 # 全局对话停止信号存储:存储需要强制终止的会话ID
@@ -1014,6 +1022,12 @@ async def chat(req: ChatRequest):
             current_session.append({"role": "user", "content": user_content})
             current_session.append({"role": "assistant", "content": ai_content})
     
+    # P1:跨轮"完成回灌"——取出本会话所有已结束后台任务的真实结果，成对注入历史之后、当前提问之前；
+    # 只进本轮上下文、不写向量记忆库，drain一次性清空，AI下一轮即可看到真实退出码/耗时/日志尾部
+    for _done_task in background_task_manager.background_task_manager.drain_pending(req.session_id):
+        _done_notice = background_task_manager.background_task_manager.build_pending_notice(_done_task)
+        current_session.append({"role": "user", "content": _done_notice})
+        current_session.append({"role": "assistant", "content": "已收到该后台任务的真实结果，我将结合退出码与日志向用户汇报或继续后续步骤。"})
     # 新增：记录AI接收用户提问日志
     # 2. 召回记忆:历史会话不足触发轮数时不做向量召回，触发轮数页面可改
     current_project_name = CURRENT_PROJECT.get("project_name", "default") if CURRENT_PROJECT else "default"
@@ -1773,42 +1787,81 @@ async def chat(req: ChatRequest):
                             except Exception:
                                 _exec_timeout = 60
                             try:
-                                import subprocess
-                                # 执行命令，超时时间读配置，避免长查询类命令被10秒误杀
-                                result = subprocess.run(cmd, shell=True, capture_output=True, timeout=_exec_timeout)
-                                # 自动兼容多编码，解决Windows CMD中文乱码问题
-                                def decode_content(content: bytes) -> str:
-                                    try:
-                                        return content.decode('utf-8')
-                                    except:
-                                        return content.decode('gbk', errors='ignore')
-                                stdout = decode_content(result.stdout)
-                                stderr = decode_content(result.stderr)
-                                # P0-3: returncode≠0必须如实报❌失败（原逻辑无视返回码永远报成功，AI拿着假成功继续干活导致任务跑偏）
-                                if result.returncode == 0:
-                                    exec_result = f"✅ 命令执行成功:命令:{cmd} 标准输出:{stdout} "
-                                    if stderr.strip():
-                                        exec_result += f"标准错误（returncode=0，程序正常退出但有警告输出）:{stderr}"
-                                        add_operation_log("AI执行命令", f"执行命令:{cmd}，stderr警告:{stderr[:200]}", "warning")
-                                    else:
+                                # P0阶段:改用进程树执行器（Popen独立进程组+stdin=DEVNULL+stdout/stderr合并落盘），
+                                # 超时后taskkill /F /T递归终止整棵进程树，杜绝孙进程持管道导致的永久阻塞
+                                _tmp_task_id = "tmp_%s_%06d" % (time.strftime("%Y%m%d%H%M%S"),
+                                                                 int.from_bytes(os.urandom(3), "big") % 1000000)
+                                _handle = command_runner.start_command(cmd, cwd=None, task_id=_tmp_task_id)
+                                _wait_r = command_runner.wait_or_promote(_handle, _exec_timeout)
+                                if _wait_r.get("finished"):
+                                    # 窗口内结束:读完整日志（runner内部双解码），继续走下方truncate_tool_output统一截断+完整落盘
+                                    _output = command_runner.read_tail(_handle, lines=100000)
+                                    _rc = _wait_r.get("returncode")
+                                    # P0-3: returncode≠0必须如实报❌失败（原逻辑无视返回码永远报成功，AI拿着假成功继续干活导致任务跑偏）
+                                    if _rc == 0:
+                                        exec_result = f"✅ 命令执行成功:命令:{cmd} 标准输出:{_output} "
                                         add_operation_log("AI执行命令", f"执行命令成功:{cmd}")
+                                    else:
+                                        exec_result = (f"❌ 命令执行失败:命令:{cmd}，返回码:{_rc}\n"
+                                                      f"输出（标准输出与标准错误按控制台顺序合并）:{_output}\n"
+                                                      f"⚠️ 请根据返回码和错误信息分析失败原因、修正命令后重试，不要重复执行完全相同的失败命令")
+                                        add_operation_log("AI执行命令", f"❌ 命令执行失败:{cmd}，返回码:{_rc}，错误:{_output[:200]}", "error")
                                 else:
-                                    exec_result = (f"❌ 命令执行失败:命令:{cmd}，返回码:{result.returncode}\n"
-                                                  f"标准输出:{stdout}\n标准错误:{stderr}\n"
-                                                  f"⚠️ 请根据返回码和错误信息分析失败原因、修正命令后重试，不要重复执行完全相同的失败命令")
-                                    add_operation_log("AI执行命令", f"❌ 命令执行失败:{cmd}，返回码:{result.returncode}，错误:{stderr[:200]}", "error")
-                            except subprocess.TimeoutExpired:
-                                # P0-3: 超时多为输出过大/耗时过长，不是AI指令错误:用⏱️标记（不含❌/⚠️），不进连续错误计数
-                                exec_result = (f"⏱️ 命令执行超时（超过{_exec_timeout}秒）已被系统终止:{cmd}\n"
-                                              f"建议:①缩小输出范围（加过滤条件/head/tail/Select-Object -First等）；"
-                                              f"②改用read_file的start_line/end_line分页读取文件；"
-                                              f"③确属长耗时命令，可在配置tool_output.exec_cmd_timeout调大超时秒数")
-                                add_operation_log("AI执行命令", f"⏱️ 命令执行超时（{_exec_timeout}秒）:{cmd}", "warning")
+                                    # P1:等待窗口内未结束——自动提升为后台任务（不杀进程），对话当轮立即释放、任务继续跑完
+                                    # 开关默认开；P2再下沉config.json的bg_task节点+设置页，此处读取失败一律按"开启"处理
+                                    _bg_enabled = True
+                                    try:
+                                        _bg_enabled = bool(load_config().get("bg_task", {}).get("enabled", True))
+                                    except Exception:
+                                        _bg_enabled = True
+                                    _bg_tid = None
+                                    if _bg_enabled:
+                                        _bg_tid = background_task_manager.background_task_manager.register_and_promote(
+                                            _handle, cmd, req.session_id)
+                                    if _bg_tid:
+                                        # 提升成功:进程存活，返回§6.5结构化文案（含任务ID与两个工具用法、行为约束①-⑤）
+                                        exec_result = background_task_manager.background_task_manager.build_promote_text(
+                                            _bg_tid, cmd, _exec_timeout)
+                                        add_operation_log("AI执行命令", f"🟢 命令已提升后台运行[{_bg_tid}]:{cmd}", "warning")
+                                    else:
+                                        # 开关关闭或同会话并发超限:回退P0行为，递归杀树并如实告知
+                                        command_runner.terminate_tree(_handle)
+                                        exec_result = (f"⏱️ 命令执行超时（超过{_exec_timeout}秒未结束），系统已递归终止整棵进程树（taskkill /F /T，cmd及其子进程、孙进程一并结束）:{cmd}\n"
+                                                      f"终止前输出（最后200行）:{_wait_r.get('tail', '')}\n"
+                                                      f"建议:①缩小输出范围（加过滤条件/head/tail/Select-Object -First等）；"
+                                                      f"②改用read_file的start_line/end_line分页读取文件；"
+                                                      f"③确属长耗时命令，可在配置tool_output.exec_cmd_timeout调大超时秒数")
+                                        add_operation_log("AI执行命令", f"⏱️ 命令执行超时（{_exec_timeout}秒）已递归终止进程树:{cmd}", "warning")
                             except Exception as e:
                                 exec_result = f"❌ 命令执行失败:{str(e)}向用户说明执行指令后得到结构化信息"
                                 add_operation_log("AI执行命令",f"❌ 命令执行失败:{str(e)}")
                             # P0-1: 进messages前统一截断+完整结果落盘（超长终端输出的核心兜底）
                             all_exec_results.append(truncate_tool_output("exec_cmd", len(all_exec_results) + 1, exec_result))
+                            continue
+
+                        elif func_call.get("name") == "query_background_task":
+                            # P1:查询后台任务状态/真实退出码/日志尾部（会话隔离，只能查本会话任务）
+                            _bg_tid = (func_call["parameters"].get("task_id") or "").strip()
+                            _snap = background_task_manager.background_task_manager.query(_bg_tid, req.session_id)
+                            if not _snap:
+                                exec_result = f"❌ 未找到属于当前会话的后台任务:{_bg_tid}（请核对任务ID，或该任务已过保留期被清理）"
+                            else:
+                                _tail = background_task_manager.background_task_manager.read_logs(_bg_tid, req.session_id, 200)
+                                exec_result = background_task_manager.background_task_manager.build_query_text(_snap, _tail)
+                            all_exec_results.append(exec_result)
+                            continue
+
+                        elif func_call.get("name") == "cancel_background_task":
+                            # P1:用户手动终止——递归结束整棵进程树，文案明确"用户手动终止"
+                            _bg_tid = (func_call["parameters"].get("task_id") or "").strip()
+                            _snap = background_task_manager.background_task_manager.cancel(_bg_tid, req.session_id)
+                            if not _snap:
+                                exec_result = f"❌ 未找到属于当前会话的后台任务:{_bg_tid}，无法取消（请核对任务ID）"
+                            else:
+                                _tail = background_task_manager.background_task_manager.read_logs(_bg_tid, req.session_id, 200)
+                                exec_result = background_task_manager.background_task_manager.build_cancel_text(_snap, _tail)
+                                add_operation_log("AI执行命令", f"🛑 用户手动终止后台任务[{_bg_tid}]")
+                            all_exec_results.append(exec_result)
                             continue
 
                         elif func_call.get("name") == "write_file":
@@ -2722,18 +2775,26 @@ async def submit_task(req: TaskSubmitRequest, session_id: str = "default"):
                     TASK_STORAGE[task_id]["progress"] = "❌ 参数错误：缺少command参数"              
                     return
                 try:
-                    result = subprocess.run(command, shell=True, capture_output=True, text=True, encoding="utf-8", timeout=timeout)
-                    output = result.stdout + result.stderr
-                    TASK_STORAGE[task_id]["result"] = {"command": command, "output": output, "returncode": result.returncode}
-                    if result.returncode == 0:
-                        TASK_STORAGE[task_id]["status"] = TASK_STATUS_SUCCESS
-                        TASK_STORAGE[task_id]["progress"] = f"✅ 命令执行成功，返回{len(output)}字符输出"
-                    else:
+                    # P0阶段:网页异步任务同款缺陷一并修复，改走进程树执行器，超时递归终止整树
+                    _web_task_id = "webtask_%s_%06d" % (time.strftime("%Y%m%d%H%M%S"),
+                                                        int.from_bytes(os.urandom(3), "big") % 1000000)
+                    _handle = command_runner.start_command(command, cwd=None, task_id=_web_task_id)
+                    _wait_r = command_runner.wait_or_promote(_handle, timeout)
+                    if not _wait_r.get("finished"):
+                        command_runner.terminate_tree(_handle)
                         TASK_STORAGE[task_id]["status"] = TASK_STATUS_FAILED
-                        TASK_STORAGE[task_id]["progress"] = f"❌ 命令执行失败，返回码：{result.returncode}，错误信息：{output[:200]}"
-                except subprocess.TimeoutExpired:
-                    TASK_STORAGE[task_id]["status"] = TASK_STATUS_FAILED
-                    TASK_STORAGE[task_id]["progress"] = f"❌ 命令执行超时，超过{timeout}秒"
+                        TASK_STORAGE[task_id]["progress"] = f"❌ 命令执行超时（超过{timeout}秒），系统已递归终止整棵进程树"
+                        TASK_STORAGE[task_id]["result"] = {"command": command, "output": _wait_r.get("tail", ""), "returncode": None}
+                    else:
+                        output = command_runner.read_tail(_handle, lines=100000)
+                        rc = _wait_r.get("returncode")
+                        TASK_STORAGE[task_id]["result"] = {"command": command, "output": output, "returncode": rc}
+                        if rc == 0:
+                            TASK_STORAGE[task_id]["status"] = TASK_STATUS_SUCCESS
+                            TASK_STORAGE[task_id]["progress"] = f"✅ 命令执行成功，返回{len(output)}字符输出"
+                        else:
+                            TASK_STORAGE[task_id]["status"] = TASK_STATUS_FAILED
+                            TASK_STORAGE[task_id]["progress"] = f"❌ 命令执行失败，返回码:{rc}，错误信息:{output[:200]}"
                 except Exception as e:
                     TASK_STORAGE[task_id]["status"] = TASK_STATUS_FAILED
                     TASK_STORAGE[task_id]["progress"] = f"❌ 命令执行失败：{str(e)}"
@@ -2754,6 +2815,39 @@ async def get_task_status(task_id: str):
     if task_id not in TASK_STORAGE:
         raise HTTPException(status_code=404, detail="任务不存在")
     return {"code": 200, "data": TASK_STORAGE[task_id]}
+# ==================== P1 后台任务 HTTP 接口（供 P2 任务卡片/前端查询，核心对话链路不依赖）====================
+
+@app.get("/api/bg_task/list")
+async def bg_task_list(session_id: str = "default"):
+    """列出指定会话的全部后台任务（不含进程句柄），按开始时间升序"""
+    items = background_task_manager.background_task_manager.list_session(session_id)
+    return {"code": 200, "data": items}
+
+
+@app.post("/api/bg_task/cancel")
+async def bg_task_cancel(req: Request):
+    """手动取消后台任务（递归终止整棵进程树）；body: {session_id, task_id}"""
+    data = await req.json()
+    session_id = (data.get("session_id") or "default").strip() or "default"
+    task_id = (data.get("task_id") or "").strip()
+    if not task_id:
+        raise HTTPException(status_code=400, detail="缺少 task_id")
+    snap = background_task_manager.background_task_manager.cancel(task_id, session_id)
+    if not snap:
+        raise HTTPException(status_code=404, detail="未找到属于当前会话的后台任务")
+    add_operation_log("AI执行命令", f"🛑 用户手动终止后台任务[{task_id}]")
+    return {"code": 200, "data": snap, "msg": "任务已递归终止"}
+
+
+@app.get("/api/bg_task/logs")
+async def bg_task_logs(task_id: str, session_id: str = "default", lines: int = 200):
+    """读取后台任务日志尾部（会话隔离，只能读本会话任务）"""
+    tail = background_task_manager.background_task_manager.read_logs(task_id, session_id, lines)
+    if tail is None:
+        raise HTTPException(status_code=404, detail="未找到属于当前会话的后台任务")
+    return {"code": 200, "data": {"task_id": task_id, "tail": tail}}
+
+
 @app.get("/train", include_in_schema=False)
 async def get_train_page():
     return FileResponse(os.path.join(BASE_DIR, "train.html"))
