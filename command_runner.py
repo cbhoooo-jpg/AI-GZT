@@ -35,7 +35,14 @@ from typing import Optional
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 # 任务日志根目录（复用项目现有 tool_outputs 目录约定）
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tool_outputs", "bg_tasks")
+# 路径策略与 api_server.py 完全一致:
+#   打包(frozen)环境 → exe 同级目录/tool_outputs/bg_tasks（用户数据不进 _internal，卸载升级不丢失）
+#   源码开发环境     → 脚本所在目录/tool_outputs/bg_tasks
+if getattr(sys, "frozen", False):
+    _LOG_BASE = os.path.dirname(sys.executable)
+else:
+    _LOG_BASE = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(_LOG_BASE, "tool_outputs", "bg_tasks")
 
 # 默认单任务日志上限（2MB），收尾时超限只保留尾部，防止安装日志撑爆磁盘
 DEFAULT_LOG_MAX_BYTES = 2 * 1024 * 1024
