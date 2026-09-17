@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI悬浮助手</title>
-    <!-- 引入markdown解析库，不影响任何样式 -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- 引入markdown解析库（本地化，打包离线环境可用，不影响任何样式） -->
+    <script src="/static/marked.min.js"></script>
     <style>   
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
         body { background: #ffffff; height: 100vh; display: flex; flex-direction: column; }
@@ -225,7 +225,7 @@
     </div>
     <!-- 全局提示 -->
     <div class="copy-toast" id="copyToast"></div>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/static/marked.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             let chatAttachments = [];
@@ -395,12 +395,21 @@
             }
 
             // 全局配置marked，移除已废弃的sanitize参数
-            marked.setOptions({
-              breaks: true,
-              gfm: true,
-              mangle: false,
-              headerIds: false
-            });
+            // B方案容错:marked加载失败时不得中断DOMContentLoaded回调，否则后续按钮绑定全部失效
+            window.__markedAvailable = false;
+            try {
+                if (typeof marked !== 'undefined' && marked && typeof marked.setOptions === 'function') {
+                    marked.setOptions({
+                      breaks: true,
+                      gfm: true,
+                      mangle: false,
+                      headerIds: false
+                    });
+                    window.__markedAvailable = (typeof marked.parse === 'function');
+                }
+            } catch (e) {
+                console.warn('marked初始化失败，Markdown降级为纯文本展示:', e);
+            }
 
             // HTML特殊字符转义函数，彻底避免代码块内HTML被渲染为DOM
             function escapeHtml(str) {
@@ -454,7 +463,15 @@
                 const decodedTxt = decodeEscapeChars(txt);
                 const closedTxt = autoCloseToolBlocks(decodedTxt);
                 // 移除所有指令块的特殊样式包裹，完全以普通markdown代码文本展示
-                return marked.parse(closedTxt);
+                // B方案兜底:marked不可用时降级为转义纯文本（保留换行），不抛错、不中断渲染
+                if (window.__markedAvailable) {
+                    try {
+                        return marked.parse(closedTxt);
+                    } catch (e) {
+                        console.warn('marked解析异常，降级纯文本:', e);
+                    }
+                }
+                return escapeHtml(closedTxt).replace(/\n/g, '<br>');
             }
 
             // 滚动到底部
