@@ -1415,7 +1415,9 @@ async def chat(req: ChatRequest):
                         "rename_file": ["old_path", "new_name"],
                         "exec_cmd": ["cmd"],
                         "rag_search": ["query"],
-                        "get_project_tree": []
+                        "get_project_tree": [],
+                        "query_background_task": ["task_id"],
+                        "cancel_background_task": ["task_id"]
                     }
                     current_required_params = builtin_required.get(tool_name, [])
                 # 校验必填参数
@@ -1653,14 +1655,23 @@ async def chat(req: ChatRequest):
                             page_start, page_end = None, None
                             if raw_start_line is not None or raw_end_line is not None:
                                 try:
-                                    if raw_start_line is None or raw_end_line is None:
-                                        raise ValueError("必须同时提供start_line和end_line")
-                                    page_start = int(raw_start_line)
-                                    page_end = int(raw_end_line)
-                                    if page_start < 1 or page_end < page_start:
-                                        raise ValueError("行号范围非法")
+                                    # 通配符*支持:双*=强制完整读取（显式传值可对抗宿主层对缺省参数自动注入历史行号）；
+                                    # start数字+end*=从指定行读到文件末尾（由后续min(page_end,total_lines)钳制）；start*+end数字=1到N
+                                    is_start_wild = isinstance(raw_start_line, str) and raw_start_line.strip() == "*"
+                                    is_end_wild = isinstance(raw_end_line, str) and raw_end_line.strip() == "*"
+                                    if is_start_wild and is_end_wild:
+                                        # 双通配:保持None，走无分页完整读取分支
+                                        page_start, page_end = None, None
+                                    else:
+                                        if raw_start_line is None or raw_end_line is None:
+                                            raise ValueError("必须同时提供start_line和end_line")
+                                        page_start = 1 if is_start_wild else int(raw_start_line)
+                                        # 末尾通配给足够大的行号，由min(page_end, total_lines)钳制到真实末尾，翻页提示天然正常
+                                        page_end = 10 ** 12 if is_end_wild else int(raw_end_line)
+                                        if page_start < 1 or page_end < page_start:
+                                            raise ValueError("行号范围非法")
                                 except (TypeError, ValueError):
-                                    all_exec_results.append("❌ 参数错误:read_file翻页参数非法，start_line/end_line必须同时为正整数且end_line≥start_line（行号从1开始），请修正参数后重试")
+                                    all_exec_results.append("❌ 参数错误:read_file翻页参数非法，start_line/end_line必须同时为正整数且end_line≥start_line（行号从1开始）；需要完整读取文件时显式传start_line=*和end_line=*（可规避翻页参数被自动补全导致的超界错误），请修正参数后重试")
                                     continue
                             # 新增:记录AI读取文件日志
                             # 安全读取文件（优先读取当前选中项目下的文件，符合项目隔离要求）
@@ -2770,10 +2781,27 @@ async def submit_task(req: TaskSubmitRequest, session_id: str = "default"):
                 TASK_STORAGE[task_id]["progress"] = "🔄 正在执行终端命令..."
                 command = req.params.get("command", "")
                 timeout = req.params.get("timeout", 30)
-                if not command:
+                # 安全审核修复:command必须是非空字符串，杜绝数组/对象等异常类型透传
+                if not command or not isinstance(command, str) or not command.strip():
                     TASK_STORAGE[task_id]["status"] = TASK_STATUS_FAILED
-                    TASK_STORAGE[task_id]["progress"] = "❌ 参数错误：缺少command参数"              
+                    TASK_STORAGE[task_id]["progress"] = "❌ 参数错误:缺少command参数或参数类型非法"
                     return
+                command = command.strip()
+                # 安全审核修复:与对话链路exec_cmd同一防护标准——段首危险程序名匹配+非curl/wget禁止&拼接
+                _lower_cmd = command.lower()
+                if _contains_dangerous_command(command) or (
+                        not (_lower_cmd.startswith("curl") or _lower_cmd.startswith("wget"))
+                        and "&" in command):
+                    TASK_STORAGE[task_id]["status"] = TASK_STATUS_FAILED
+                    TASK_STORAGE[task_id]["progress"] = "❌ 禁止执行危险命令/命令拼接，仅允许执行单条查询类命令"
+                    add_operation_log("AI执行命令", f"网页异步任务拦截危险命令:{command}", "error")
+                    return
+                # 安全审核修复:timeout整数归一+钳制到1~1800秒（上限与后台任务硬超时一致），非法值回退30秒
+                try:
+                    timeout = int(timeout)
+                except (TypeError, ValueError):
+                    timeout = 30
+                timeout = max(1, min(timeout, 1800))
                 try:
                     # P0阶段:网页异步任务同款缺陷一并修复，改走进程树执行器，超时递归终止整树
                     _web_task_id = "webtask_%s_%06d" % (time.strftime("%Y%m%d%H%M%S"),

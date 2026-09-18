@@ -220,9 +220,19 @@ class BackgroundTaskManager:
                         to_finish.append(t)
                 elif st in ("success", "failed", "cancelled", "timeout_killed"):
                     if t["end_time"] and now - t["end_time"] >= DEFAULT_TTL_SECONDS:
-                        to_clean.append(tid)
-            for tid in to_clean:
+                        # 安全审核修复:TTL清理时同步收集任务专属日志路径，锁内弹出、锁外删文件，防止bg_*.log无限累积
+                        _h = t.get("handle")
+                        to_clean.append((tid, _h.log_path if _h else None))
+            for tid, _ in to_clean:
                 self._tasks.pop(tid, None)
+
+        # 锁外删除过期任务日志（IO操作不持锁；句柄未释放等异常兜底吞掉，绝不影响监控线程）
+        for _, _log_path in to_clean:
+            if _log_path:
+                try:
+                    os.remove(_log_path)
+                except OSError:
+                    pass
 
         for t in to_finish:
             rc = t["handle"].proc.poll()

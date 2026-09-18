@@ -46,6 +46,16 @@ class ToolTemplateManager:
         "write_file": {
             "required_params": ["file_name", "content"],
             "structure": {"__template_version": TEMPLATE_VERSION, "name": "write_file", "parameters": {"file_name": "", "content": "", "append": False}}
+        },
+        # 安全审核修复:长命令后台任务机制的两个工具补标准注册（P1遗漏），
+        # 与api_server.py工具分支、memory_config提示词白名单三处对齐
+        "query_background_task": {
+            "required_params": ["task_id"],
+            "structure": {"__template_version": TEMPLATE_VERSION, "name": "query_background_task", "parameters": {"task_id": ""}}
+        },
+        "cancel_background_task": {
+            "required_params": ["task_id"],
+            "structure": {"__template_version": TEMPLATE_VERSION, "name": "cancel_background_task", "parameters": {"task_id": ""}}
         }
     }
     # 插件配置
