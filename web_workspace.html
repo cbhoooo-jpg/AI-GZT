@@ -6,10 +6,12 @@
     <title>AI工作台</title>
     <link rel="stylesheet" href="/static/element-ui.min.css">
     <link rel="stylesheet" href="/static/github.min.css">
+    <link rel="stylesheet" href="/static/theme.css">
     <script src="/static/vue.min.js"></script>
     <script src="/static/element-ui.min.js"></script>
     <script src="/static/axios.min.js"></script>
     <script src="/static/highlight.min.js"></script>
+    <script src="/static/theme.js"></script>
     <style>
         * {
             margin: 0;
@@ -26,20 +28,24 @@
             display: flex;
             height: 100%;
         }
-        /* 左侧侧边栏 占窗口55%宽度 符合需求 */
+        /* 左侧侧边栏 占窗口55%宽度（与右侧5.5:4.5），右侧工作区45% */
         .sidebar {
-            width: 55%;
-            border-right: 1px solid #e4e7ed;
-            background: #f5f7fa;
+            flex: 0 0 55%;
+            border-right: 1px solid var(--border-color);
+            background: var(--bg-page);
             display: flex;
             flex-direction: column;
-            transition: width 0.3s ease;
+            transition: flex-basis 0.3s ease;
             position: relative;
         }
-        /* 侧边栏收起状态：保留60px宽侧边+提示 */
+        /* 侧边栏收起状态:保留60px宽侧边+提示 */
         .sidebar.collapsed {
-            width: 60px !important;
+            flex-basis: 60px !important;
             overflow: hidden;
+        }
+        /* 右侧工作区收起时，左侧侧边栏自动占满剩余空间 */
+        .sidebar.sidebar-full {
+            flex: 1 1 auto !important;
         }
         /* 侧边栏收起提示文字区 */
         .sidebar-collapse-tip {
@@ -58,8 +64,8 @@
             transition: all 0.2s ease;
         }
         .sidebar-collapse-tip:hover {
-            color: #165DFF;
-            background: rgba(22, 93, 255, 0.1);
+            color: var(--primary);
+            background: var(--primary-light);
         }
         .sidebar.collapsed .sidebar-collapse-tip {
             display: block;
@@ -73,6 +79,52 @@
             flex: 1;
             display: flex;
             flex-direction: column;
+            position: relative;
+            transition: flex-basis 0.3s ease;
+        }
+        /* 右侧工作区收起状态:保留60px宽侧边+提示 */
+        .workspace-content.collapsed {
+            flex: 0 0 60px !important;
+            overflow: hidden;
+        }
+        .workspace-content.collapsed .tab-container {
+            display: none;
+        }
+        /* 右侧工作区收起按钮:与左侧收起按钮并排的小箭头，主题同色、无文字、无边框 */
+        .workspace-toggle-btn {
+            padding: 12px 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--primary);
+            user-select: none;
+            transition: all var(--transition);
+        }
+        .workspace-toggle-btn:hover {
+            background-color: var(--primary-bg);
+        }
+        /* 右侧工作区收起提示文字区 */
+        .workspace-collapse-tip {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-90deg);
+            white-space: nowrap;
+            color: #606266;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        .workspace-collapse-tip:hover {
+            color: var(--primary);
+            background: var(--primary-light);
+        }
+        .workspace-content.collapsed .workspace-collapse-tip {
+            display: block;
         }
         .tab-container {
             flex: 1;
@@ -91,13 +143,13 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: #fff;
+            background: var(--bg-card);
         }
         .editor-content {
             flex: 1;
             padding: 16px;
             overflow: auto;
-            background: #fafafa;
+            background: var(--bg-page);
         }
         .code-editor {
             width: 100%;
@@ -115,31 +167,48 @@
         .el-tabs__item:first-child .el-icon-close {
             display: none !important;
         }
-        /* 原生Tab导航 与样本管理页样式完全一致 */
+        /* 原生Tab导航:白底+细分割线+轻阴影，激活项用圆角下划线指示条 */
         .tab-nav {
-            background-color: #fff;
-            border-bottom: 1px solid #e5e5e5;
+            background-color: var(--bg-card);
+            border-bottom: 1px solid var(--border-light);
             display: flex;
             overflow: hidden;
             flex-shrink: 0;
+            padding: 0 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
         }
         .tab-item {
-            padding: 12px 24px;
+            position: relative;
+            padding: 12px 22px;
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
-            color: #666;
+            color: var(--text-regular);
             border-bottom: 2px solid transparent;
-            transition: all 0.2s;
+            transition: all var(--transition);
             user-select: none;
         }
         .tab-item.active {
-            color: #165DFF;
-            border-bottom-color: #165DFF;
-            background-color: #f8faff;
+            color: var(--primary);
+            background-color: var(--primary-bg);
+        }
+        .tab-item.active::after {
+            content: "";
+            position: absolute;
+            left: 14px;
+            right: 14px;
+            bottom: -2px;
+            height: 2px;
+            border-radius: 2px;
+            background-color: var(--primary);
         }
         .tab-item:hover {
-            background-color: #f5f5f5;
+            color: var(--primary);
+            background-color: var(--primary-bg);
+        }
+        /* 左侧收起按钮固定使用主题色 */
+        .tab-item#sidebarToggleBtn {
+            color: var(--primary);
         }
         .tab-content {
             flex: 1;
@@ -178,6 +247,8 @@
                 <div class="tab-item" onclick="switchSidebarTab('about')">关于</div>
                 <!-- 侧边栏切换按钮，和现有tab样式完全统一，自动靠右对齐 -->
                 <div class="tab-item" id="sidebarToggleBtn" onclick="toggleSidebar()" style="margin-left: auto;">收起 «</div>
+                <!-- 右侧工作区收起按钮:与左侧并排的反向小箭头，主题同色无文字 -->
+                <div class="workspace-toggle-btn" id="workspaceToggleBtn" onclick="toggleWorkspace()">»</div>
             </div>
             <!-- Tab内容区域 -->
             <div class="tab-content active" id="tab-file">
@@ -207,7 +278,7 @@
 
         <!-- 右侧工作区 -->
         <div class="workspace-content">
-            <el-tabs 
+            <el-tabs
                 class="tab-container"
                 v-model="activeTab"
                 type="card"
@@ -248,6 +319,8 @@
                     </div>
                 </el-tab-pane>
             </el-tabs>
+            <!-- 右侧工作区收起提示 -->
+            <div class="workspace-collapse-tip" onclick="toggleWorkspace()">点击展开对话界面</div>
         </div>
     </div>
 
@@ -267,7 +340,7 @@
                     tabs: [
                         {
                             name: 'chat',
-                            title: '💬 对话页面',
+                            title: '对话页面',
                             type: 'chat'
                         }
                     ],
@@ -306,7 +379,7 @@
                             const fileName = filePath.split('/').pop()
                             const newTab = {
                                 name: `file_${this.tabIndex++}`,
-                                title: `📄 ${fileName}`,
+                                title: `${fileName}`,
                                 type: 'file',
                                 path: filePath,
                                 content: res.data.data,
@@ -397,17 +470,67 @@ window.addEventListener('message', function(e) {
         editIframe.src = `/file_editor.html?path=${encodeURIComponent(e.data.path)}`;
         // 3. 同步Vue变量
         if(window.app) window.app.currentEditFilePath = e.data.path;
+    } else if(e.data && e.data.type === 'themeSync') {
+        // 主题实时同步:收到配置页广播后，自身应用 + 转发给所有已加载iframe，实现实时整体改色
+        if(window.ThemeKit) { window.ThemeKit.setTheme({ primary: e.data.primary, bgPage: e.data.bgPage, bgCard: e.data.bgCard }); }
+        document.querySelectorAll('iframe').forEach(function(fr) {
+            try { fr.contentWindow.postMessage({ type: 'themeSync', primary: e.data.primary, bgPage: e.data.bgPage, bgCard: e.data.bgCard }, '*'); } catch (err) {}
+        });
     }
 })
-// 侧边栏展开/收起切换功能
+// 统一刷新两侧收起按钮的文案与显隐（右侧小箭头仅在两侧均展开时显示）
+function updateToggleBtns() {
+    const sidebar = document.querySelector('.sidebar');
+    const workspace = document.querySelector('.workspace-content');
+    const sideBtn = document.getElementById('sidebarToggleBtn');
+    const wsBtn = document.getElementById('workspaceToggleBtn');
+    const sidebarCollapsed = sidebar.classList.contains('collapsed');
+    const workspaceCollapsed = workspace.classList.contains('collapsed');
+    if (sideBtn) sideBtn.innerText = sidebarCollapsed ? '展开侧边栏 »' : '收起 «';
+    if (wsBtn) wsBtn.style.display = (sidebarCollapsed || workspaceCollapsed) ? 'none' : '';
+}
+
+// 侧边栏展开/收起切换功能（与右侧工作区互斥:一侧收起，另一侧自动占满）
 function toggleSidebar() {
     const sidebar = document.querySelector('.sidebar');
-    const toggleBtn = document.getElementById('sidebarToggleBtn');
     sidebar.classList.toggle('collapsed');
     const isCollapsed = sidebar.classList.contains('collapsed');
-    toggleBtn.innerText = isCollapsed ? '展开侧边栏 »' : '收起 «';
+    if (isCollapsed) {
+        // 左侧收起:强制展开右侧，右侧自动占满剩余空间
+        expandWorkspace();
+    } else {
+        sidebar.classList.remove('sidebar-full');
+    }
+    updateToggleBtns();
     // 存储状态到本地存储，刷新保持
     localStorage.setItem('sidebarCollapsed', isCollapsed ? '1' : '0');
+}
+
+// 右侧工作区展开/收起切换功能（与左侧侧边栏互斥）
+function toggleWorkspace() {
+    const workspace = document.querySelector('.workspace-content');
+    const sidebar = document.querySelector('.sidebar');
+    workspace.classList.toggle('collapsed');
+    const isCollapsed = workspace.classList.contains('collapsed');
+    if (isCollapsed) {
+        // 右侧收起:强制展开左侧并让其占满剩余空间
+        sidebar.classList.remove('collapsed');
+        sidebar.classList.add('sidebar-full');
+        localStorage.setItem('sidebarCollapsed', '0');
+    } else {
+        sidebar.classList.remove('sidebar-full');
+    }
+    updateToggleBtns();
+    localStorage.setItem('workspaceCollapsed', isCollapsed ? '1' : '0');
+}
+
+// 辅助:展开右侧工作区并复位左侧占满类
+function expandWorkspace() {
+    const workspace = document.querySelector('.workspace-content');
+    const sidebar = document.querySelector('.sidebar');
+    workspace.classList.remove('collapsed');
+    sidebar.classList.remove('sidebar-full');
+    localStorage.setItem('workspaceCollapsed', '0');
 }
 
 // 窗口等比缩放逻辑:基准宽度1200px，最小缩放0.8，最大1.5，所有元素同比缩放无错位
@@ -433,14 +556,18 @@ function updateWorkspaceScale() {
 // 页面加载完成后挂载Vue实例到window，初始化侧边栏状态
 window.onload = function() {
     window.app = app;
-    // 读取本地存储的侧边栏状态
-    const isCollapsed = localStorage.getItem('sidebarCollapsed') === '1';
+    // 读取本地存储的侧边栏/工作区状态（互斥:右侧收起优先，会强制展开左侧）
     const sidebar = document.querySelector('.sidebar');
-    const toggleBtn = document.getElementById('sidebarToggleBtn');
-    if (isCollapsed) {
+    const workspace = document.querySelector('.workspace-content');
+    const isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') === '1';
+    const isWorkspaceCollapsed = localStorage.getItem('workspaceCollapsed') === '1';
+    if (isWorkspaceCollapsed) {
+        workspace.classList.add('collapsed');
+        sidebar.classList.add('sidebar-full');
+    } else if (isSidebarCollapsed) {
         sidebar.classList.add('collapsed');
-        toggleBtn.innerText = '展开侧边栏 »';
     }
+    updateToggleBtns();
     // 初始化等比缩放
     updateWorkspaceScale();
     // 监听窗口大小变化，自动调整缩放比例

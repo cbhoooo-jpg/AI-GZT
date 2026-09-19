@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>系统设置</title>
     <link rel="stylesheet" href="/static/element-ui.min.css">
+    <link rel="stylesheet" href="/static/theme.css">
     <script src="/static/vue.min.js"></script>
     <script src="/static/element-ui.min.js"></script>
     <script src="/static/axios.min.js"></script>
+    <script src="/static/theme.js"></script>
     <style>
         /* ========== 大小配置变量，修改这里的数值即可全局调整按钮/文字大小 ========== */
         :root {
@@ -27,7 +29,7 @@
         body, html {
             height: 100%;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background-color: #f5f7fa;
+            background-color: var(--bg-page);
             padding: 16px;
             font-size: var(--label-font-size);
         }
@@ -83,15 +85,15 @@
             margin-top: 24px;
             border-radius: 8px;
         }
-        /* 所有按钮统一主色调 #409EFF */
+        /* 所有按钮统一主色调（跟随主题变量，配置页改色即时生效） */
         .el-button,
         .el-button--default,
         .el-button--primary,
         .el-button--success,
         .el-button--warning,
         .el-button--danger {
-            background-color: #409EFF !important;
-            border-color: #409EFF !important;
+            background-color: var(--primary) !important;
+            border-color: var(--primary) !important;
             color: #fff !important;
         } 
         .el-button:hover,
@@ -100,8 +102,8 @@
         .el-button--success:hover,
         .el-button--warning:hover,
         .el-button--danger:hover {
-            background-color: #66b1ff !important;
-            border-color: #66b1ff !important;
+            background-color: var(--primary-hover) !important;
+            border-color: var(--primary-hover) !important;
             color: #fff !important;
         }
         .el-button:active,
@@ -110,15 +112,15 @@
         .el-button--success:active,
         .el-button--warning:active,
         .el-button--danger:active {
-            background-color: #337ecc !important;
-            border-color: #337ecc !important;
+            background-color: var(--primary-active) !important;
+            border-color: var(--primary-active) !important;
             color: #fff !important;
         }
         .el-button.is-disabled,
         .el-button[disabled] {
-            background-color: #a0cfff !important;
-            border-color: #a0cfff !important;
-            color: #fff !important;
+            background-color: var(--primary-light) !important;
+            border-color: var(--primary-light) !important;
+            color: #a8abb2 !important;
             cursor: not-allowed;
         }
         /* 输入框尾部按钮样式适配 */
@@ -135,17 +137,10 @@
                 <el-button type="primary" class="large-action-btn" @click="saveConfig" size="small" style="width: 100px;">保存配置</el-button>
             </div>
             <el-form :model="form" label-width="120px" ref="form">
-                <h3 style="margin: 24px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">模型配置</h3>
+                <h3 style="margin: 24px 0 16px 0; color: var(--primary); border-left: 4px solid var(--primary); padding-left: 12px;">模型配置</h3>
                 
                 <el-form-item label="模型厂商">
-                    <el-select v-model="form.model_provider" style="width: 100%;">
-                        <el-option label="本地模型" value="local"></el-option>
-                        <el-option label="火山方舟" value="火山方舟"></el-option>
-                        <el-option label="OpenAI" value="OpenAI"></el-option>
-                        <el-option label="Anthropic Claude" value="Anthropic"></el-option>
-                        <el-option label="通义千问" value="通义千问"></el-option>
-                        <el-option label="文心一言" value="文心一言"></el-option>
-                    </el-select>
+                    <div class="tip-text" style="color: #909399; font-size: 13px; line-height: 36px;">自行选择模型厂商，自行设置</div>
                 </el-form-item>
 
                 <el-form-item label="API地址">
@@ -188,8 +183,8 @@
                 </el-row>
 
                 <el-form-item label="快速切换">
-                    <el-button type="success" class="large-action-btn" @click="switchToLocal" :disabled="form.model_provider === 'local'">✅ 本地模型</el-button>
-                    <el-button type="primary" class="large-action-btn" @click="switchToCloud" :disabled="form.model_provider !== 'local'" style="margin-left: 16px;">☁️ 云端模型</el-button>
+                    <el-button type="success" class="large-action-btn" @click="switchToLocal" :disabled="form.model_provider === 'local'">本地模型</el-button>
+                    <el-button type="primary" class="large-action-btn" @click="switchToCloud" :disabled="form.model_provider !== 'local'" style="margin-left: 16px;">云端模型</el-button>
                     <div class="tip-text"></div>
                 </el-form-item>
 
@@ -201,7 +196,7 @@
     <p style="color: #e6a23c; font-size: 14px;">⚠️ 本地模型功能升级中，敬请期待，当前请使用云端模型</p>
 </div>
 
-                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">记忆与上下文配置</h3>
+                <h3 style="margin: 32px 0 16px 0; color: var(--primary); border-left: 4px solid var(--primary); padding-left: 12px;">记忆与上下文配置</h3>
                 <el-row :gutter="24">
                     <el-col span="12">
                         <el-form-item label="上下文轮数">
@@ -243,7 +238,7 @@
                     <el-switch v-model="memoryConfig.show_timestamp_in_context" active-text="开启" inactive-text="关闭" style="font-size: 18px;"></el-switch>
                     <div class="tip-text">开启后会话带时间戳</div>
                 </el-form-item>
-                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">向量检索环境检测</h3>
+                <h3 style="margin: 32px 0 16px 0; color: var(--primary); border-left: 4px solid var(--primary); padding-left: 12px;">向量检索环境检测</h3>
                 <div style="padding: 16px; background-color: #f4f4f5; border: 1px solid #e9e9eb; border-radius: 8px; margin-bottom: 16px;">
                     <div style="display: flex; align-items: center; margin-bottom: 12px;">
                         <el-tag :type="vectorEnv.current_mode === 'full' ? 'success' : 'warning'" size="medium">
@@ -277,7 +272,7 @@
                         重新检测
                     </el-button>
                 </div>
-                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">存储设置</h3>
+                <h3 style="margin: 32px 0 16px 0; color: var(--primary); border-left: 4px solid var(--primary); padding-left: 12px;">存储设置</h3>
                 <el-form-item label="仓库存储路径">
                     <div style="width: 100%;">
                         <el-input v-model="form.repository_path" placeholder="请选择仓库存储位置" readonly>
@@ -295,8 +290,8 @@
                         <el-button slot="append" icon="el-icon-folder" @click="selectDownloadPath">选择文件夹</el-button>
                     </el-input>
                 </el-form-item>
-                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">工具输出与任务防中断</h3>
-                <div style="padding: 12px; background-color: #ecf5ff; border: 1px solid #d9ecff; border-radius: 8px; margin-bottom: 16px; font-size: 15px; color: #409EFF; line-height: 1.5;">
+                <h3 style="margin: 32px 0 16px 0; color: var(--primary); border-left: 4px solid var(--primary); padding-left: 12px;">工具输出与任务防中断</h3>
+                <div style="padding: 12px; background-color: var(--primary-bg); border: 1px solid var(--primary-light); border-radius: 8px; margin-bottom: 16px; font-size: 15px; color: var(--primary); line-height: 1.5;">
                     控制工具超长输出的截断、落盘与跨轮老化策略，防止上下文溢出导致任务中途中断；保存后重启工作台生效
                 </div>
 
@@ -352,13 +347,27 @@
                     <div class="tip-text">同一轮对话中最多归档多少条超长工具结果，避免单次归档过多，默认3</div>
                 </el-form-item>
 
-                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">运行设置</h3>
+                <h3 style="margin: 32px 0 16px 0; color: var(--primary); border-left: 4px solid var(--primary); padding-left: 12px;">运行设置</h3>
                 <el-form-item label="显示调试控制台">
                     <el-switch v-model="form.show_debug_console" active-text="开启" inactive-text="关闭" style="font-size: 18px;"></el-switch>
                     <div class="tip-text">可开启查看实时运行日志，保存后重启工作台生效</div>
                 </el-form-item>
 
-                <h3 style="margin: 32px 0 16px 0; color: #409EFF; border-left: 4px solid #409EFF; padding-left: 12px;">安全设置 - 禁止操作列表</h3>
+                <h3 style="margin: 32px 0 16px 0; color: var(--primary); border-left: 4px solid var(--primary); padding-left: 12px;">界面主题</h3>
+                <el-form-item label="主题主色">
+                    <el-color-picker v-model="form.theme_primary_color" @change="onThemeColorChange"></el-color-picker>
+                    <span style="margin-left: 12px; color: var(--text-secondary); font-size: 13px;">当前:{{ form.theme_primary_color || '#165DFF' }}（全站+浏览器外壳统一生效）</span>
+                    <div class="tip-text">点击色块选择主色，悬停/按下/浅底色自动派生，保存配置后持久化</div>
+                </el-form-item>
+                <el-form-item label="配色预设">
+                    <el-button size="small" @click="applyPreset('classic')">经典白蓝</el-button>
+                    <el-button size="small" @click="applyPreset('pinkpurple')">微粉紫</el-button>
+                    <el-button size="small" @click="applyPreset('cyan')">微蓝青</el-button>
+                    <el-button size="small" @click="applyPreset('softpink')">微微粉</el-button>
+                    <div class="tip-text">点击套用预设配色（主色+界面底色+卡片底色），应用后需点「保存配置」持久化</div>
+                </el-form-item>
+
+                <h3 style="margin: 32px 0 16px 0; color: var(--primary); border-left: 4px solid var(--primary); padding-left: 12px;">安全设置 - 禁止操作列表</h3>
                 <div style="padding: 12px; background-color: #fef0f0; border: 1px solid #fde2e2; border-radius: 8px; margin-bottom: 16px; font-size: 15px; color: #f56c6c; line-height: 1.5;">
                     ⚠️ 禁止列表的目录/文件，AI无法进行任何操作，可设置
                 </div>
@@ -406,6 +415,9 @@
                         lastCloudProvider: '火山方舟',
                         forbidden_paths: [],
                         show_debug_console: false, // 默认关闭调试控制台显示
+                        theme_primary_color: '#165DFF', // 界面主题主色（全站+浏览器外壳统一生效）
+                        theme_bg_page: '#F5F7FA', // 界面底色（页面框架底色，与主色独立设置）
+                        theme_bg_card: '#FFFFFF', // 卡片底色（卡片/容器底色，与主色独立设置）
                         // 工具输出截断/落盘/跨轮老化配置（任务防中断），老配置缺该节点时由loadConfig兜底补齐
                         tool_output: {
                             truncate_enabled: true,
@@ -528,6 +540,36 @@
                     } catch (e) {
                         this.$message.error('保存失败:' + (e.response?.data?.msg || e.response?.data?.detail || e.message))
                     }
+                },
+                // 主题实时预览:三色（主色/界面底色/卡片底色）本地立即应用 + 广播给父窗口与所有iframe
+                // 未保存即生效，Qt外壳由后端保存后投递热更新
+                onThemeColorChange(color) {
+                    this.applyThemeLive()
+                },
+                // 应用三色到当前页并广播（供父窗口转发给所有已打开tab，实现实时整体改色）
+                applyThemeLive() {
+                    var opt = {
+                        primary: this.form.theme_primary_color,
+                        bgPage: this.form.theme_bg_page,
+                        bgCard: this.form.theme_bg_card
+                    }
+                    if (window.ThemeKit) { window.ThemeKit.setTheme(opt) }
+                    try { window.parent.postMessage({ type: 'themeSync', primary: opt.primary, bgPage: opt.bgPage, bgCard: opt.bgCard }, '*') } catch (e) {}
+                },
+                // 一键套用预设配色（主色+界面底色+卡片底色）
+                applyPreset(name) {
+                    var presets = {
+                        classic: { primary: '#165DFF', bgPage: '#F5F7FA', bgCard: '#FFFFFF' },
+                        pinkpurple: { primary: '#7C4DFF', bgPage: '#FDF7FB', bgCard: '#FFFFFF' },
+                        cyan: { primary: '#0D8F8F', bgPage: '#F4F9FD', bgCard: '#FFFFFF' },
+                        softpink: { primary: '#EE2AF1', bgPage: '#FDF0FB', bgCard: '#FFF7FE' }
+                    }
+                    var p = presets[name]
+                    if (!p) { return }
+                    this.form.theme_primary_color = p.primary
+                    this.form.theme_bg_page = p.bgPage
+                    this.form.theme_bg_card = p.bgCard
+                    this.applyThemeLive()
                 },
                 // 一键切换到本地模型
                 async switchToLocal() {

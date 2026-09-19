@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>操作日志</title>
     <link rel="stylesheet" href="/static/element-ui.min.css">
+    <link rel="stylesheet" href="/static/theme.css">
     <script src="/static/vue.min.js"></script>
     <script src="/static/element-ui.min.js"></script>
     <script src="/static/axios.min.js"></script>
+    <script src="/static/theme.js"></script>
     <style>
         * {
             margin: 0;
@@ -17,7 +19,7 @@
         body, html, #app {
             height: 100%;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: #f5f7fa;
+            background: var(--bg-page);
         }
         .log-container {
             height: 100%;
@@ -35,7 +37,7 @@
         .log-list {
             flex: 1;
             overflow: auto;
-            background: #fff;
+            background: var(--bg-card);
             border-radius: 4px;
             padding: 16px;
         }
@@ -50,7 +52,7 @@
             border-bottom: none;
         }
         .log-item:hover {
-            background: #fafafa;
+            background: var(--bg-page);
         }
         .log-type {
             display: inline-block;
@@ -205,10 +207,21 @@
                                 }
                             })
                             if (res.data.code === 200 && res.data.data.list.length > 0) {
+                                const newLogs = res.data.data.list
                                 // 新日志追加到列表顶部
-                                this.logList.unshift(...res.data.data.list)
+                                this.logList.unshift(...newLogs)
                                 // 更新最大ID
-                                this.lastMaxId = Math.max(...res.data.data.list.map(log => log.id), this.lastMaxId)
+                                this.lastMaxId = Math.max(...newLogs.map(log => log.id), this.lastMaxId)
+                                // 更新总条数:优先用后端返回的当前全量总数（500条滚动期也精确），旧后端无此字段时按新增条数累加
+                                if (typeof res.data.data.current_total === 'number') {
+                                    this.total = res.data.data.current_total
+                                } else {
+                                    this.total += newLogs.length
+                                }
+                                // 列表裁剪回每页条数，超出的旧日志走翻页查看，避免前端列表无限膨胀
+                                if (this.logList.length > this.pageSize) {
+                                    this.logList = this.logList.slice(0, this.pageSize)
+                                }
                                 // 自动滚动到底部
                                 if (this.autoScroll) {
                                     this.$nextTick(() => {

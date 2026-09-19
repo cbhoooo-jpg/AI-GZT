@@ -69,6 +69,8 @@ pending_samples.json
 system_prompt_config.json
 # 召回效果评测运行时数据（自动生成，空文件起步，不进仓库）
 recall_evaluations.json
+# 操作日志运行时数据（自动生成，内存500条滚动+防抖落盘，不进仓库）
+operation_logs.json
 
 # ===== Gitee 推送临时日志（推送脚本生成，不进仓库） =====
 push_gitee_err.txt

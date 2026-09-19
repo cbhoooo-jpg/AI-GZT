@@ -119,6 +119,9 @@ def load_config() -> Dict:
         "max_chat_rounds": 10, # 每轮回复最大次数（安全上限，防止无限循环），AI完成任务后自动停止
         "forbidden_paths": _default_forbidden_paths, # 默认禁止路径列表，根据操作系统动态生成，用户可自由增删
         "show_debug_console": False, # 默认隐藏后端调试控制台，用户可在设置页手动开启
+        "theme_primary_color": "#165DFF", # 界面主题主色（前端各页+Qt外壳统一生效，配置页可视化编辑）
+        "theme_bg_page": "#F5F7FA", # 界面底色（页面框架底色，与主色独立设置，配置页可视化编辑）
+        "theme_bg_card": "#FFFFFF", # 卡片底色（卡片/容器底色，与主色独立设置，配置页可视化编辑）
         "system": {
             "project_root_absolute_path": BASE_DIR,
             "tos_endpoint": "https://tos-cn-beijing.volces.com",
@@ -704,6 +707,56 @@ CURRENT_PROJECT = {
 # 全局操作日志存储
 OPERATION_LOGS = []
 LOG_MAX_SIZE = 500 # 最多保留500条操作日志
+LOG_ID_COUNTER = 0 # 全局单调日志ID计数器，永不复用，杜绝满上限后ID恒为501导致增量刷新死锁
+# 日志落盘文件:打包环境存exe同级目录（用户可见、升级不丢失），开发环境存项目根目录，与config.json路径策略一致
+if getattr(_sys, 'frozen', False):
+    OPERATION_LOGS_FILE = os.path.join(_exe_dir, "operation_logs.json")
+else:
+    OPERATION_LOGS_FILE = os.path.join(BASE_DIR, "operation_logs.json")
+_LOG_PERSIST_TIMER = None
+_LOG_PERSIST_LOCK = threading.Lock()
+
+def _persist_operation_logs():
+    """立即将当前内存日志全量写入文件（倒序最新在前），任何异常都不影响主流程"""
+    try:
+        with _LOG_PERSIST_LOCK:
+            # 先做C层原子快照，避免Timer线程序列化期间主线程insert/pop导致"list changed size during iteration"
+            snapshot = list(OPERATION_LOGS)
+            with open(OPERATION_LOGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def _schedule_log_persist(delay: float = 5.0):
+    """防抖落盘:日志高频变更时合并为delay秒后一次写盘；delay<=0时立即写盘（清空场景）"""
+    global _LOG_PERSIST_TIMER
+    if _LOG_PERSIST_TIMER is not None:
+        _LOG_PERSIST_TIMER.cancel()
+    if delay <= 0:
+        _LOG_PERSIST_TIMER = None
+        _persist_operation_logs()
+        return
+    _LOG_PERSIST_TIMER = threading.Timer(delay, _persist_operation_logs)
+    _LOG_PERSIST_TIMER.daemon = True
+    _LOG_PERSIST_TIMER.start()
+
+def _load_operation_logs():
+    """启动时恢复最近500条日志，ID计数器初始化为历史最大ID（清空日志也不回退，杜绝ID重复）"""
+    global OPERATION_LOGS, LOG_ID_COUNTER
+    try:
+        if os.path.exists(OPERATION_LOGS_FILE):
+            with open(OPERATION_LOGS_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            if isinstance(saved, list):
+                OPERATION_LOGS = saved[:LOG_MAX_SIZE]
+                max_id = max([int(item.get("id", 0)) for item in OPERATION_LOGS if isinstance(item, dict)] or [0])
+                LOG_ID_COUNTER = max_id
+    except Exception:
+        OPERATION_LOGS = []
+        LOG_ID_COUNTER = 0
+
+# 启动即从落盘文件恢复历史日志
+_load_operation_logs()
 # ========== 配置结束 ==========
 # 全局异步任务存储
 TASK_STORAGE = {}
@@ -714,10 +767,11 @@ TASK_STATUS_SUCCESS = "success"
 TASK_STATUS_FAILED = "failed"
 
 def add_operation_log(oper_type: str, content: str, status: str = "success"):
-    """新增操作日志，自动记录时间，按倒序存储"""
-    global OPERATION_LOGS
+    """新增操作日志，自动记录时间，按倒序存储；ID全局单调递增，满500条滚动删除最早一条"""
+    global OPERATION_LOGS, LOG_ID_COUNTER
+    LOG_ID_COUNTER += 1
     log_item = {
-        "id": len(OPERATION_LOGS) + 1,
+        "id": LOG_ID_COUNTER,
         "oper_type": oper_type,
         "content": content,
         "status": status,
@@ -727,6 +781,8 @@ def add_operation_log(oper_type: str, content: str, status: str = "success"):
     # 超过上限自动删除最早的日志
     if len(OPERATION_LOGS) > LOG_MAX_SIZE:
         OPERATION_LOGS.pop()
+    # 防抖5秒批量落盘，高频写日志不拖慢对话主流程
+    _schedule_log_persist(5.0)
 
 def add_file_operation_log(op_type: str, file_path: str, status: str, detail: str = ""):
     """
@@ -3473,6 +3529,8 @@ async def set_config(request: ConfigSetRequest):
         # 检查是否修改了下载路径
         new_download_path = request.config.get("download_path", "")
         old_download_path = old_config.get("download_path", "")
+        # 记录修改前的主题主色（用于判断是否需要热更新Qt外壳样式）
+        old_theme_color = old_config.get("theme_primary_color", "")
         old_config.update(request.config)
         save_config(old_config)
         
@@ -3493,6 +3551,25 @@ async def set_config(request: ConfigSetRequest):
             except Exception as e:
                 print(f"⚠️ 同步下载路径到浏览器失败: {str(e)}")
                 add_operation_log("配置修改", f"下载路径配置已保存，但同步到浏览器失败: {str(e)}", "warning")
+        
+        # 如果主题主色发生变化，实时通知Qt外壳重设样式表，无需重启立即生效
+        new_theme_color = request.config.get("theme_primary_color", "")
+        if new_theme_color and new_theme_color != old_theme_color:
+            try:
+                import main
+                if main.browser_window:
+                    # 复用QMetaObject.invokeMethod投递到UI主线程，避免跨线程操作Qt对象
+                    from PySide6.QtCore import QMetaObject, Qt, Q_ARG
+                    QMetaObject.invokeMethod(
+                        main.browser_window,
+                        "apply_theme",
+                        Qt.QueuedConnection,
+                        Q_ARG(str, new_theme_color)
+                    )
+                    add_operation_log("配置修改", f"主题主色已实时同步到外壳: {new_theme_color}")
+            except Exception as e:
+                print(f"⚠️ 同步主题主色到外壳失败: {str(e)}")
+                add_operation_log("配置修改", f"主题主色已保存，但同步到外壳失败: {str(e)}", "warning")
         
         add_operation_log("配置修改", "更新系统配置")
         return {"code": 200, "msg": "配置修改成功，即时生效"}
@@ -5418,15 +5495,16 @@ async def get_operation_log(keyword: str = "", page: int = 1, page_size: int = 5
     if keyword:
         filtered = [log for log in OPERATION_LOGS if keyword in log["content"] or keyword in log["oper_type"]]
     
-    # 增量拉取逻辑：返回ID大于last_id的所有新日志
+    # 增量拉取逻辑:返回ID大于last_id的所有新日志
     if last_id > 0:
         filtered = [log for log in filtered if log["id"] > last_id]
-        # 增量拉取不需要分页，最多返回100条
+        # 增量拉取不需要分页，最多返回100条；current_total为当前内存日志全量总数（滚动期精确，供前端覆盖分页器）
         return {
             "code": 200, 
             "data": {
                 "list": filtered[:page_size], 
-                "total": len(filtered), 
+                "total": len(filtered),
+                "current_total": len(OPERATION_LOGS),
                 "page": 1, 
                 "page_size": page_size
             }
@@ -5519,10 +5597,11 @@ async def delete_memory(data: dict):
 
 @app.post("/api/log/clear")
 async def clear_operation_log():
-    """清空所有操作日志"""
+    """清空所有操作日志（ID计数器不重置，杜绝ID回退重复），并立即落盘"""
     global OPERATION_LOGS
     OPERATION_LOGS = []
     add_operation_log("日志管理", "清空所有操作日志")
+    _schedule_log_persist(0)
     return {"code": 200, "msg": "✅ 所有操作日志已清空"}
 
 # 通用工具接口

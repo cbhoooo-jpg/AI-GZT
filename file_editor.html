@@ -6,6 +6,7 @@
     <title>文件预览</title>
     <!-- 引入本地静态资源，支持离线运行 -->
     <link rel="stylesheet" href="/static/element-ui.min.css">
+    <link rel="stylesheet" href="/static/theme.css">
     <script src="/static/vue.min.js"></script>
     <script src="/static/element-ui.min.js"></script>
         <script src="/static/axios.min.js"></script>
@@ -19,6 +20,7 @@
     <!-- CodeMirror专业编辑器本地依赖 -->
     <link rel="stylesheet" href="/static/codemirror.min.css">
     <link rel="stylesheet" href="/static/foldgutter.min.css">
+    <script src="/static/theme.js"></script>
     <style>
         /* 统一CodeMirror高度样式 */
         .CodeMirror { 
@@ -47,7 +49,7 @@
         body, html {
             height: 100%;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: #f5f7fa;
+            background: var(--bg-page);
         }
         #app {
             height: 100%;
@@ -67,7 +69,7 @@
             background-repeat: no-repeat;
             background-position: center;
             background-size: 90% auto;
-            background-color: #f5f7fa;
+            background-color: var(--bg-page);
         }
         .empty-state-text {
             background: rgba(255, 255, 255, 0.9);
@@ -86,7 +88,7 @@
             align-items: center;
             margin-bottom: 12px;
             padding: 8px 12px;
-            background: #fff;
+            background: var(--bg-card);
             border-radius: 4px;
             border: 1px solid #e4e7ed;
         }
@@ -107,7 +109,7 @@
         }
         .image-content {
             flex: 1;
-            background: #fff;
+            background: var(--bg-card);
             border: 1px solid #e4e7ed;
             border-radius: 4px;
             display: flex;
@@ -128,7 +130,7 @@
         }
         .hex-content {
             flex: 1;
-            background: #fff;
+            background: var(--bg-card);
             border: 1px solid #e4e7ed;
             border-radius: 4px;
             padding: 16px;
@@ -162,7 +164,7 @@
         }
         .pdf-content {
             flex: 1;
-            background: #fff;
+            background: var(--bg-card);
             border: 1px solid #e4e7ed;
             border-radius: 4px;
             overflow: hidden;
@@ -200,7 +202,7 @@
         }
         .office-content {
             flex: 1;
-            background: #fff;
+            background: var(--bg-card);
             border: 1px solid #e4e7ed;
             border-radius: 4px;
             overflow: auto;
@@ -223,10 +225,10 @@
             border: 1px solid #d1d5db;
             padding: 6px 10px;
             font-size: 14px;
-            background: #fff;
+            background: var(--bg-card);
         }
         .office-content th {
-            background: #f5f7fa;
+            background: var(--bg-page);
             font-weight: 600;
         }
         /* 表格交互和显示效果 */
@@ -272,7 +274,7 @@
         <div v-else-if="isImage" class="image-preview">
             <div class="toolbar">
                 <span class="path-text">路径：{{ filePath }}</span>
-                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+                <el-button type="primary" size="small" @click="openExternal">外部打开</el-button>
             </div>
             <div class="image-content">
                 <img :src="previewUrl" alt="预览图片">
@@ -282,7 +284,7 @@
         <div v-else-if="isHex" class="hex-preview">
             <div class="toolbar">
                 <span class="path-text">路径：{{ filePath }} | 总大小：{{ (hexData?.total_size / 1024 / 1024).toFixed(2) }} MB</span>
-                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+                <el-button type="primary" size="small" @click="openExternal">外部打开</el-button>
             </div>
             <div class="hex-content">
                 <div class="hex-line" v-for="(line, idx) in hexData.hex_lines" :key="idx">
@@ -299,7 +301,7 @@
         <div v-else-if="isPdf" class="pdf-preview">
             <div class="toolbar">
                 <span class="path-text">路径：{{ filePath }}</span>
-                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+                <el-button type="primary" size="small" @click="openExternal">外部打开</el-button>
             </div>
             <div class="pdf-content">
                 <iframe :src="previewUrl" type="application/pdf"></iframe>
@@ -309,7 +311,7 @@
         <div v-else-if="isMedia" class="media-preview">
             <div class="toolbar">
                 <span class="path-text">路径：{{ filePath }}</span>
-                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+                <el-button type="primary" size="small" @click="openExternal">外部打开</el-button>
             </div>
                 <div class="media-content">
                     <video v-if="mediaType === 'video'" :src="previewUrl" controls autoplay muted></video>
@@ -320,7 +322,7 @@
         <div v-else-if="isOffice" class="office-preview">
             <div class="toolbar">
                 <span class="path-text">路径：{{ filePath }}</span>
-                <el-button type="primary" size="small" @click="openExternal">🔓 外部打开</el-button>
+                <el-button type="primary" size="small" @click="openExternal">外部打开</el-button>
             </div>
             <div class="office-content" id="office-preview-container">
                 <div class="preview-loading">

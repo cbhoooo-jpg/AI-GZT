@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-19
+
+### 新增
+
+- 全站主题系统:新增 `static/theme.css` + `static/theme.js`，统一主题令牌与实时换肤，内置 4 组配色预设（经典白蓝 / 微粉紫 / 微蓝青 / 微微粉）一键切换，工作台内 iframe 毫秒级实时同步
+- 悬浮窗跨进程主题同步:配置值快照 + 4 秒轻轮询方案，补齐 Qt 悬浮窗（独立窗口收不到 postMessage 广播）的主题同步，仅配置值真变化才 setTheme，避免预览被轮询回滚
+- 全站底色泛化:10 个页面共 38 处写死的纯底色（白底 / 浅灰底）统一改用 `var(--bg-page)` / `var(--bg-card)`，实现全站整体泛色；语义色 / 白字 / 边框色保留不动
+- 操作日志持久化:新增 `operation_logs.json` 落盘，启动恢复最近 500 条、变更防抖 5 秒批量写、清空立即写，打包环境存 exe 同级、源码环境存项目根
+
+### 修复
+
+- 修复日志页面 ID 缺陷:原日志 ID 用 `len()+1` 生成，满 500 条滚动后 ID 恒为 501 导致前端增量拉取（last_id）永久失效；改为全局单调计数器 LOG_ID_COUNTER（清空也不回退），增量接口补 current_total
+- 修复禁用按钮不跟随主题:补齐 `.el-button--primary` / `.el-button--default` 的 disabled / [disabled] 态覆盖规则，覆盖 Element 默认硬编码浅蓝
+- 微蓝青预设主色调整:`#13C2C2` → `#0D8F8F`（更沉稳）
+
 ### 变更
 
 - 项目手册代码元数据提取升级为多格式统一提取架构（`project_manual_manager.py`）:提取器注册表按扩展名分发，Python 沿用 AST 精确解析；新增 HTML 内嵌 JS（Vue methods/computed 一层直接子键 + 顶层 function）、独立 JS/TS、PowerShell、BAT/CMD、Inno Setup 五类提取器

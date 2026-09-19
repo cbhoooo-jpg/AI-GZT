@@ -1,0 +1,89 @@
+/* ==================================================================
+   全局主题令牌（唯一颜色来源）
+   换色系:改配置页「界面主题」主色，或直接改本文件 --primary 即可
+   状态色（成功/警告/错误/信息）为语义色，不随主题变化
+   ================================================================== */
+:root{
+  --primary:#165DFF;
+  --primary-rgb:22,93,255;
+  --primary-hover:#4080FF;
+  --primary-active:#0E42C9;
+  --primary-light:#E8F0FF;
+  --primary-bg:#F8FAFF;
+  --bg-page:#F5F7FA;
+  --bg-card:#FFFFFF;
+  --text-main:#303133;
+  --text-regular:#606266;
+  --text-secondary:#909399;
+  --border-color:#E4E7ED;
+  --border-light:#EBEEF5;
+  --success:#67C23A;
+  --warning:#E6A23C;
+  --danger:#F56C6C;
+  --info:#909399;
+  --radius:8px;
+  --radius-sm:6px;
+  --shadow-card:0 2px 12px rgba(0,0,0,.06);
+  --shadow-primary:0 4px 16px rgba(22,93,255,.18);
+  --transition:.2s ease;
+}
+
+/* ===== 页面基础 ===== */
+body{background:var(--bg-page);color:var(--text-main);}
+a{color:var(--primary);}
+
+/* ===== Element-UI 主色统一:按钮 ===== */
+.el-button{border-radius:var(--radius-sm);transition:all var(--transition);font-weight:400;}
+.el-button--primary{background-color:var(--primary);border-color:var(--primary);}
+.el-button--primary:hover,
+.el-button--primary:focus{background-color:var(--primary-hover);border-color:var(--primary-hover);}
+.el-button--primary:active{background-color:var(--primary-active);border-color:var(--primary-active);}
+.el-button--primary.is-plain{color:var(--primary);background:var(--primary-bg);border-color:var(--primary-light);}
+.el-button--primary.is-plain:hover{background:var(--primary);border-color:var(--primary);color:#fff;}
+.el-button--text{color:var(--primary);}
+.el-button--text:hover{color:var(--primary-hover);}
+.el-button--default:hover{color:var(--primary);border-color:var(--primary-light);background:var(--primary-bg);}
+/* 禁用态统一跟随主题（覆盖 Element 默认硬编码浅蓝 #a0cfff） */
+.el-button--primary.is-disabled,
+.el-button--primary.is-disabled:hover,
+.el-button--primary.is-disabled:focus,
+.el-button--primary.is-disabled:active,
+.el-button--primary[disabled],
+.el-button--primary[disabled]:hover{background-color:var(--primary-light);border-color:var(--primary-light);color:#fff;}
+.el-button--default.is-disabled,
+.el-button--default.is-disabled:hover,
+.el-button--default[disabled],
+.el-button--default[disabled]:hover{color:var(--text-secondary);border-color:var(--border-light);background:var(--bg-page);}
+
+/* ===== 表单控件聚焦态 ===== */
+.el-input__inner:focus,
+.el-textarea__inner:focus{border-color:var(--primary);}
+.el-select .el-input.is-focus .el-input__inner{border-color:var(--primary);}
+
+/* ===== 分页 ===== */
+.el-pagination.is-background .el-pager li:not(.disabled).active{background-color:var(--primary);}
+.el-pagination .el-pager li:hover,
+.el-pagination .el-pager li.active{color:var(--primary);}
+.el-pagination.is-background .el-pager li:not(.disabled):hover{color:var(--primary);}
+
+/* ===== 开关 / 单选 / 复选 / 标签页 ===== */
+.el-switch.is-checked .el-switch__core{background-color:var(--primary);border-color:var(--primary);}
+.el-radio__input.is-checked .el-radio__inner{border-color:var(--primary);background:var(--primary);}
+.el-radio__input.is-checked + .el-radio__label{color:var(--primary);}
+.el-checkbox__input.is-checked .el-checkbox__inner{background-color:var(--primary);border-color:var(--primary);}
+.el-checkbox__input.is-checked + .el-checkbox__label{color:var(--primary);}
+.el-tabs__item.is-active,
+.el-tabs__item:hover{color:var(--primary);}
+.el-tabs__active-bar{background-color:var(--primary);}
+.el-link.el-link--primary{color:var(--primary);}
+
+/* ===== 卡片 / 对话框:统一层次 ===== */
+.el-card{border-radius:var(--radius);border-color:var(--border-light);box-shadow:var(--shadow-card);}
+.el-dialog{border-radius:var(--radius);}
+.el-table th{background:var(--bg-page);}
+
+/* ===== 滚动条统一 ===== */
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:#c8cdd6;border-radius:4px;}
+::-webkit-scrollbar-thumb:hover{background:var(--primary);}
+::-webkit-scrollbar-track{background:transparent;}

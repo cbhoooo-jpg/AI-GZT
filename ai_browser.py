@@ -58,19 +58,95 @@ import json
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCore import QUrl, Qt, QStandardPaths, QFileInfo
 from PySide6.QtGui import QIcon, QAction
+# ========== 主题令牌（Qt外壳统一配色，主色与前端 theme_primary_color 保持一致） ==========
+THEME = {
+    "primary": "#165DFF",
+    "primary_hover": "#4080FF",
+    "primary_active": "#0E42C9",
+    "primary_light": "#E8F0FF",
+    "bg_page": "#F5F7FA",
+    "bg_card": "#FFFFFF",
+    "text_main": "#303133",
+    "text_regular": "#606266",
+    "text_secondary": "#909399",
+    "border_color": "#E4E7ED",
+    "border_light": "#EBEEF5",
+    "radius": "8px",
+    "radius_sm": "6px",
+    "success": "#67C23A",
+    "warning": "#E6A23C",
+    "danger": "#F56C6C",
+}
+
+def _build_qss(primary: str = None) -> str:
+    """按主色生成Qt外壳QSS:导航栏/地址栏/标签页/状态栏/菜单/滚动条统一重绘
+       主色变化时自动派生 hover/active/light，与前端ThemeKit配色口径一致"""
+    t = dict(THEME)
+    if primary and isinstance(primary, str) and primary.startswith("#"):
+        t["primary"] = primary
+        try:
+            _h = primary.lstrip("#")
+            if len(_h) == 3:
+                _h = _h[0] * 2 + _h[1] * 2 + _h[2] * 2
+            _r, _g, _b = int(_h[0:2], 16), int(_h[2:4], 16), int(_h[4:6], 16)
+            def _shift(delta):
+                return "#{:02X}{:02X}{:02X}".format(
+                    max(0, min(255, _r + delta)),
+                    max(0, min(255, _g + delta)),
+                    max(0, min(255, _b + delta)))
+            t["primary_hover"] = _shift(24)
+            t["primary_active"] = _shift(-30)
+            t["primary_light"] = "rgba({},{},{},0.12)".format(_r, _g, _b)
+        except Exception:
+            pass
+    return f"""
+    QMainWindow, QDialog {{ background: {t['bg_card']}; }}
+    QWidget {{ color: {t['text_main']}; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 13px; }}
+    QToolBar {{ background: {t['bg_card']}; border: none; border-bottom: 1px solid {t['border_light']}; padding: 6px 8px; spacing: 6px; }}
+    QPushButton {{ background: {t['bg_card']}; color: {t['text_regular']}; border: 1px solid {t['border_color']}; border-radius: {t['radius_sm']}; padding: 5px 12px; }}
+    QPushButton:hover {{ color: {t['primary']}; border-color: {t['primary']}; background: {t['primary_light']}; }}
+    QPushButton:pressed {{ color: {t['primary_active']}; border-color: {t['primary_active']}; }}
+    QPushButton:disabled {{ color: {t['text_secondary']}; border-color: {t['border_light']}; }}
+    QLineEdit {{ background: {t['bg_page']}; color: {t['text_main']}; border: 1px solid {t['border_color']}; border-radius: {t['radius_sm']}; padding: 6px 10px; selection-background-color: {t['primary']}; }}
+    QLineEdit:focus {{ border-color: {t['primary']}; background: {t['bg_card']}; }}
+    QTabWidget::pane {{ border: none; background: {t['bg_card']}; top: -1px; }}
+    QTabBar {{ background: transparent; }}
+    QTabBar::tab {{ background: {t['bg_page']}; color: {t['text_regular']}; border: 1px solid {t['border_light']}; border-bottom: none; border-top-left-radius: {t['radius_sm']}; border-top-right-radius: {t['radius_sm']}; padding: 7px 16px; margin-right: 2px; min-width: 80px; max-width: 220px; }}
+    QTabBar::tab:selected {{ background: {t['bg_card']}; color: {t['primary']}; border-bottom: 2px solid {t['primary']}; }}
+    QTabBar::tab:hover {{ color: {t['primary']}; }}
+    QStatusBar {{ background: {t['bg_card']}; color: {t['text_secondary']}; border-top: 1px solid {t['border_light']}; }}
+    QStatusBar::item {{ border: none; }}
+    QMenu {{ background: {t['bg_card']}; border: 1px solid {t['border_light']}; border-radius: {t['radius_sm']}; padding: 4px; }}
+    QMenu::item {{ padding: 6px 24px 6px 12px; border-radius: 4px; color: {t['text_regular']}; }}
+    QMenu::item:selected {{ background: {t['primary_light']}; color: {t['primary']}; }}
+    QMenu::separator {{ height: 1px; background: {t['border_light']}; margin: 4px 8px; }}
+    QProgressBar {{ border: 1px solid {t['border_color']}; border-radius: 6px; text-align: center; background: {t['bg_page']}; color: {t['text_regular']}; }}
+    QProgressBar::chunk {{ background: {t['primary']}; border-radius: 5px; }}
+    QListWidget {{ background: {t['bg_card']}; border: 1px solid {t['border_light']}; border-radius: {t['radius_sm']}; }}
+    QListWidget::item {{ border-bottom: 1px solid {t['border_light']}; }}
+    QListWidget::item:selected {{ background: {t['primary_light']}; color: {t['primary']}; }}
+    QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+    QScrollBar::handle:vertical {{ background: #C8CDD6; border-radius: 5px; min-height: 30px; }}
+    QScrollBar::handle:vertical:hover {{ background: {t['primary']}; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; background: none; }}
+    QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0; }}
+    QScrollBar::handle:horizontal {{ background: #C8CDD6; border-radius: 5px; min-width: 30px; }}
+    QScrollBar::handle:horizontal:hover {{ background: {t['primary']}; }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; background: none; }}
+    """
 # ========== 下载管理面板类 ==========
 class DownloadManagerDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("📥 下载管理")
+        self.setWindowTitle("下载管理")
         self.setMinimumSize(600, 400)
         self.layout = QVBoxLayout(self)
         
         # 顶部操作栏
         top_bar = QHBoxLayout()
-        self.set_path_btn = QPushButton("⚙️ 设置默认下载路径")
+        self.set_path_btn = QPushButton("设置默认下载路径")
         self.set_path_btn.clicked.connect(parent.set_default_download_path)
-        self.clear_finished_btn = QPushButton("🗑️ 清空已完成任务")
+        self.clear_finished_btn = QPushButton("清空已完成任务")
         self.clear_finished_btn.clicked.connect(self.clear_finished_tasks)
         top_bar.addWidget(self.set_path_btn)
         top_bar.addStretch()
@@ -91,14 +167,14 @@ class DownloadManagerDialog(QDialog):
         layout = QHBoxLayout(widget)
         
         # 任务信息
-        info_label = QLabel(f"📄 {file_name}\n⏳ 准备中... 0%")
+        info_label = QLabel(f"{file_name}\n准备中... 0%")
         info_label.setMinimumWidth(350)
         # 操作按钮
-        cancel_btn = QPushButton("❌ 取消")
+        cancel_btn = QPushButton("取消")
         cancel_btn.clicked.connect(lambda: download_item.cancel())
-        open_btn = QPushButton("📂 打开文件")
+        open_btn = QPushButton("打开文件")
         open_btn.hide()
-        open_folder_btn = QPushButton("📁 打开文件夹")
+        open_folder_btn = QPushButton("打开文件夹")
         open_folder_btn.hide()
         
         layout.addWidget(info_label)
@@ -130,7 +206,7 @@ class DownloadManagerDialog(QDialog):
             return
         task = self.tasks[download_item]
         task["save_path"] = save_path
-        task["info_label"].setText(f"📄 {task['file_name']}\n⏳ 下载中... {percent}% ({speed:.1f}MB/s)")
+        task["info_label"].setText(f"{task['file_name']}\n下载中... {percent}% ({speed:.1f}MB/s)")
     
     def mark_task_finished(self, download_item, success=True):
         """标记任务完成（自动清理假死任务）"""
@@ -139,7 +215,7 @@ class DownloadManagerDialog(QDialog):
         task = self.tasks[download_item]
         task["cancel_btn"].hide()
         if success:
-            task["info_label"].setText(f"📄 {task['file_name']}\n✅ 下载完成")
+            task["info_label"].setText(f"{task['file_name']}\n下载完成")
             task["open_btn"].show()
             task["open_folder_btn"].show()
             # 绑定打开操作
@@ -149,7 +225,7 @@ class DownloadManagerDialog(QDialog):
             from threading import Timer
             Timer(300, lambda: self.clear_single_task(download_item)).start()
         else:
-            task["info_label"].setText(f"📄 {task['file_name']}\n❌ 下载已取消/失败")
+            task["info_label"].setText(f"{task['file_name']}\n下载已取消/失败")
             # 失败任务1分钟后自动清理
             from threading import Timer
             Timer(60, lambda: self.clear_single_task(download_item)).start()
@@ -244,38 +320,38 @@ class CustomWebView(QWebEngineView):
         menu = QMenu(self)
         
         # 编辑类操作（原生功能）
-        select_all_action = QAction("📝 全选", self)
+        select_all_action = QAction("全选", self)
         select_all_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.SelectAll))
         menu.addAction(select_all_action)
         
-        copy_action = QAction("📋 复制", self)
+        copy_action = QAction("复制", self)
         copy_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Copy))
         menu.addAction(copy_action)
         
-        cut_action = QAction("✂️ 剪切", self)
+        cut_action = QAction("剪切", self)
         cut_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Cut))
         menu.addAction(cut_action)
         
-        paste_action = QAction("📄 粘贴", self)
+        paste_action = QAction("粘贴", self)
         paste_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Paste))
         menu.addAction(paste_action)
         
         menu.addSeparator()
         
         # 浏览器操作（原生功能，自动根据历史记录判断是否可用）
-        back_action = QAction("⏪ 后退", self)
+        back_action = QAction("后退", self)
         back_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Back))
         menu.addAction(back_action)
         
-        forward_action = QAction("⏩ 前进", self)
+        forward_action = QAction("前进", self)
         forward_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Forward))
         menu.addAction(forward_action)
         
-        reload_action = QAction("🔄 刷新页面", self)
+        reload_action = QAction("刷新页面", self)
         reload_action.triggered.connect(lambda: self.reload())
         menu.addAction(reload_action)
         
-        inspect_action = QAction("🔍 检查元素", self)
+        inspect_action = QAction("检查元素", self)
         inspect_action.triggered.connect(lambda: self.page().setDevToolsPage(self.page().createWindow(QWebEnginePage.WebWindowType.WebBrowserTab)))
         menu.addAction(inspect_action)
         
@@ -346,8 +422,8 @@ class AIBrowserWindow(QMainWindow):
     def init_window(self):
         self.setWindowTitle("AI智能助手桌面软件 V1.0")
         self.setGeometry(100, 100, 1200, 800)
-        # 设置窗口图标可自定义
-        self.setWindowIcon(QIcon("icon.png"))
+        # 设置窗口图标:使用项目实际存在的 logo.png（修复原空图标问题）
+        self.setWindowIcon(QIcon("logo.png"))
 
     def init_ui(self):
         # 中心部件
@@ -373,25 +449,25 @@ class AIBrowserWindow(QMainWindow):
         self.forward_btn.clicked.connect(self.go_forward)
         nav_toolbar.addWidget(self.forward_btn)
 
-        self.refresh_btn = QPushButton("🔄")
-        self.refresh_btn.setFixedWidth(40)
+        self.refresh_btn = QPushButton("刷新")
+        self.refresh_btn.setFixedWidth(56)
         self.refresh_btn.clicked.connect(self.refresh_page)
         nav_toolbar.addWidget(self.refresh_btn)
 
-        self.home_btn = QPushButton("🏠")
-        self.home_btn.setFixedWidth(40)
+        self.home_btn = QPushButton("主页")
+        self.home_btn.setFixedWidth(56)
         self.home_btn.clicked.connect(self.go_home)
         nav_toolbar.addWidget(self.home_btn)
 
         # 收藏按钮
-        self.favorite_btn = QPushButton("⭐️")
-        self.favorite_btn.setFixedWidth(40)
+        self.favorite_btn = QPushButton("收藏")
+        self.favorite_btn.setFixedWidth(56)
         self.favorite_btn.clicked.connect(self.add_current_to_favorites)
         nav_toolbar.addWidget(self.favorite_btn)
 
         # 收藏夹菜单按钮
-        self.favorites_menu_btn = QPushButton("📑 收藏夹")
-        self.favorites_menu_btn.setFixedWidth(80)
+        self.favorites_menu_btn = QPushButton("收藏夹")
+        self.favorites_menu_btn.setFixedWidth(84)
         self.favorites_menu = QMenu()
         self.favorites_menu_btn.setMenu(self.favorites_menu)
         nav_toolbar.addWidget(self.favorites_menu_btn)
@@ -457,7 +533,7 @@ class AIBrowserWindow(QMainWindow):
         # 下载管理面板
         self.download_manager = DownloadManagerDialog(self)
         # 工具栏新增下载管理按钮
-        self.download_manager_btn = QPushButton("📥 下载管理")
+        self.download_manager_btn = QPushButton("下载管理")
         self.download_manager_btn.clicked.connect(self.download_manager.show)
         nav_toolbar.addWidget(self.download_manager_btn)
 
@@ -474,7 +550,27 @@ class AIBrowserWindow(QMainWindow):
         self.is_launch_stage = True
         # 5秒后自动关闭启动阶段拦截，恢复正常多标签功能
         QTimer.singleShot(5000, lambda: setattr(self, 'is_launch_stage', False))
-        
+        # 应用主题样式表:主色取自全局配置 theme_primary_color，缺失/非法时回落品牌默认色
+        self.setStyleSheet(_build_qss(self._get_theme_primary()))
+
+    def _get_theme_primary(self) -> str:
+        """从全局config读取主题主色，缺失/非法时回落到品牌默认色"""
+        try:
+            cfg = getattr(self, "config", None) or {}
+            color = cfg.get("theme_primary_color")
+            if color and isinstance(color, str) and color.startswith("#") and len(color) in (4, 7):
+                return color
+        except Exception:
+            pass
+        return THEME["primary"]
+
+    @Slot(str)
+    def apply_theme(self, primary: str = None):
+        """应用/热更新主题主色（配置保存后跨线程调用，重设整套QSS）"""
+        if not primary:
+            primary = self._get_theme_primary()
+        self.setStyleSheet(_build_qss(primary))
+
     def _get_global_config_path(self):
         """获取全局config.json的绝对路径，自动适配开发/打包环境"""
         if getattr(sys, 'frozen', False):
@@ -799,16 +895,16 @@ class AIBrowserWindow(QMainWindow):
             # 改用二级子菜单实现打开+删除功能，兼容所有PySide6版本
             fav_submenu = QMenu(fav["title"], self.favorites_menu)
             # 打开链接选项
-            open_action = fav_submenu.addAction("🔗 打开链接")
+            open_action = fav_submenu.addAction("打开链接")
             open_action.triggered.connect(lambda *args, url=fav["url"]: self.open_page(url))
             # 删除收藏选项
-            delete_action = fav_submenu.addAction("🗑️ 删除收藏")
+            delete_action = fav_submenu.addAction("删除收藏")
             delete_action.triggered.connect(lambda *args, del_idx=idx: self.delete_single_favorite(del_idx))
             # 添加到收藏夹主菜单
             self.favorites_menu.addMenu(fav_submenu)
         # 添加管理选项
         self.favorites_menu.addSeparator()
-        clear_action = self.favorites_menu.addAction("🗑️ 清空收藏夹")
+        clear_action = self.favorites_menu.addAction("清空收藏夹")
         clear_action.triggered.connect(self.clear_favorites)
 
     def add_current_to_favorites(self):
@@ -986,7 +1082,7 @@ class AIBrowserWindow(QMainWindow):
             self.download_label.setText(f"下载中：{data['file_name']} 已下载{received_mb:.1f}MB ({speed:.1f}MB/s)")
             # 同步更新面板
             if download_item in self.download_manager.tasks:
-                self.download_manager.tasks[download_item]["info_label"].setText(f"📄 {data['file_name']}\n⏳ 下载中... 已下载{received_mb:.1f}MB ({speed:.1f}MB/s)")
+                self.download_manager.tasks[download_item]["info_label"].setText(f"{data['file_name']}\n下载中... 已下载{received_mb:.1f}MB ({speed:.1f}MB/s)")
     
     def download_finished(self, download_item):
         """下载完成处理"""
@@ -998,10 +1094,10 @@ class AIBrowserWindow(QMainWindow):
         self.download_label.setText(f"下载完成：{data['file_name']}")
         # 操作提示弹窗
         msg = QMessageBox(self)
-        msg.setWindowTitle("✅ 下载完成")
-        msg.setText(f"文件已保存到：\n{save_path}")
-        open_file_btn = msg.addButton("📂 打开文件", QMessageBox.ActionRole)
-        open_folder_btn = msg.addButton("📁 打开所在文件夹", QMessageBox.ActionRole)
+        msg.setWindowTitle("下载完成")
+        msg.setText(f"文件已保存到:\n{save_path}")
+        open_file_btn = msg.addButton("打开文件", QMessageBox.ActionRole)
+        open_folder_btn = msg.addButton("打开所在文件夹", QMessageBox.ActionRole)
         msg.addButton("确定", QMessageBox.AcceptRole)
         msg.exec()
         
@@ -1039,7 +1135,7 @@ class AIBrowserWindow(QMainWindow):
             if download_uid in self.processed_downloads:
                 self.processed_downloads.remove(download_uid)
         elif state == QWebEngineDownloadRequest.DownloadCancelled or state == QWebEngineDownloadRequest.DownloadInterrupted:
-            self.download_label.setText("❌ 下载已取消/失败")
+            self.download_label.setText("下载已取消/失败")
             # 标记任务失败
             self.download_manager.mark_task_finished(download_item, success=False)
             self.download_progress.hide()

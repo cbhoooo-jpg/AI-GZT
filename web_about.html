@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>关于 - AI工作台</title>
     <link rel="stylesheet" href="/static/element-ui.min.css">
+    <link rel="stylesheet" href="/static/theme.css">
     <link rel="stylesheet" href="/static/fonts/element-icons.woff">
     <style>
         * {
@@ -13,7 +14,7 @@
             box-sizing: border-box;
         }
         body {
-            background-color: #f5f7fa;
+            background-color: var(--bg-page);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             padding: 24px;
             color: #303133;
@@ -53,7 +54,7 @@
             font-weight: 600;
             margin-bottom: 16px;
             padding-left: 12px;
-            border-left: 4px solid #409EFF;
+            border-left: 4px solid var(--primary);
             color: #303133;
         }
         .feature-list {
@@ -75,8 +76,8 @@
         }
         .tech-tag {
             padding: 4px 12px;
-            background-color: #ecf5ff;
-            color: #409EFF;
+            background-color: var(--primary-bg);
+            color: var(--primary);
             border-radius: 4px;
             font-size: 13px;
         }
@@ -162,6 +163,7 @@
     <script src="/static/vue.min.js"></script>
     <script src="/static/element-ui.min.js"></script>
     <script src="/static/axios.min.js"></script>
+    <script src="/static/theme.js"></script>
     <script>
         new Vue({
             el: '#app',
