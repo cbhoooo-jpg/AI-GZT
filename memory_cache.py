@@ -340,6 +340,10 @@ class MemoryCache:
                             candidate_map[idx] = (distances2[0][i], self.meta[str(idx)])
             
             # 4. 对所有候选计算最终得分，执行加权
+            # 时效与召回精度参数（配置化，缺省与历史行为一致，前端可调）
+            max_age_days = self.config.get("max_age_days", 0)
+            time_decay_days = self.config.get("time_decay_days", [180, 30, 7])
+            time_decay_penalty = self.config.get("time_decay_penalty", [0.2, 0.1, 0.05])
             scored_candidates = []
             now_ts = int(time.time() * 1000)
             for idx, (orig_dist, mem) in candidate_map.items():
@@ -347,19 +351,23 @@ class MemoryCache:
                 has_project_tag = any(tag.startswith("project:") for tag in mem.get("tags", []))
                 if has_project_tag and not any(tag == f"project:{current_project}" for tag in mem.get("tags", [])):
                     continue
-                # 最近上下文过滤：已经在上下文里的跳过
+                # 最近上下文过滤:已经在上下文里的跳过
                 if mem["timestamp"] >= exclude_timestamp_threshold:
+                    continue
+                # 计算记忆年龄（天），用于超龄踢出与时间衰减
+                age_days = (now_ts - mem["timestamp"]) / (1000 * 3600 * 24)
+                # 超龄踢出（时效β）:超过max_age_days天的记忆直接不进候选，max_age_days=0时不启用
+                if max_age_days > 0 and age_days > max_age_days:
                     continue
                 # 计算最终得分（距离越小越相关）
                 score = orig_dist
-                # ① 时间衰减权重
-                age_days = (now_ts - mem["timestamp"]) / (1000 * 3600 * 24)
-                if age_days > 180:
-                    score += 0.2
-                elif age_days > 30:
-                    score += 0.1
-                elif age_days > 7:
-                    score += 0.05
+                # ① 时间衰减权重:档位与惩罚值从配置读取，默认[180,30,7]天/[0.2,0.1,0.05]与历史行为一致
+                age_penalty = 0.0
+                for _d, _p in zip(time_decay_days, time_decay_penalty):
+                    if age_days > _d:
+                        age_penalty = _p
+                        break
+                score += age_penalty
                 # ② 标签权重加成
                 mem_tags = [t.lower() for t in mem.get("tags", [])]
                 tag_bonus = 0
@@ -379,17 +387,27 @@ class MemoryCache:
                 score -= entity_match * 0.1
                 # 余弦相似度硬门槛:加权仅用于排序，原始相似度低于阈值一律不保留（orig_dist本身已是d²，直接代入cos=1-d²/2）
                 cos_sim_raw = 1.0 - float(orig_dist) / 2.0
-                if cos_sim_raw >= threshold:
+                # 时效参与门槛（时效β）:扣除时效惩罚后的有效相似度也必须达标，过期但语义像的记忆被拦在门外
+                cos_sim_eff = cos_sim_raw - age_penalty
+                if cos_sim_raw >= threshold and cos_sim_eff >= threshold:
                     # 元组第4位携带原始L2距离orig_dist，供召回观测台换算余弦相似度展示
                     scored_candidates.append( (score, idx, mem, orig_dist) )
             
-            # 5. 按最终得分从小到大排序（越靠前越相关），取top_k
+            # 5. 双门槛（相对阈值）:以本轮最高余弦为基准，剔除明显擦边的低分候选，避免无区分度时"全放"
+            relative_margin = self.config.get("relative_margin", 0.05)
+            if scored_candidates and relative_margin > 0:
+                top1_cos = max(1.0 - float(c[3]) / 2.0 for c in scored_candidates)
+                scored_candidates = [c for c in scored_candidates if (1.0 - float(c[3]) / 2.0) >= top1_cos - relative_margin]
+            # 6. 按最终得分从小到大排序（越靠前越相关）
             scored_candidates.sort(key=lambda x: x[0])
+            # 7. MMR去冗余:在保证相关性的前提下提升多样性，避免语义近似记忆占满top_k
+            mmr_lambda = self.config.get("mmr_lambda", 0.7)
+            selected_candidates = self._mmr_select(scored_candidates, top_k, mmr_lambda)
             memory_results = []
             seen_contents = set()
             show_timestamp = self.config.get("show_timestamp_in_context", True)
             # 解包4元素元组:score=加权后最终距离分, orig_dist=加权前原始L2距离
-            for score, idx, mem, orig_dist in scored_candidates:
+            for score, idx, mem, orig_dist in selected_candidates:
                 if len(memory_results) >= top_k:
                     break
                 if mem["content"] not in seen_contents:
@@ -426,6 +444,52 @@ class MemoryCache:
             "memory_recall": memory_results,
             "context_rounds": context_rounds
         }
+
+    def _mmr_select(self, scored_candidates: List, top_k: int, mmr_lambda: float) -> List:
+        """MMR最大边际相关性去冗余:平衡相关性与多样性挑选候选，避免语义近似记忆占满top_k。
+        候选元素为(score, idx, mem, orig_dist)。索引不支持取向量时自动降级为按相关性直取，保证不报错、不空召回。
+        """
+        if not scored_candidates or top_k <= 0:
+            return []
+        # 尝试取出候选向量，用于计算候选间相似度
+        try:
+            vectors = {}
+            for _, idx, _, _ in scored_candidates:
+                vectors[int(idx)] = np.array(self.index.reconstruct(int(idx)), dtype='float32')
+        except Exception as e:
+            # 降级:取不到向量则按原相关性排序直取，行为与改前一致
+            print(f"⚠️ MMR取向量失败，降级为按相关性直取:{str(e)}")
+            return scored_candidates
+        # 相关性归一化基准:加权分越小越相关，取最大分做归一化，避免除零
+        max_score = max(c[0] for c in scored_candidates) or 1.0
+        remaining = list(scored_candidates)
+        selected = []
+        while remaining and len(selected) < top_k:
+            if not selected:
+                # 第一条直接取相关性最高的
+                picked = min(remaining, key=lambda x: x[0])
+            else:
+                def mmr_value(cand):
+                    rel = 1.0 - float(cand[0]) / max_score
+                    cand_vec = vectors[int(cand[1])]
+                    sims = []
+                    for sel in selected:
+                        sel_vec = vectors[int(sel[1])]
+                        denom = float(np.linalg.norm(cand_vec) * np.linalg.norm(sel_vec))
+                        sims.append(float(np.dot(cand_vec, sel_vec) / denom) if denom > 0 else 0.0)
+                    max_sim = max(sims) if sims else 0.0
+                    return mmr_lambda * rel - (1.0 - mmr_lambda) * max_sim
+                picked = max(remaining, key=mmr_value)
+            selected.append(picked)
+            remaining.remove(picked)
+        # 全等内容去重后返回（保持MMR选取顺序）
+        result = []
+        seen = set()
+        for cand in selected:
+            if cand[2]["content"] not in seen:
+                seen.add(cand[2]["content"])
+                result.append(cand)
+        return result
 
     def get_ready_for_lora(self) -> List[Dict]:
         """获取符合写入LoRA条件的记忆（调用≥3次，未同步）"""
@@ -509,6 +573,21 @@ class MemoryCache:
         if os.path.exists(self.config_path):
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 self.config = json.load(f)
+            # 兼容旧版配置:用出厂默认补齐缺失的新增召回参数（仅补缺失键，已有键一律不覆盖），补齐后写回，实现旧配置自动迁移
+            _recall_defaults = {
+                "max_age_days": 0,
+                "time_decay_days": [180, 30, 7],
+                "time_decay_penalty": [0.2, 0.1, 0.05],
+                "relative_margin": 0.05,
+                "mmr_lambda": 0.7,
+            }
+            _added = False
+            for _k, _v in _recall_defaults.items():
+                if _k not in self.config:
+                    self.config[_k] = _v
+                    _added = True
+            if _added:
+                self.save_config()
         else:
             # 默认配置
             self.config = {
@@ -516,6 +595,11 @@ class MemoryCache:
                 "recall_top_k": 4,
                 "similarity_threshold": 0.85,
                 "recall_trigger_rounds": 2,
+                "max_age_days": 0,
+                "time_decay_days": [180, 30, 7],
+                "time_decay_penalty": [0.2, 0.1, 0.05],
+                "relative_margin": 0.05,
+                "mmr_lambda": 0.7,
                 "fixed_recall": {
                     "slot1": "AI助手工具调用规则提示词（优先级最高，必须100%严格遵守）\n🔹 核心规则（绝对不能违反）\n你不需要记忆任何JSON格式、不需要自行拼接任何工具指令结构，所有工具调用仅需要按下方固定格式输出纯文本内容即可，系统会自动生成合法可执行的指令，自行生成的任何JSON结构都会被直接拦截不执行。\n🔹 固定工具调用输出格式（完全照搬，不要修改任何结构）\n【工具调用开始】\n工具名称：[从下方白名单选择对应工具名]\n参数列表：\n[参数1名]：[参数1的实际值，原样输出即可，不需要转义任何特殊符号]\n[参数2名]：[参数2的实际值，有换行直接保留换行即可]\n【工具调用结束】\n...\n注意：不需要加任何代码块标记、不需要加任何JSON符号，仅输出以上纯文本内容即可。\n\n🔹 支持的工具白名单&必填参数清单\n工具名称\n参数列表\n功能说明\n\n工具名称：read_file\n参数列表：\nfile_name（必填，要读取的文件相对路径）\nstart_line（必填，起始行号，**从 1 开始，必须与 end_line 同时提供**）\nend_line（必填，结束行号，**必须与 start_line 同时提供，且 end_line ≥ start_line**）\n功能说明：读取项目指定文件内容，强制读全文（双*=完整读取；start_line=100、end_line=* 表示从第100行读到文件末尾）；\n\n工具名称：edit_file\n参数列表：\nfile_name（要操作的文件相对路径）\noperation（操作类型：replace/delete/insert_before/insert_after）\ngzt_anchor（原文中3-5行连续内容作为定位锚点，必须是整行的内容）\ngzt_newtext（要插入/替换的内容，delete操作不需要）\n功能说明：编辑修改项目指定文件的内容；\n\n工具名称：create_file\n参数列表：\npath（要创建的文件/文件夹相对路径）\nis_dir（布尔值，使用false，true为单独创建一个文件夹使用）\ngzt_newtext（要写入的文件内容，创建文件夹不需要）\n功能说明：创建新文件或文件夹；\n\n工具名称：delete_file\n参数列表：\nfile_name（要删除的文件/文件夹相对路径）\n功能说明：删除指定文件或文件夹；\n\n工具名称：exec_cmd\n参数列表：\ncmd（要执行的合法终端命令，禁止执行危险操作）\n功能说明：执行终端查询类命令；\n\n工具名称：rag_search\n参数列表：\nquery（要检索的关键词/问题）\n功能说明：检索整个项目代码库中相关的代码片段；\n\n工具名称：rename_file\n参数列表：\nold_path (字符串，原路径)\nnew_name (字符串，新名称)\n功能说明：重命名文件或文件夹\n\n工具名称：get_project_tree\n参数列表：\n功能说明：读取项目的完整文件清单。\n\n工具名称：query_background_task\n参数列表：\ntask_id（必填，后台任务ID，提升文案中给出的bg_开头ID）\n功能说明：查询后台长命令任务的运行状态与输出尾部；\n\n工具名称：cancel_background_task\n参数列表：\ntask_id（必填，要递归终止的后台任务ID，bg_开头）\n功能说明：终止指定的后台任务及其整个子进程树；\n\n【锚点规则】\n1. 锚点优先选择包含唯一标识的3-5行连续上下文，匹配缩进空行，必须使用整行内容（3-5行不是上限，可以更多行数作为锚点执行长内容替换）；\n2. 禁止仅用单个符号/通用关键词作为锚点。\n\n【同文件多处修改规则（P0新增，强制执行）】\n同一文件有多处互不重叠的修改时，在一轮回复中连续输出多个edit_file调用（每处使用独立的3-5行整行锚点），由系统批量执行、逐个校验，禁止拆成多轮反复\"读取-修改\"导致上下文膨胀；跨文件操作仍必须遵守\"一个文件操作完成并校验后，再操作下一个文件\"的铁律，禁止跨文件并行。\n\n🔹 禁止行为&兜底规则\n普通回答中如果需要举例说明工具格式，必须在示例前添加固定标识「🔹 非执行示例，仅作参考」，且不得使用【工具调用请求】标识，不会被误执行；\n输出工具调用请求前必须检查必填参数是否完整，参数值是否符合要求，遗漏参数会被自动拦截提示补充；\n工具调用请求必须独立成段，不要和普通自然语言回答混排；\n工具调用指令必须输出在正式content字段，禁止写在reasoning_content思考过程中。\n【开发项目说明】\n1. 所有的项目都位于根目录下的仓库文件夹当中，仓库文件夹当中的下级文件夹为单独的项目文件夹；\n2. 每个项目文件夹创建时都会自动生成一个项目手册，所有的文件增删改的操作信息都会实时同步更新项目手册第二和第三章节的内容；\n3. 所有信息以项目手册为准，项目手册第二章节的内容是项目文件列表，第三章节为项目文件的功能明细，AI助手禁止修改第二章和第三章；\n4. 项目手册第四章功能开发计划，在本章只需写入计划名称，和简略说明。所有的开发和修改计划确认后单独创建一个详细执行步骤文件，按照文件执行；\n5. 项目手册第五章风险评估与应对，信息一定要简略，不要给出复杂说明，控制内容长度，详细信息也增加到创建的执行步骤文件中；\n6. 当开发和修改计划完成，用户测试通过后，再更新项目手册第四章和第五章，标注完成后，手册只留结论不留过程。和用户确认是否要删除执行步骤文件；\n7. 创建，修改，读取项目根目录下的文件/文件夹：path参数直接填写名称，无需任何父级前缀；\n8. 创建，修改，读取子目录内的文件/文件夹：path参数仅补充对应的子目录相对路径（例如test_dir/sub_test.txt）；\n9. 工作台是用项目记忆隔离方式，选择不同项目操作AI助手的相关操作记忆是不互通的形式；\n10. 可以使用全路径创建，读取，修改项目外的文件，（禁止操作目录列表内的文件无法执行读取创建修改，禁止操作目录列表在工作台的配置页面中设置）。 \n\n### 🔹 编辑工具选择优先级（强制执行）\n1. **默认优先使用原生`edit_file`工具**：\n   只要待修改的锚点内容、替换内容中不包含原生工具的参数关键词（`gzt_newtext:`、`gzt_anchor:`、`operation:`、`file_name:`），一律优先使用原生编辑工具，不主动使用补充插件。\n2. **仅在原生工具存在截断风险时才启用`safe_file_editor`**：\n   只有当确认待编辑内容包含原生工具的参数关键词、会触发解析截断时，才使用安全编辑插件作为补充方案，且会提前检查内容是否包含`anchor_text:`/`replace_text:`/`edit_file_path:`/`op_type:`等安全插件自身的参数关键词，避免二次截断问题。",
                     "slot2": "【全局开发原则】（所有身份必须遵守）\n1. 配置优先原则：新增任何参数/阈值/路径时，必须优先检查是否已有统一配置中心可复用，禁止在代码中硬编码；\n2. 复用优先原则：开发新功能前，必须先检查项目中是否已有类似功能模块可复用；\n3. 统一配置入口：所有配置参数必须通过前端配置中心可编辑，禁止只在代码层面修改；\n4. 变更同步原则：修改任何配置项时，必须同步更新对应的配置文件和前端管理页面。\n4. 按钮设置原则：任何按钮的生成都不要有图标，保持设计页面的整洁。\n【强制输出规则】：\n1. 【示例输出要求】所有非执行的示例/演示/参考类内容，禁止使用任何```代码块包裹，首行必须添加固定标识「🔹 非执行示例，仅作参考」；\n2. 【拦截反馈要求】收到包含is_intercepted=true的工具返回结果时，必须立即向用户明确说明拦截原因、影响范围、操作建议，禁止无任何反馈；\n3. 【文件操作要求】\n   a. 写入文件的内容超过200行/2000字符时，绝对禁止一次性写入，必须拆分成2步：\n       第一步：调用create_file创建文件写入前半部分\n       第二步：调用edit_file插入剩余内容到文件末尾。\n4.【项目文件测试要求】项目开发完成执行测试，必须告知用户，提交用户执行相关测试，并说明测试注意事项。真实环境运行后测试出的问题才是修改项目文件的依据；必须要认真对待源码环境和真实的项目文件运行是有区别的，特别是项目经过打包安装的方式。",

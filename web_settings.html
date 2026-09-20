@@ -225,6 +225,38 @@
                         </el-form-item>
                     </el-col>
                 </el-row>
+                <el-row :gutter="24">
+                    <el-col span="12">
+                        <el-form-item label="超龄记忆上限(天)">
+                            <el-input-number v-model="memoryConfig.max_age_days" :min="0" :max="3650" size="large" controls-position="right"></el-input-number>
+                            <div class="tip-text">超过N天的记忆不参与召回，0=不限制，编程场景建议30~90</div>
+                        </el-form-item>
+                    </el-col>
+                    <el-col span="12">
+                        <el-form-item label="相对阈值余量">
+                            <el-input-number v-model="memoryConfig.relative_margin" :min="0" :max="1" :step="0.01" size="large" controls-position="right"></el-input-number>
+                            <div class="tip-text">剔除低于最高相似度该余量的擦边记忆，0=不启用</div>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+                <el-row :gutter="24">
+                    <el-col span="12">
+                        <el-form-item label="时间衰减档位(天)">
+                            <el-input :value="numListToStr(memoryConfig.time_decay_days)" @input="memoryConfig.time_decay_days = strToNumList($event)"></el-input>
+                            <div class="tip-text">逗号分隔，如180,30,7，需与下方惩罚一一对应</div>
+                        </el-form-item>
+                    </el-col>
+                    <el-col span="12">
+                        <el-form-item label="时间衰减惩罚">
+                            <el-input :value="numListToStr(memoryConfig.time_decay_penalty)" @input="memoryConfig.time_decay_penalty = strToNumList($event)"></el-input>
+                            <div class="tip-text">逗号分隔，如0.2,0.1,0.05，全填0=关闭时效门槛</div>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+                <el-form-item label="多样性权重(MMR)">
+                    <el-input-number v-model="memoryConfig.mmr_lambda" :min="0" :max="1" :step="0.05" size="large" controls-position="right"></el-input-number>
+                    <div class="tip-text">0~1，越大越偏相关性，1.0=关闭去冗余</div>
+                </el-form-item>
                 <el-form-item label="固定提示1">
                     <el-input type="textarea" :rows="2" v-model="memoryConfig.fixed_recall.slot1" placeholder="填写需要固定召回的内容，空则不生效"></el-input>
                 </el-form-item>
@@ -450,6 +482,11 @@
                         recall_top_k: 4,
                         similarity_threshold: 0.85,
                         recall_trigger_rounds: 2,
+                        max_age_days: 0,
+                        time_decay_days: [180, 30, 7],
+                        time_decay_penalty: [0.2, 0.1, 0.05],
+                        relative_margin: 0.05,
+                        mmr_lambda: 0.7,
                         show_timestamp_in_context: true,
                         fixed_recall: {
                             slot1: "",
@@ -517,11 +554,19 @@
                     try {
                         const res = await axios.get(`${this.apiBase}/memory/config`)
                         if (res.data.code === 200) {
-                            this.memoryConfig = res.data.data
+                            // 兜底合并:老配置文件可能缺少时效/MMR新增项，用默认值补齐，避免控件绑定undefined
+                            this.memoryConfig = { ...this.memoryConfig, ...res.data.data }
                         }
                     } catch (e) {
-                        this.$message.error('加载记忆配置失败：' + e.message)
+                        this.$message.error('加载记忆配置失败:' + e.message)
                     }
+                },
+                // 数组型参数的编辑辅助:数字数组 <-> 逗号分隔字符串（前端可编辑，后端存数组）
+                numListToStr(arr) {
+                    return Array.isArray(arr) ? arr.join(',') : (arr || '')
+                },
+                strToNumList(str) {
+                    return String(str == null ? '' : str).split(',').map(x => Number(x.trim())).filter(x => !isNaN(x))
                 },
                 // 保存配置（同时保存系统配置+记忆配置）
                 async saveConfig() {
