@@ -9,7 +9,7 @@
 # ============================================================
 
 param(
-    [ValidateSet('Draft','Upload','All')]
+    [ValidateSet('Draft','Upload','All','Notes')]
     [string]$Step = 'All'
 )
 
@@ -55,6 +55,8 @@ $ReleaseNotes = @'
 ---
 
 **完整提交记录**:https://github.com/cbhoooo-jpg/AI-GZT/commits/main
+
+> **2026-09-19 更新安装包**:含全站主题系统、操作日志持久化等 18 项改动，安装包已同步刷新
 '@
 
 # ===== 工具函数:从 Git 凭据管理器取 token（不打印明文） =====
@@ -150,6 +152,17 @@ function Upload-Asset($token, $releaseId) {
     }
     throw "连续 $maxTries 次上传失败，请检查网络后重新双击运行（草稿会自动复用，不会重复创建）。"
 }
+# ===== 步骤4:更新 Release 说明正文（原地换包时同步刷新说明） =====
+function Set-ReleaseNotes($token, $releaseId) {
+    $headers = New-ApiHeaders $token
+    # 说明正文含中文与 Markdown 特殊字符，统一转 UTF-8 字节提交，避免乱码
+    $body = @{ body = $ReleaseNotes } | ConvertTo-Json -Compress
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+    $r = Invoke-RestMethod -Uri "$ApiBase/releases/$releaseId" -Method Patch -Headers $headers -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 30
+    Write-Host "[OK] Release 说明正文已更新"
+    Write-Host "     页面地址: $($r.html_url)"
+    return $r
+}
 # ===== 步骤3:将草稿转为正式发布 =====
 function Publish-Release($token, $releaseId) {
     $headers = New-ApiHeaders $token
@@ -176,14 +189,27 @@ if ($Step -eq 'Draft') {
     return
 }
 
+if ($Step -eq 'Notes') {
+    if (-not (Test-Path $InfoFile)) { throw '未找到 release_info.json，请先执行 Draft 步骤' }
+    $info = Get-Content $InfoFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    Set-ReleaseNotes $token $info.release_id | Out-Null
+    Write-Host ""
+    Write-Host "============================================"
+    Write-Host "  [全部完成] Release 说明正文已更新"
+    Write-Host "============================================"
+    return
+}
+
 if ($Step -eq 'Upload') {
     if (-not (Test-Path $InfoFile)) { throw '未找到 release_info.json，请先执行 Draft 步骤' }
     $info = Get-Content $InfoFile -Raw -Encoding UTF8 | ConvertFrom-Json
     Upload-Asset $token $info.release_id | Out-Null
     Publish-Release $token $info.release_id | Out-Null
+    # 换包成功后同步刷新说明正文，一条命令即可完成「只换包 + 更新说明」
+    Set-ReleaseNotes $token $info.release_id | Out-Null
     Write-Host ""
     Write-Host "============================================"
-    Write-Host "  [全部完成] 请刷新 GitHub Releases 页面查看"
+    Write-Host "  [全部完成] 安装包已替换 + 说明已更新，请刷新页面查看"
     Write-Host "============================================"
     return
 }
