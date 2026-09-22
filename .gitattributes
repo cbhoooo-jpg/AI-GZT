@@ -1,0 +1,3 @@
+# Windows batch scripts: store as CRLF, disable any EOL conversion.
+# Guarantees CRLF for BOTH "git clone" and web "Download ZIP".
+*.bat -text
