@@ -22,7 +22,7 @@ Even beginners can use it: point the built-in file repository at a source folder
 
 | File | Description | Link |
 | --- | --- | --- |
-| AI Workbench v1.1 Windows Installer | ~199 MB, Python runtime and all dependencies bundled, works out of the box | [GitHub Release](https://github.com/cbhoooo-jpg/AI-GZT/releases/download/v1.1/AI_GZT_Setup_v1.1.exe) · [123pan mirror (China, fast)](https://4004388641.share.123pan.cn/123pan/NFTTwh-w54xv) |
+| AI Workbench v1.1 Windows Installer | ~199 MB, Python runtime and all dependencies bundled, works out of the box | [GitHub Release](https://github.com/cbhoooo-jpg/AI-GZT/releases/download/v1.1/AI_GZT_Setup_v1.1.exe) · [123pan mirror (China, fast)](https://4004388641.share.123pan.cn/123pan/NFTTwh-jSDpv?pwd=5yyL#) |
 
 - The installer is **not code-signed** (an open-source project without a signing budget). On the blue Windows SmartScreen dialog click **"More info" → "Run anyway"**, then approve the UAC prompt. This is normal for unsigned software and does not indicate risk.
 - A portable ZIP edition is available by emailing **602477958@qq.com** with the subject "AI智能助手 ZIP 免安装版".
