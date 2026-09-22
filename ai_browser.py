@@ -420,7 +420,7 @@ class AIBrowserWindow(QMainWindow):
         self.refresh_favorites_menu()
 
     def init_window(self):
-        self.setWindowTitle("AI智能助手桌面软件 V1.0")
+        self.setWindowTitle("AI智能助手桌面软件 V1.1")
         self.setGeometry(100, 100, 1200, 800)
         # 设置窗口图标:使用项目实际存在的 logo.png（修复原空图标问题）
         self.setWindowIcon(QIcon("logo.png"))

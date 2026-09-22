@@ -1,8 +1,8 @@
 ﻿# ============================================================
-# 发布GitHubRelease.ps1 — AI-GZT v1.0 GitHub Release 发布脚本
+# 发布GitHubRelease.ps1 — AI-GZT v1.1 GitHub Release 发布脚本
 # 功能:
-#   1. 创建 v1.0 草稿 Release（草稿状态外界不可见）
-#   2. 上传 dist\AI_GZT_Setup_v1.0.exe（约199MB），失败自动重试6次
+#   1. 创建 v1.1 草稿 Release（草稿状态外界不可见）
+#   2. 上传 dist\AI_GZT_Setup_v1.1.exe（约199MB），失败自动重试6次
 #   3. 上传成功后自动将草稿转为正式发布
 # 凭据:复用 Git Credential Manager 已缓存的 GitHub 授权，无需重新登录
 # 用法:powershell -ExecutionPolicy Bypass -File 发布GitHubRelease.ps1 -Step All
@@ -18,15 +18,15 @@ $ErrorActionPreference = 'Stop'
 
 # ===== 配置 =====
 $Repo      = 'cbhoooo-jpg/AI-GZT'
-$Tag       = 'v1.0'
-$ExePath   = Join-Path $PSScriptRoot 'dist\AI_GZT_Setup_v1.0.exe'
-$AssetName = 'AI_GZT_Setup_v1.0.exe'
+$Tag       = 'v1.1'
+$ExePath   = Join-Path $PSScriptRoot 'dist\AI_GZT_Setup_v1.1.exe'
+$AssetName = 'AI_GZT_Setup_v1.1.exe'
 $InfoFile  = Join-Path $PSScriptRoot 'release_info.json'
 $ApiBase   = "https://api.github.com/repos/$Repo"
 
 # ===== Release 说明文案 =====
 $ReleaseNotes = @'
-# AI-GZT v1.0 正式版 🎉
+# AI-GZT v1.1 正式版 🎉
 
 本地优先的 AI 桌面助手:所有数据本地存储，支持离线部署本地大模型。
 
@@ -46,7 +46,7 @@ $ReleaseNotes = @'
 
 ## 📦 下载安装
 
-下载下方 **AI_GZT_Setup_v1.0.exe**（约 199 MB），双击安装即可，支持 Windows 10 / 11（64 位）。
+下载下方 **AI_GZT_Setup_v1.1.exe**（约 199 MB），双击安装即可，支持 Windows 10 / 11（64 位）。
 
 ## 🔒 隐私说明
 
@@ -103,7 +103,7 @@ function New-DraftRelease($token) {
     $body = @{
         tag_name         = $Tag
         target_commitish = 'main'
-        name             = 'AI-GZT v1.0 正式版'
+        name             = 'AI-GZT v1.1 正式版'
         body             = $ReleaseNotes
         draft            = $true
         prerelease       = $false
@@ -175,7 +175,7 @@ function Publish-Release($token, $releaseId) {
 
 # ===== 主流程 =====
 Write-Host "============================================"
-Write-Host "  AI-GZT v1.0 GitHub Release 发布工具"
+Write-Host "  AI-GZT v1.1 GitHub Release 发布工具"
 Write-Host "============================================"
 Write-Host ""
 
@@ -220,6 +220,6 @@ Upload-Asset $token $rel.id | Out-Null
 Publish-Release $token $rel.id | Out-Null
 Write-Host ""
 Write-Host "============================================"
-Write-Host "  [全部完成] v1.0 已发布，访客可直接下载安装包"
+Write-Host "  [全部完成] v1.1 已发布，访客可直接下载安装包"
 Write-Host "  https://github.com/cbhoooo-jpg/AI-GZT/releases"
 Write-Host "============================================"

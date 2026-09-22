@@ -1,10 +1,10 @@
 ; AI智能助手 Inno Setup 安装脚本
-; 版本 v1.0
+; 版本 v1.1
 
 [Setup]
 ; 基础应用信息
 AppName=AI智能助手
-AppVersion=1.0
+AppVersion=1.1
 AppPublisher=AI智能助手开发团队
 AppPublisherURL=https://github.com/
 AppSupportURL=https://github.com/
@@ -15,7 +15,7 @@ DefaultDirName={localappdata}\Programs\AI_GZT
 DefaultGroupName=AI_GZT
 DisableProgramGroupPage=yes
 OutputDir=dist
-OutputBaseFilename=AI_GZT_Setup_v1.0
+OutputBaseFilename=AI_GZT_Setup_v1.1
 SetupIconFile=app_icon.ico
 Compression=lzma2/ultra
 SolidCompression=yes
@@ -28,7 +28,7 @@ ArchitecturesInstallIn64BitMode=x64
 
 ; 卸载配置
 UninstallDisplayIcon={app}\AI_GZT.exe
-UninstallDisplayName=AI智能助手 v1.0
+UninstallDisplayName=AI智能助手 v1.1
 CloseApplications=yes
 CloseApplicationsFilter=AI_GZT.exe
 

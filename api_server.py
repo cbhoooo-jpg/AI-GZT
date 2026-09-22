@@ -302,7 +302,7 @@ class ChatCompletionRequest(BaseModel):
 app = FastAPI(
     title="智能助手API服务",
     description="兼容OpenAI标准接口的智能助手API服务",
-    version="1.0.0",
+    version="1.1.0",
     docs_url="/docs",
     redoc_url=None
 )
@@ -3888,12 +3888,20 @@ class MemoryConfigUpdateRequest(BaseModel):
 @app.get("/api/memory/env_check")
 async def check_vector_env():
     """检测向量检索环境状态，前端设置页根据此结果展示完整模式/降级模式"""
+    # 检测本地中文语义向量模型文件是否存在（与 memory_cache.py 加载口径对齐）
+    model_candidates = [os.path.join(BASE_DIR, "gte-small-zh"), "./gte-small-zh"]
+    if getattr(_sys, 'frozen', False):
+        model_candidates.insert(1, os.path.join(_exe_dir, "gte-small-zh"))
+    model_installed = any(
+        os.path.exists(os.path.join(d, "pytorch_model.bin")) for d in model_candidates
+    )
     result = {
         "python_version": f"{_sys.version_info.major}.{_sys.version_info.minor}",
         "python_matched": True,  # 打包后固定为True，开发环境也是True
         "torch_installed": False,
         "sentence_transformers_installed": False,
         "transformers_installed": False,
+        "model_installed": model_installed,
         "current_mode": "degraded" if memory_cache.encoder is None else "full"
     }
     

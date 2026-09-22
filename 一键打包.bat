@@ -93,8 +93,8 @@ echo ✅  打包完成！产物位置:
 echo.
 echo    绿色版目录: %~dp0dist\AI_GZT\
 echo    启动程序:   %~dp0dist\AI_GZT\AI_GZT.exe
-if exist "%~dp0dist\AI_GZT_Setup_v1.0.exe" (
-    echo    安装包:     %~dp0dist\AI_GZT_Setup_v1.0.exe
+if exist "%~dp0dist\AI_GZT_Setup_v1.1.exe" (
+    echo    安装包:     %~dp0dist\AI_GZT_Setup_v1.1.exe
 ) else (
     echo    安装包:     未生成（未安装Inno Setup 6，仅输出绿色版，不影响使用）
 )

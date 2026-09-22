@@ -289,7 +289,7 @@ if iscc_path:
     setup_script = os.path.join(BASE_DIR, "setup.iss")
     result = subprocess.run([iscc_path, setup_script], cwd=BASE_DIR)
     if result.returncode == 0:
-        installer_path = os.path.join(BASE_DIR, "dist", "AI_GZT_Setup_v1.0.exe")
+        installer_path = os.path.join(BASE_DIR, "dist", "AI_GZT_Setup_v1.1.exe")
         print(f"✅ 安装包编译成功: {installer_path}")
     else:
         print("⚠️  安装包编译失败，请检查setup.iss脚本或Inno Setup安装是否正常")

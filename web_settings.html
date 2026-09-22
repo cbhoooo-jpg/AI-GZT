@@ -292,13 +292,24 @@
                     <div v-if="vectorEnv.current_mode === 'full'" style="color: #67C23A; font-size: 14px;">
                         ✅ 向量检索功能已启用，记忆检索开启，RAG功能开启
                     </div>
-                    <div v-else style="color: #e6a23c; font-size: 14px;">
+                    <div v-else-if="!vectorEnv.torch_installed || !vectorEnv.sentence_transformers_installed || !vectorEnv.transformers_installed" style="color: #e6a23c; font-size: 14px;">
                         ⚠️ 向量检索功能已禁用，当前仅保留元数据记忆。请安装以下依赖以启用完整模式:
                         <div style="margin-top: 8px; padding: 8px; background-color: #fdf6ec; border-radius: 4px;">
                             <div>1. 安装Python 3.11 (需与程序内置版本一致)</div>
                             <div>2. 找到安装文件中的(Python和依赖安装.bat)文件双击运行会自动安装Python 3.11和相关依赖</div>
                             <div>3. 安装完成后重启程序</div>
                         </div>
+                    </div>
+                    <div v-else-if="!vectorEnv.model_installed" style="color: #e6a23c; font-size: 14px;">
+                        ⚠️ 向量检索功能已禁用，当前仅保留元数据记忆。依赖已安装，但未检测到本地中文语义向量模型文件。
+                        <div style="margin-top: 8px; padding: 8px; background-color: #fdf6ec; border-radius: 4px;">
+                            <div>1. 下载中文语义向量模型 gte-small-zh（含 pytorch_model.bin 等文件）</div>
+                            <div>2. 将模型文件放入程序目录下的 gte-small-zh 文件夹中</div>
+                            <div>3. 点击"重新检测"后关闭工作台重新启动后即可启用完整模式</div>
+                        </div>
+                    </div>
+                    <div v-else style="color: #e6a23c; font-size: 14px;">
+                        ⚠️ 向量检索功能已禁用，当前仅保留元数据记忆。依赖与模型文件均已就绪，但模型加载失败，请查看日志后重启程序。
                     </div>
                     <el-button type="primary" size="small" @click="checkVectorEnv" :loading="vectorEnvLoading" style="margin-top: 12px;">
                         重新检测
@@ -506,6 +517,7 @@
                         torch_installed: false,
                         sentence_transformers_installed: false,
                         transformers_installed: false,
+                        model_installed: false,
                         current_mode: 'degraded'
                     },
                     vectorEnvLoading: false
