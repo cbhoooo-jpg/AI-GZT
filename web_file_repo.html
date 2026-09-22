@@ -153,13 +153,19 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <h3 style="display: flex; align-items: center; gap: 8px; overflow: visible;"><img src="/logo.png" style="width: 74 px; height: 74px; object-fit: contain; margin: -25px 0;"> 仓库</h3>
             <div style="display: flex; gap: 8px;">
+                <el-button
+                    type="primary"
+                    size="small"
+                    @click="handleOpenRepository"
+                    :loading="repoOpening"
+                >打开仓库</el-button>
                 <el-button 
                     type="success" 
                     size="small" 
                     @click="handleRagBuild" 
                     :loading="ragBuilding"
-                >全库RAG入库</el-button>
-                <el-button 
+                >全库RAG重建</el-button>
+                <el-button
                     type="primary" 
                     size="small" 
                     @click="loadFileTree" 
@@ -221,11 +227,15 @@
             :style="contextMenuStyle"
             @click.stop
         >
-            <!-- 新增：打开文件菜单项 -->
+            <!-- 新增:打开文件菜单项 -->
             <div class="context-menu-item" @click="handleOpenFileFromMenu" v-if="currentNode && !currentData.is_dir">打开文件</div>
+            <div class="context-menu-item" @click="handleRunFile" v-if="currentData && !currentData.is_dir && isRunnableFile(currentData.name)">运行</div>
+            <div class="context-menu-item" @click="handleRagBuildProject" v-if="currentData && currentData.is_dir && currentData.path && currentData.path.indexOf('/') === -1">RAG项目入库</div>
             <div class="context-menu-item" @click="handleNewFile">新建文件</div>
             <div class="context-menu-item" @click="handleNewFolder">新建文件夹</div>
             <div class="context-menu-item" @click="handleCreateProjectManual" v-if="!currentNode">创建项目文件夹</div>
+            <div class="context-menu-item" @click="handleCopyItem" v-if="currentNode">复制</div>
+            <div class="context-menu-item" @click="handlePasteItem" v-if="clipboardItem && (!currentData || currentData.is_dir)">粘贴</div>
             <div class="context-menu-item" @click="handleRename" v-if="currentNode">重命名</div>
             <div class="context-menu-item danger" @click="handleDelete" v-if="currentNode">删除</div>
         </div>
@@ -249,13 +259,16 @@
                     contextMenuTop: 0,
                     currentNode: null,
                     currentData: null,
+                    // 右键"复制"写入的剪贴板内容（前端会话状态，刷新页面清空）
+                    clipboardItem: null,
                     apiBase: '/api',
+                    repoOpening: false,
                     isLoading: false,
                     ragBuilding: false,
                     backupLoading: false,
                     // 右键菜单宽高（用于边界检测）
                     menuWidth: 120,
-                    menuHeight: 160,
+                    menuHeight: 240,
                     // 自动刷新定时器
                     autoRefreshTimer: null,
                     // 已展开的节点路径列表，刷新后恢复状态
@@ -532,6 +545,41 @@
                     }
                 },
 
+                // 复制（记录到前端剪贴板，不触碰后端）
+                handleCopyItem() {
+                    this.contextMenuVisible = false
+                    this.clipboardItem = {
+                        path: this.currentData.path,
+                        name: this.currentData.name,
+                        is_dir: this.currentData.is_dir
+                    }
+                    this.$message.success(`已复制「${this.currentData.name}」`)
+                },
+
+                // 粘贴（把剪贴板内容复制到目标文件夹，右键空白处则粘到仓库根目录）
+                async handlePasteItem() {
+                    this.contextMenuVisible = false
+                    if (!this.clipboardItem) {
+                        this.$message.warning('剪贴板为空')
+                        return
+                    }
+                    const destDir = (this.currentData && this.currentData.is_dir) ? this.currentData.path : ''
+                    this.isLoading = true
+                    try {
+                        await axios.post(`${this.apiBase}/file/copy`, {
+                            src_path: this.clipboardItem.path,
+                            dest_dir: destDir
+                        })
+                        this.$message.success('粘贴成功')
+                        await this.loadFileTree()
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message
+                        this.$message.error('粘贴失败:' + msg)
+                    } finally {
+                        this.isLoading = false
+                    }
+                },
+
                 // 重命名
                 async handleRename() {
                     this.contextMenuVisible = false
@@ -643,6 +691,50 @@
                         } finally {
                             this.isLoading = false
                         }
+                    }
+                },
+                // 顶部「打开仓库」:调用后端 open_repository，用系统资源管理器打开仓库根目录
+                async handleOpenRepository() {
+                    this.repoOpening = true
+                    try {
+                        const res = await axios.get(`${this.apiBase}/file/open_repository`)
+                        this.$message.success(res.data.msg)
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message
+                        this.$message.error('打开仓库失败:' + msg)
+                    } finally {
+                        this.repoOpening = false
+                    }
+                },
+                // 右键「运行」:仅对可执行/可打开类文件显示，复用后端 open_external（Windows 下 os.startfile 全覆盖 BAT/EXE/HTML）
+                isRunnableFile(fileName) {
+                    if (!fileName) return false
+                    const dot = fileName.lastIndexOf('.')
+                    if (dot < 0) return false
+                    const ext = fileName.slice(dot).toLowerCase()
+                    return ['.bat', '.cmd', '.exe', '.ps1', '.html', '.htm'].includes(ext)
+                },
+                async handleRunFile() {
+                    this.contextMenuVisible = false
+                    if (!this.currentData) return
+                    try {
+                        const res = await axios.get(`${this.apiBase}/file/open_external`, { params: { path: this.currentData.path } })
+                        this.$message.success(res.data.msg)
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message
+                        this.$message.error('运行失败:' + msg)
+                    }
+                },
+                // 右键「RAG项目入库」:仅对文件夹显示，调用项目级增量入库接口（不清空全库）
+                async handleRagBuildProject() {
+                    this.contextMenuVisible = false
+                    if (!this.currentData) return
+                    try {
+                        const res = await axios.post(`${this.apiBase}/rag/build/project`, { path: this.currentData.path })
+                        this.$message.success(res.data.msg)
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message
+                        this.$message.error('RAG项目入库失败:' + msg)
                     }
                 },
                 // 全库RAG入库

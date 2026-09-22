@@ -225,7 +225,7 @@ gte-small-zh/
 
 ## 插件开发
 
-插件放置于 `plugins/` 目录，每个插件包含 `main.py` + `plugin.json`，模板参考 `plugin_templates/` 目录下的三类标准模板（AIGC 生成类 / 信息采集查询类 / 本地操作类）。
+插件由**插件市场按需安装**到 `plugins/` 目录（不随安装包内置），也可手动放置；每个插件包含 `main.py` + `plugin.json`，模板参考 `plugin_templates/` 目录下的三类标准模板（AIGC 生成类 / 信息采集查询类 / 本地操作类）。
 
 ## 社区与贡献
 

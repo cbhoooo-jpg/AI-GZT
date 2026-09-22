@@ -12,7 +12,7 @@
             theme: {
                 extend: {
                     colors: {
-                        primary: 'rgb(var(--primary-rgb) / <alpha-value>)',
+                        primary: 'rgb(var(--primary-rgb-space) / <alpha-value>)',
                         success: '#00B42A',
                         warning: '#FF7D00',
                         danger: '#F53F3F',
@@ -34,43 +34,40 @@
     </style>
     <script src="/static/theme.js"></script>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="min-h-screen">
 
     <!-- 主内容区 -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <!-- 页面标题 -->
-        <div class="mb-8 flex flex-wrap justify-between items-center gap-4">
+        <!-- 标题与操作按钮卡片容器 -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 px-6 py-4 mb-6 flex flex-col items-start gap-4">
             <div class="flex-shrink-0">
                 <h1 style="display: flex; align-items: center; gap: 14px; overflow: visible; font-size: 28px; font-weight: bold;"><img src="/logo.png" style="width: 74px; height: 74px; object-fit: contain; margin: -25px 0;">插件管理</h1>
-        </div>
-    </div>
-        <div class="flex gap-3 flex-shrink-0">
-            <button id="createPluginBtn" class="bg-success text-white px-4 py-2 rounded-lg hover:bg-success/90 transition flex items-center whitespace-nowrap">
-                <i class=""></i>
-            </button>
-            <div class="relative">
-                <button id="importPluginBtn" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition flex items-center whitespace-nowrap">
-                    <i class="fas fa-upload mr-2"></i>安装插件
-                    <i class="fas fa-chevron-down ml-2 text-xs"></i>
-                </button>
-            <!-- 下拉菜单 -->
-            <div id="importDropdown" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 hidden z-10">
-                <div class="py-1">
-                    <button id="importZipBtn" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
-                        <i class="fas fa-file-archive mr-2 text-gray-500"></i> 上传ZIP插件包
-                    </button>
-                    <button id="importFolderBtn" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
-                        <i class="fas fa-folder mr-2 text-gray-500"></i> 上传插件
-                    </button>
-                </div>
             </div>
-            <input type="file" id="pluginZipInput" accept=".zip" class="hidden">
-            <input type="file" id="pluginFolderInput" webkitdirectory directory class="hidden">
+            <div class="flex gap-3 flex-shrink-0">
+                <div class="relative">
+                    <button id="importPluginBtn" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition flex items-center whitespace-nowrap">
+                        <i class="fas fa-upload mr-2"></i>安装插件
+                        <i class="fas fa-chevron-down ml-2 text-xs"></i>
+                    </button>
+                    <!-- 下拉菜单 -->
+                    <div id="importDropdown" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 hidden z-10">
+                        <div class="py-1">
+                            <button id="importZipBtn" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                                <i class="fas fa-file-archive mr-2 text-gray-500"></i> 上传ZIP插件包
+                            </button>
+                            <button id="importFolderBtn" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                                <i class="fas fa-folder mr-2 text-gray-500"></i> 上传插件
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <input type="file" id="pluginZipInput" accept=".zip" class="hidden">
+                <input type="file" id="pluginFolderInput" webkitdirectory directory class="hidden">
+            </div>
         </div>
-    </div>
 
         <!-- Tab切换 -->
-        <div class="mt-4 mb-6 border-b border-gray-200">
+        <div class="mb-6 border-b border-gray-200">
             <div class="flex space-x-8 flex-nowrap overflow-x-auto pb-1">
                 <button id="tab-installed" class="py-4 px-1 border-b-2 border-primary text-primary font-medium whitespace-nowrap flex-shrink-0">已安装插件</button>
                 <button id="tab-available" class="py-4 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium whitespace-nowrap flex-shrink-0">可安装插件</button>

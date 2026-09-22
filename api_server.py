@@ -106,9 +106,9 @@ def load_config() -> Dict:
             "/System", "/usr", "/bin", "/sbin", "/etc", "/var", "/root", "/private", "/Library"
         ]
     default_config = {
-        "model_provider": "火山方舟",
+        "model_provider": "模型厂商自行设置",
         "api_url": "https://ark.cn-beijing.volces.com/api/v3",
-        "model_name": "doubao-seed-2-1-pro-260628",
+        "model_name": "deepseek-v4.1-flash",
         "api_key": "",
         "timeout": 200,
         "stream_output": True,
@@ -116,7 +116,9 @@ def load_config() -> Dict:
         "download_path": os.path.join(os.path.expanduser("~"), "Downloads"),
         "max_parse_fail_count": 3, # 单个文件解析失败最多重试次数，超过后24小时内自动跳过
         "repository_path": get_default_repository_path(), # 默认仓库路径
-        "max_chat_rounds": 10, # 每轮回复最大次数（安全上限，防止无限循环），AI完成任务后自动停止
+        "rag_max_file_size_kb": 512,
+        "rag_cpu_threads": 0,
+        "max_chat_rounds": 15, # 每轮回复最大次数（安全上限，防止无限循环），AI完成任务后自动停止
         "forbidden_paths": _default_forbidden_paths, # 默认禁止路径列表，根据操作系统动态生成，用户可自由增删
         "show_debug_console": False, # 默认隐藏后端调试控制台，用户可在设置页手动开启
         "theme_primary_color": "#165DFF", # 界面主题主色（前端各页+Qt外壳统一生效，配置页可视化编辑）
@@ -134,14 +136,14 @@ def load_config() -> Dict:
             "truncate_enabled": True,        # 总开关
             "head_chars": 24000,             # 头部保留字符数
             "tail_chars": 8000,              # 尾部保留字符数
-            "trigger_chars": 40000,          # 超过此字符数才触发截断
+            "trigger_chars": 60000,          # 超过此字符数才触发截断
             "save_to_disk": True,            # 完整结果是否落盘
             "output_dir_name": "tool_outputs", # 落盘目录名（打包时exe同级）
-            "max_saved_files": 200,          # 落盘文件最多保留个数
+            "max_saved_files": 50,          # 落盘文件最多保留个数
             "exec_cmd_timeout": 60,          # exec_cmd超时秒数
             "aging_enabled": True,           # 跨轮老化总开关
-            "aging_keep_rounds": 2,          # 保护代数:最近N代工具结果完整保留
-            "aging_trigger_chars": 60000,    # messages总字符超此值才触发老化
+            "aging_keep_rounds": 4,          # 保护代数:最近N代工具结果完整保留
+            "aging_trigger_chars": 120000,    # messages总字符超此值才触发老化
             "aging_max_per_round": 3         # 单轮最多归档条数
         }
     }
@@ -210,10 +212,23 @@ def init_repository_path():
     repo_path = config.get("repository_path") or get_default_repository_path()
     # 标准化路径格式
     REPOSITORY_PATH = os.path.normpath(repo_path).replace("\\", "/")
-    # 自动创建仓库目录
+    # 盘符存在性校验:路径盘符不存在（如虚拟机无D盘）时回退到用户文档目录，避免模块顶层初始化崩溃
+    if os.name == "nt" and len(REPOSITORY_PATH) >= 2 and REPOSITORY_PATH[1] == ":":
+        if not os.path.exists(REPOSITORY_PATH[:2] + "/"):
+            _fallback_repo = os.path.join(os.path.expanduser("~"), "Documents", "AI仓库文件夹")
+            print(f"⚠️ 仓库路径盘符 {REPOSITORY_PATH[:2]} 不存在，自动回退到:{_fallback_repo}")
+            REPOSITORY_PATH = os.path.normpath(_fallback_repo).replace("\\", "/")
+    # 自动创建仓库目录（创建失败时兜底回退，避免异常中断模块顶层初始化导致启动中止）
     if not os.path.exists(REPOSITORY_PATH):
-        os.makedirs(REPOSITORY_PATH, exist_ok=True)
-        print(f"✅ 自动创建仓库目录:{REPOSITORY_PATH}")
+        try:
+            os.makedirs(REPOSITORY_PATH, exist_ok=True)
+            print(f"✅ 自动创建仓库目录:{REPOSITORY_PATH}")
+        except OSError as e:
+            _fallback_repo = os.path.join(os.path.expanduser("~"), "Documents", "AI仓库文件夹")
+            print(f"⚠️ 创建仓库目录失败({e})，已回退到:{_fallback_repo}")
+            REPOSITORY_PATH = os.path.normpath(_fallback_repo).replace("\\", "/")
+            os.makedirs(REPOSITORY_PATH, exist_ok=True)
+            print(f"✅ 已创建回退仓库目录:{REPOSITORY_PATH}")
 
 # 初始化仓库路径
 init_repository_path()
@@ -512,6 +527,8 @@ from tools.intelligent_file_editor import intelligent_file_editor
 from tools.file_editor_config import SUPPORTED_FILE_TYPES
 # 导入工具模板管理器
 from tool_template_manager import tool_template_manager
+# 导入符号定位器（AST 静态解析:符号名 -> 文件+行号+签名+源码）
+import ast_symbol_index
 # 导入定时任务调度器
 from scheduler_manager import scheduler_manager
 # 纯文本参数解析场景专用转义逻辑：完全保留代码内部转义，仅清理首尾空行
@@ -802,14 +819,14 @@ def _get_tool_output_config() -> Dict:
         "truncate_enabled": True,          # 总开关
         "head_chars": 24000,               # 头部保留字符数
         "tail_chars": 8000,                # 尾部保留字符数
-        "trigger_chars": 40000,            # 超过此字符数才触发截断
+        "trigger_chars": 60000,            # 超过此字符数才触发截断
         "save_to_disk": True,              # 完整结果是否落盘
         "output_dir_name": "tool_outputs", # 落盘目录名（打包时exe同级）
-        "max_saved_files": 200,            # 落盘文件最多保留个数
+        "max_saved_files": 50,            # 落盘文件最多保留个数
         "exec_cmd_timeout": 60,            # exec_cmd超时秒数
         "aging_enabled": True,             # 跨轮老化总开关
-        "aging_keep_rounds": 2,            # 保护代数:最近N代工具结果完整保留
-        "aging_trigger_chars": 60000,      # messages总字符超此值才触发老化
+        "aging_keep_rounds": 4,            # 保护代数:最近N代工具结果完整保留
+        "aging_trigger_chars": 120000,      # messages总字符超此值才触发老化
         "aging_max_per_round": 3,          # 单轮最多归档条数
     }
     try:
@@ -835,6 +852,27 @@ def _cleanup_tool_output_dir(dir_path: str, max_files: int):
                 pass
     except Exception as e:
         print(f"⚠️ 清理tool_outputs目录失败:{e}")
+
+# 上传文件夹/截图保留上限（时效性高，硬编码 100）
+UPLOAD_MAX_FILES = 100
+
+def _cleanup_upload_dir():
+    """上传文件夹（含截图）超量时按 mtime 删最早，保留最新 UPLOAD_MAX_FILES 个，任何异常不外抛"""
+    try:
+        if not os.path.isdir(UPLOAD_ROOT):
+            return
+        files = [os.path.join(UPLOAD_ROOT, f) for f in os.listdir(UPLOAD_ROOT)
+                 if os.path.isfile(os.path.join(UPLOAD_ROOT, f))]
+        if len(files) <= UPLOAD_MAX_FILES:
+            return
+        files.sort(key=lambda p: os.path.getmtime(p))
+        for p in files[:len(files) - UPLOAD_MAX_FILES]:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"⚠️ 清理上传文件夹失败:{e}")
 
 def save_full_tool_output(tool_name: str, index, full_text) -> Optional[str]:
     """完整工具结果落盘，返回绝对路径；任何失败只返回None，绝不抛异常影响主流程。
@@ -1395,6 +1433,9 @@ async def chat(req: ChatRequest):
                     # 翻页参数仅read_file需要，按工具名放行，避免进入全局白名单污染其它工具的参数解析
                     if tool_name == "read_file":
                         current_param_names.update({"start_line", "end_line"})
+                    # 符号定位参数仅locate_symbol需要，按工具名放行（file为通用词，避免进入全局白名单污染其它工具）
+                    if tool_name == "locate_symbol":
+                        current_param_names.update({"symbol", "file", "with_content"})
                     plugin_config = tool_template_manager.get_plugin_config(tool_name)
                     if plugin_config:
                         plugin_params = [p["name"] for p in plugin_config["parameters"]]
@@ -1471,6 +1512,7 @@ async def chat(req: ChatRequest):
                         "rename_file": ["old_path", "new_name"],
                         "exec_cmd": ["cmd"],
                         "rag_search": ["query"],
+                        "locate_symbol": ["symbol"],
                         "get_project_tree": [],
                         "query_background_task": ["task_id"],
                         "cancel_background_task": ["task_id"]
@@ -1831,6 +1873,33 @@ async def chat(req: ChatRequest):
                             exec_result += "\n💡 检索结果已自动补全文件绝对路径，直接使用abs_path字段调用文件操作工具即可，无需自行拼接路径"
                             # P0-1: 进messages前统一截断+完整结果落盘（RAG命中大文件片段时兜底）
                             all_exec_results.append(truncate_tool_output("rag_search", len(all_exec_results) + 1, exec_result))
+                            continue
+                        elif func_call.get("name") == "locate_symbol":
+                            symbol = func_call["parameters"]["symbol"].strip()
+                            file_arg = str(func_call["parameters"].get("file", "") or "").strip()
+                            with_content = func_call["parameters"].get("with_content", True)
+                            # 参数类型兜底:文本协议下布尔值可能以字符串传入
+                            if isinstance(with_content, str):
+                                with_content = with_content.strip().lower() not in ("false", "0", "no", "")
+                            locate_result = ast_symbol_index.locate_symbol(symbol, file=file_arg or None, with_content=bool(with_content))
+                            if not locate_result.get("found"):
+                                exec_result = f"❌ 未定位到符号「{symbol}」:{locate_result.get('message', '')}"
+                                add_operation_log("文件操作", exec_result, "error")
+                                all_exec_results.append(exec_result)
+                                continue
+                            exec_result = f"✅ 符号定位结果（共 {locate_result['match_count']} 处，匹配方式:{locate_result.get('match_type')}）:\n"
+                            add_operation_log("文件操作", f"✅ 符号定位结果:{symbol}\n")
+                            for m in locate_result["matches"]:
+                                header = (f"📄 符号:{m['qualified_name']}（类型:{m['type']}）\n"
+                                          f"   文件:{m['file']}（绝对路径:{m['abs_path']}）\n"
+                                          f"   行号:{m['start_line']}-{m['end_line']}\n"
+                                          f"   签名:{m['signature']}\n")
+                                exec_result += header
+                                add_operation_log("文件操作", header)
+                                if m.get("content"):
+                                    exec_result += f"```\n{m['content']}\n```\n"
+                            exec_result += "\n💡 已补齐文件绝对路径与精确行号:可直接用 read_file（start_line/end_line）读取，或用 edit_file（signature 整行作锚点）精确修改"
+                            all_exec_results.append(truncate_tool_output("locate_symbol", len(all_exec_results) + 1, exec_result))
                             continue
                         elif func_call.get("name") == "exec_cmd":
                             cmd = func_call["parameters"]["cmd"].strip()
@@ -2506,6 +2575,9 @@ async def upload_chat_file(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(file_content)
     
+    # 上传后清理超量旧文件（保留最新 100 个）
+    _cleanup_upload_dir()
+    
     # 返回可直接访问的静态URL+文件类型，前后端统一处理
     access_url = f"/upload/{file_name}"
     file_type = get_file_type(ext)
@@ -2645,6 +2717,7 @@ async def common_upload(
         real_local_path = os.path.join(UPLOAD_ROOT, temp_file_name)
         with open(real_local_path, "wb") as f:
             f.write(file_content)
+        _cleanup_upload_dir()
     # 场景2:后端插件传本地路径
     else:
         # 转换为真实物理路径
@@ -3091,6 +3164,27 @@ async def open_file_external(path: str):
         err_msg = f"打开文件失败: {str(e)}"
         add_file_operation_log("open_external", path, "fail", err_msg)
         raise HTTPException(status_code=500, detail=err_msg)
+@app.get("/api/file/open_repository")
+async def open_repository_folder():
+    """用系统资源管理器打开仓库根目录"""
+    import subprocess
+    repo_path = REPOSITORY_PATH
+    if not repo_path or not os.path.exists(repo_path):
+        raise HTTPException(status_code=404, detail="仓库目录不存在")
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(repo_path)
+        elif system == "Darwin":
+            subprocess.run(["open", repo_path], check=True, capture_output=True, timeout=5)
+        else:
+            subprocess.run(["xdg-open", repo_path], check=True, capture_output=True, timeout=5)
+        add_file_operation_log("open_repository", repo_path, "success", f"打开仓库目录成功，路径:{repo_path}")
+        return {"code": 200, "msg": "已用资源管理器打开仓库目录", "repo_path": repo_path}
+    except Exception as e:
+        err_msg = f"打开仓库目录失败: {str(e)}"
+        add_file_operation_log("open_repository", repo_path, "fail", err_msg)
+        raise HTTPException(status_code=500, detail=err_msg)
 @app.get("/docs/user_guide")
 async def view_user_guide():
     """内置页面显示使用说明文档，无需外部程序打开"""
@@ -3455,6 +3549,82 @@ async def rename_file(request: FileRenameRequest):
     except Exception as e:
         add_operation_log("文件操作", f"重命名失败：{request.old_path} → {request.new_name}，错误：{str(e)}", "error")
         raise HTTPException(status_code=500, detail=f"重命名失败: {str(e)}")
+
+
+# -------------------------- 文件复制（粘贴）接口 --------------------------
+class FileCopyRequest(BaseModel):
+    src_path: str
+    dest_dir: str
+
+
+@app.post("/api/file/copy")
+async def copy_file(request: FileCopyRequest):
+    """复制文件或文件夹到指定目录（源保留），供文件仓库右键"复制/粘贴"使用"""
+    repo_root = os.path.normpath(REPOSITORY_PATH)
+    src_path = os.path.normpath(os.path.join(REPOSITORY_PATH, request.src_path))
+    dest_dir = os.path.normpath(os.path.join(REPOSITORY_PATH, request.dest_dir))
+
+    # 路径穿越校验:源与目标都必须位于仓库根目录内（dest_dir为空字符串时等于仓库根，允许粘到根目录）
+    if src_path != repo_root and not src_path.startswith(repo_root + os.sep):
+        raise HTTPException(status_code=400, detail="非法源路径，已拦截")
+    if dest_dir != repo_root and not dest_dir.startswith(repo_root + os.sep):
+        raise HTTPException(status_code=400, detail="非法目标路径，已拦截")
+    if not os.path.exists(src_path):
+        raise HTTPException(status_code=404, detail="源路径不存在")
+    if not os.path.isdir(dest_dir):
+        raise HTTPException(status_code=404, detail="目标文件夹不存在")
+
+    # 自复制拦截:目标目录是源自身，或源为目录时目标在其内部，会造成递归复制
+    if dest_dir == src_path or (os.path.isdir(src_path) and dest_dir.startswith(src_path + os.sep)):
+        raise HTTPException(status_code=400, detail="不能复制到自身或自身的子目录中")
+
+    # 同名冲突:明确报错，不覆盖（与 rename 接口"新路径已存在"风格一致）
+    target_path = os.path.join(dest_dir, os.path.basename(src_path))
+    if os.path.exists(target_path):
+        raise HTTPException(status_code=400, detail=f"目标文件夹中已存在同名项:{os.path.basename(src_path)}")
+
+    try:
+        import shutil
+        if os.path.isdir(src_path):
+            shutil.copytree(src_path, target_path)
+        else:
+            shutil.copy2(src_path, target_path)
+        # 异步更新RAG索引
+        import asyncio
+        asyncio.create_task(asyncio.to_thread(rag_manager.add_file, target_path))
+        add_operation_log("文件操作", f"复制:{request.src_path} → {request.dest_dir}")
+        # 自动触发项目手册同步逻辑，异步执行不阻塞主线程
+        async def auto_sync_manual():
+            try:
+                # 向上递归查找最近的项目手册
+                current_dir = os.path.dirname(target_path)
+                manual_path = ""
+                while current_dir.startswith(REPOSITORY_PATH):
+                    manual_files = [f for f in os.listdir(current_dir) if f.endswith("项目手册.md")]
+                    if manual_files:
+                        rel_manual_dir = os.path.relpath(current_dir, REPOSITORY_PATH)
+                        manual_path = os.path.join(rel_manual_dir, manual_files[0]).replace("\\", "/")
+                        break
+                    parent_dir = os.path.dirname(current_dir)
+                    if parent_dir == current_dir:
+                        break
+                    current_dir = parent_dir
+                if manual_path:
+                    project_manual_manager.update_manual_detail_table(manual_path)
+            except Exception as e:
+                print(f"自动同步手册异常:{str(e)}")
+                pass
+        asyncio.create_task(auto_sync_manual())
+        # 自动更新当前项目文件清单缓存
+        update_current_project_file_list()
+        # 主动触发文件变动广播
+        broadcast_file_change()
+        return {"code": 200, "msg": "复制成功"}
+    except Exception as e:
+        add_operation_log("文件操作", f"复制失败:{request.src_path} → {request.dest_dir}，错误:{str(e)}", "error")
+        raise HTTPException(status_code=500, detail=f"复制失败: {str(e)}")
+
+
 # -------------------------- 智能内容编辑接口 --------------------------
 class FileEditRequest(BaseModel):
     path: str
@@ -4135,10 +4305,6 @@ async def recall_clear():
     RECALL_LOG.clear()
     return {"success": True}
 
-# -------------------------- 样本/训练/记忆接口（兼容原有业务） --------------------------
-
-# -------------------------- 训练样本生成API --------------------------
-
 # -------------------------- RAG -------------------------
 
 # 全局RAG构建状态变量
@@ -4158,6 +4324,8 @@ async def build_rag_index():
     def run_build():
         global RAG_BUILD_STATUS, RAG_BUILD_RESULT
         try:
+            # 先清空索引（含增量更新时间缓存），再全量重建:确保"重建"是真正的全量，且顺带清掉历史存量重复条目
+            rag_manager.clear_index()
             result = rag_manager.build_full_index()
             RAG_BUILD_RESULT = result
             RAG_BUILD_STATUS = "success"
@@ -4177,6 +4345,38 @@ async def get_rag_build_status():
         "status": RAG_BUILD_STATUS,
         "result": RAG_BUILD_RESULT
     }
+
+@app.post("/api/rag/build/project")
+async def build_rag_index_for_project(request: Request):
+    """项目级RAG增量入库:仅扫描指定项目目录（不清空全库），供文件仓库右键"RAG项目入库"使用
+
+    与全库"清空+重建"的区别:绝不调用 clear_index()，避免把其它项目索引一并清空；
+    build_full_index 自带路径级增量缓存（LAST_UPDATE_CACHE），已入库且未修改的文件会自动跳过，
+    因此"复制新项目进仓库 → 右键入库"只会处理这个新目录，不会触发全库重编码。
+    """
+    data = await request.json()
+    project_dir = (data.get("path") or "").strip()
+    if not project_dir:
+        return {"code": 400, "msg": "❌ 缺少项目路径参数"}
+    # 路径基准统一:前端传来的是相对仓库根目录的相对路径（如"AI可视化数据"），
+    # 直接 os.path.abspath 会以进程工作目录（免安装exe形态下为程序安装目录）解析，
+    # 拼出程序安装目录下的假路径导致校验失败，故相对路径先与仓库根 REPOSITORY_PATH 拼接补全
+    if not os.path.isabs(project_dir):
+        project_dir = os.path.join(REPOSITORY_PATH, project_dir)
+    norm_dir = os.path.normpath(os.path.abspath(project_dir)).replace("\\", "/")
+    if not os.path.isdir(norm_dir):
+        return {"code": 400, "msg": f"❌ 路径不存在或不是文件夹: {norm_dir}"}
+
+    def run_project_build():
+        try:
+            rag_manager.build_full_index(root_dir=norm_dir)
+        except Exception:
+            pass
+
+    import threading
+    threading.Thread(target=run_project_build, daemon=True).start()
+    return {"code": 200, "msg": f"✅ 项目「{os.path.basename(norm_dir)}」RAG入库已启动，后台异步执行"}
+
 @app.get("/api/repo/backup")
 async def repo_backup():
     """全库备份接口（预留实现）"""
@@ -5318,6 +5518,9 @@ async def trigger_screenshot():
         file_name = f"截图_{int(time.time())}.png"
         temp_path = os.path.join(UPLOAD_ROOT, file_name)
         img.save(temp_path, format="PNG", quality=95)
+        
+        # 截图后清理超量旧文件（保留最新 100 个）
+        _cleanup_upload_dir()
         
         # 构造和上传接口一致的返回结构
         access_url = f"/upload/{file_name}"

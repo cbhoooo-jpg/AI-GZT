@@ -41,7 +41,7 @@ EXCLUDE_DIR_NAMES = frozenset({
     'dist', 'build', 'Output', 'output',
     # —— 运行期可再生数据（日志 / 备份 / 索引 / 临时目录 / 模型） ——
     'logs', 'log', 'backup', '备份文件夹', 'code_rag',
-    'temp', 'tmp', 'models', '.cache',
+    'temp', 'tmp', 'models', '.cache', 'gte-small-zh',
 })
 
 # 点开头目录中的"真实项目目录"白名单:不参与"点开头目录默认排除"约定
@@ -63,6 +63,13 @@ EXCLUDE_FILE_NAMES = frozenset({
     'thumbs.db',      # Windows 缩略图缓存
     'desktop.ini',    # Windows 文件夹配置
     '.ds_store',      # macOS 目录元数据
+})
+# ==================== 文件名后缀片段黑名单（小写，匹配文件名结尾） ====================
+# 第三方前端库的压缩产物（如 vue.min.js / element-ui.min.css）:
+# os.path.splitext 只能取到最后一个 .js/.css，无法用 EXCLUDE_FILE_EXTS 拦截，
+# 故单列此表按"文件名结尾"精确匹配，避免误伤正常的 *.js / *.css 源码文件。
+EXCLUDE_FILE_SUFFIXES = frozenset({
+    '.min.js', '.min.css',   # 前端压缩库产物
 })
 # ==================== 判断函数 ====================
 def is_noise_dir(dir_name):
@@ -91,7 +98,8 @@ def is_noise_file(file_name):
 
     规则:
       1. 命中 EXCLUDE_FILE_NAMES 文件名黑名单（统一小写比较）排除；
-      2. 后缀命中 EXCLUDE_FILE_EXTS 黑名单排除。
+      2. 文件名结尾命中 EXCLUDE_FILE_SUFFIXES 黑名单（如 .min.js/.min.css）排除；
+      3. 后缀命中 EXCLUDE_FILE_EXTS 黑名单排除。
     返回 True 表示应排除。
     """
     if not file_name:
@@ -99,6 +107,9 @@ def is_noise_file(file_name):
     lower_name = file_name.lower()
     # 文件名精确匹配黑名单
     if lower_name in EXCLUDE_FILE_NAMES:
+        return True
+    # 文件名结尾片段黑名单（拦截 .min.js/.min.css 等压缩产物）
+    if lower_name.endswith(tuple(EXCLUDE_FILE_SUFFIXES)):
         return True
     # 后缀黑名单（含点，小写）
     ext = os.path.splitext(lower_name)[1]

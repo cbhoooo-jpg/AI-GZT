@@ -54,6 +54,7 @@ hidden_imports = [
     'file_filter_config',   # 文件扫描噪音过滤统一配置模块（任务12新增，6处扫盘链路复用，显式声明确保打包收集）
     'command_runner',       # 长命令后台任务机制P0:进程树命令执行器（api_server顶层import，显式登记不依赖自动扫描）
     'background_task_manager',  # 长命令后台任务机制P1:后台任务管理器（api_server顶层import，显式登记不依赖自动扫描）
+    'ast_symbol_index',     # 符号定位器（api_server顶层import，AST静态解析符号名->文件+行号+签名+源码，显式登记不依赖自动扫描）
     # === FastAPI/Starlette/Web服务依赖的标准库模块（因第三方库被exclude，静态分析无法识别，强制收集） ===
     'http', 'http.cookies', 'http.client', 'http.server',
     'email', 'email.mime', 'email.mime.multipart', 'email.mime.text',
@@ -203,6 +204,13 @@ builtin_third_party_libs = [
 ]
 # PyInstaller单目录模式下的内置库存放路径
 target_lib_dir = os.path.join(BASE_DIR, 'dist', 'AI_GZT', '_internal')
+
+# === 补建 data_dirs 中的空目录（PyInstaller 的 --add-data 按目录内文件递归收集，空目录不会生成目标目录，此处统一兜底补建，确保产物结构完整） ===
+for d in data_dirs:
+    empty_dir_dst = os.path.join(target_lib_dir, d)
+    if not os.path.exists(empty_dir_dst):
+        os.makedirs(empty_dir_dst, exist_ok=True)
+        print(f"✅ 补建空目录 [{d}] -> {empty_dir_dst}（PyInstaller 按文件收集，空目录不会自动生成）")
 
 for lib_name in builtin_third_party_libs:
     # 同时复制对应的版本元数据目录（*.dist-info），解决版本校验、元数据读取问题

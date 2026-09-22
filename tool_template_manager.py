@@ -39,6 +39,10 @@ class ToolTemplateManager:
             "required_params": ["query"],
             "structure": {"__template_version": TEMPLATE_VERSION, "name": "rag_search", "parameters": {"query": ""}}
         },
+        "locate_symbol": {
+            "required_params": ["symbol"],
+            "structure": {"__template_version": TEMPLATE_VERSION, "name": "locate_symbol", "parameters": {"symbol": "", "file": "", "with_content": True}}
+        },
         "rename_file": {
             "required_params": ["old_path", "new_name"],
             "structure": {"__template_version": TEMPLATE_VERSION, "name": "rename_file", "parameters": {"old_path": "", "new_name": ""}}
@@ -250,6 +254,9 @@ class ToolTemplateManager:
         if tool_name in merged_tools:
             template = merged_tools[tool_name]
             result = template["structure"].copy()
+            # 修复:dict.copy()为浅拷贝，parameters与模板常量FIXED_TEMPLATES共享同一对象，
+            # 传入的file/with_content等参数会永久写回模板常量，导致后续调用继承上一次取值
+            result["parameters"] = dict(result["parameters"])
             # 填充所有传入的参数，不限制参数范围
             # 保留原始类型，由json.dumps统一序列化，避免str()导致字典/列表格式错误
             for k, v in params.items():

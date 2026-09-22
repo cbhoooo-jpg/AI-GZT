@@ -47,6 +47,9 @@ LOG_DIR = os.path.join(_LOG_BASE, "tool_outputs", "bg_tasks")
 # 默认单任务日志上限（2MB），收尾时超限只保留尾部，防止安装日志撑爆磁盘
 DEFAULT_LOG_MAX_BYTES = 2 * 1024 * 1024
 
+# bg_tasks 下日志文件保留上限（时效性高，硬编码 100）
+LOG_MAX_FILES = 100
+
 
 @dataclass
 class CommandHandle:
@@ -63,8 +66,20 @@ class CommandHandle:
 
 
 def _ensure_log_dir():
-    """确保日志目录存在（首次启动自动创建）"""
+    """确保日志目录存在（首次启动自动创建），并按数量清理最旧日志，防止文件无限堆积"""
     os.makedirs(LOG_DIR, exist_ok=True)
+    try:
+        files = [os.path.join(LOG_DIR, f) for f in os.listdir(LOG_DIR) if f.endswith(".log")]
+        if len(files) <= LOG_MAX_FILES:
+            return
+        files.sort(key=lambda p: os.path.getmtime(p))
+        for p in files[:len(files) - LOG_MAX_FILES]:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"⚠️ 清理bg_tasks日志失败:{e}")
 
 
 def start_command(cmd, cwd=None, task_id=None, log_max_bytes=DEFAULT_LOG_MAX_BYTES):

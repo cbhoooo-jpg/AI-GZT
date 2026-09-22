@@ -106,6 +106,8 @@
     /* RGB通道值:供Tailwind类页的透明度变体（bg-primary/10等）跟随主题改色 */
     var rgb = hexToRgb(colors.primary) || hexToRgb(DEFAULT_PRIMARY);
     root.style.setProperty('--primary-rgb', rgb.r + ',' + rgb.g + ',' + rgb.b);
+    /* RGB空格格式值:供Tailwind的<alpha-value>语法使用（逗号格式与斜杠alpha混用属非法CSS，会导致主色类整条失效） */
+    root.style.setProperty('--primary-rgb-space', rgb.r + ' ' + rgb.g + ' ' + rgb.b);
     root.style.setProperty('--primary-hover', colors.hover);
     root.style.setProperty('--primary-active', colors.active);
     root.style.setProperty('--primary-light', colors.light);
@@ -175,6 +177,26 @@
     t = t || {};
     return [t.primary || DEFAULT_PRIMARY, t.bgPage || DEFAULT_BG_PAGE, t.bgCard || DEFAULT_BG_CARD].join('|');
   }
+
+  /* ---------- 首屏防闪烁:同步应用本地缓存的主题色 ---------- */
+  /* 本文件在 <head> 中同步加载，此处同步读 localStorage 后立即写入 CSS 变量，
+     可在浏览器首次绘制(body 渲染)前生效，避免等待异步接口期间闪现默认经典蓝。
+     缓存仅在 fetchTheme 成功读到真实配置后回写，配置页未保存的预览色不会污染缓存。 */
+  var THEME_CACHE_KEY = 'gzt_theme_cache';
+  var hasCachedTheme = false;
+  function applyCachedTheme() {
+    try {
+      var raw = localStorage.getItem(THEME_CACHE_KEY);
+      if (!raw) { return; }
+      var t = JSON.parse(raw) || {};
+      if (!t.primary || !hexToRgb(t.primary)) { return; }
+      applyColors(deriveColors(t.primary));
+      applyBgColors(t.bgPage, t.bgCard);
+      lastConfigKey = themeKey(t);
+      hasCachedTheme = true;
+    } catch (e) { hasCachedTheme = false; }
+  }
+  applyCachedTheme();
   function startPolling() {
     if (pollTimer) { return; }
     pollTimer = setInterval(function () {
@@ -183,6 +205,7 @@
         if (key !== lastConfigKey) {
           lastConfigKey = key;
           ThemeKit.setTheme(theme);
+          try { localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(theme)); } catch (e) {}
         }
       });
     }, 4000);
@@ -212,15 +235,18 @@
       applyBgColors(opt.bgPage, opt.bgCard);
       return colors;
     },
-    /* 读取配置并应用；先落默认值再覆写，避免加载闪白 */
+    /* 读取配置并应用;有缓存直接用缓存色起帧,无缓存才落默认值再覆写 */
     init: function () {
-      applyColors(deriveColors(DEFAULT_PRIMARY));
-      applyBgColors(DEFAULT_BG_PAGE, DEFAULT_BG_CARD);
+      if (!hasCachedTheme) {
+        applyColors(deriveColors(DEFAULT_PRIMARY));
+        applyBgColors(DEFAULT_BG_PAGE, DEFAULT_BG_CARD);
+      }
       return fetchTheme().then(function (theme) {
         var colors = deriveColors(theme.primary);
         applyColors(colors);
         applyBgColors(theme.bgPage, theme.bgCard);
         lastConfigKey = themeKey(theme);
+        try { localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(theme)); } catch (e) {}
         startPolling();
         return colors;
       });

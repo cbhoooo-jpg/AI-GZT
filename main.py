@@ -15,6 +15,9 @@ def _check_single_instance():
     # 开发调试时加--multi-instance参数可跳过单实例限制
     if "--multi-instance" in sys.argv:
         return True
+    # 源码版（非打包运行）不做单实例互斥校验，避免被安装版/残留进程占锁导致静默秒退无法启动
+    if not getattr(sys, "frozen", False):
+        return True
     if sys.platform != "win32":
         # 非Windows平台暂不处理，直接放行
         return True
@@ -357,16 +360,44 @@ os.environ['TRANSFORMERS_SKIP_TORCH_LOAD_SAFETY_CHECK'] = '1'
 os.environ['PYNVML_SUPPRESS_DEPRECATION_WARNING'] = '1'
 # 解决Windows平台下torch/numpy/faiss等数学库重复加载OpenMP运行时导致的C层静默abort闪退问题（官方推荐方案，无副作用）
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-# 强制所有数学计算库单线程运行，彻底避免多线程冲突导致C层abort崩溃
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['NUMEXPR_NUM_THREADS'] = '1'
-os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
-os.environ['NUMBA_NUM_THREADS'] = '1'
+
+
+def _resolve_rag_cpu_threads():
+    """计算RAG向量编码线程数:读取config.json的rag_cpu_threads(0=自动默认上限8，>0=手动上限，1=单线程保命)
+    实际线程=max(1,min(上限,逻辑核心数-1))，低配自动降、高配自动升，禁止写死线程数。
+    """
+    import json as _json
+    _default_limit = 8
+    _limit = 0
+    try:
+        _base_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+        _cfg_path = os.path.join(_base_dir, "config.json")
+        if os.path.exists(_cfg_path):
+            with open(_cfg_path, "r", encoding="utf-8") as _f:
+                _cfg = _json.load(_f)
+            _limit = int(_cfg.get("rag_cpu_threads", 0))
+    except Exception:
+        _limit = 0
+    if _limit == 1:
+        return 1
+    if _limit <= 0:
+        _limit = _default_limit
+    _cores = os.cpu_count() or 1
+    return max(1, min(_limit, max(1, _cores - 1)))
+
+
+RAG_CPU_THREADS = _resolve_rag_cpu_threads()
+
+# 按config.json配置设置所有数学计算库线程数，兼顾多核提速与多线程冲突防护
+os.environ['OMP_NUM_THREADS'] = str(RAG_CPU_THREADS)
+os.environ['MKL_NUM_THREADS'] = str(RAG_CPU_THREADS)
+os.environ['OPENBLAS_NUM_THREADS'] = str(RAG_CPU_THREADS)
+os.environ['NUMEXPR_NUM_THREADS'] = str(RAG_CPU_THREADS)
+os.environ['VECLIB_MAXIMUM_THREADS'] = str(RAG_CPU_THREADS)
+os.environ['NUMBA_NUM_THREADS'] = str(RAG_CPU_THREADS)
 # 禁用所有C扩展多线程并行，彻底避免线程池冲突
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-os.environ['OMP_THREAD_LIMIT'] = '1'
+os.environ['OMP_THREAD_LIMIT'] = str(RAG_CPU_THREADS)
 # 强制protobuf使用纯Python实现，彻底解决C扩展版本ABI兼容问题导致的静默崩溃
 os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 # 禁用huggingface遥测、版本检查和联网请求，适配无网络/网络受限环境，避免导入时联网卡住或触发C层崩溃
@@ -800,11 +831,11 @@ if __name__ == "__main__":
     try:
         print("🔍 开始导入torch...")
         import torch
-        # torch导入成功后显式强制设置单线程，覆盖环境变量被自动重置的问题，彻底避免多线程冲突
+        # torch导入成功后按config.json的rag_cpu_threads(全局RAG_CPU_THREADS)设置线程数，与启动时环境变量保持一致
         if hasattr(torch, 'set_num_threads'):
-            torch.set_num_threads(1)
+            torch.set_num_threads(RAG_CPU_THREADS)
         if hasattr(torch, 'set_num_interop_threads'):
-            torch.set_num_interop_threads(1)
+            torch.set_num_interop_threads(max(1, RAG_CPU_THREADS))
         print("🔍 torch导入成功，开始预加载numpy/scipy/PIL/sklearn等依赖C扩展...")
         # 提前预加载sentence_transformers依赖的C扩展，避免内部动态加载时顺序冲突
         import numpy

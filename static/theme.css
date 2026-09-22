@@ -6,6 +6,7 @@
 :root{
   --primary:#165DFF;
   --primary-rgb:22,93,255;
+  --primary-rgb-space:22 93 255;
   --primary-hover:#4080FF;
   --primary-active:#0E42C9;
   --primary-light:#E8F0FF;
