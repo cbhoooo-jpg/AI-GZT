@@ -1373,6 +1373,13 @@ function renderMarkdown(txt) {
                         return;
                     }
                     
+                    // 处理定时任务开始执行的系统通知（仅临时UI气泡，不写历史、不注入推理流）
+                    if (data.type === 'scheduler_notice') {
+                        addMessage('system', data.content);
+                        reconnectCount = 0;
+                        return;
+                    }
+                    
                     // 处理进程监控告警消息
                     if (data.type === 'process_monitor_alert') {
                         showProcessAlert(data.data);

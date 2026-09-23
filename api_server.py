@@ -569,6 +569,13 @@ def push_sse_message(session_id: str, data: dict):
         except Exception:
             pass
 
+def broadcast_scheduler_notice(text: str):
+    """向所有活跃工作台会话广播一条定时任务系统通知（复用push_sse_message，非阻塞；不写历史、不污染推理流）"""
+    for sid in list(SSE_CONNECTIONS.keys()):
+        if sid == "scheduler_task":
+            continue
+        push_sse_message(sid, {"type": "scheduler_notice", "content": text})
+
 # P1:把线程安全的SSE推送函数注入后台任务管理器（监控线程在提升/完成/取消/超时时推送事件，P2卡片消费）
 background_task_manager.background_task_manager.set_sse_pusher(push_sse_message)
 
@@ -1055,6 +1062,7 @@ class ChatRequest(BaseModel):
     system_prompt: Optional[str] = "" # 自定义系统提示词，不传用默认值
     session_id: Optional[str] = "default" # 会话ID，不传默认用公共会话
     attachments: list = []  # 附件列表，支持多文件/图片上传
+    task_name: Optional[str] = "" # 定时任务名称，仅定时任务触发时携带（用于系统提示文案，默认空对普通对话无影响）
 # 异步任务相关模型
 class TaskSubmitRequest(BaseModel):
     task_type: str # chat/read_file/write_file等
@@ -1068,9 +1076,11 @@ async def chat(req: ChatRequest):
     import asyncio
     # 判断是否为定时任务触发
     is_scheduler_task = req.session_id == "scheduler_task"
-    # 定时任务消息广播:如果是定时任务触发的，自动重定向到第一个活跃的SSE连接，确保前端能收到消息
-    if is_scheduler_task and SSE_CONNECTIONS:
-        req.session_id = list(SSE_CONNECTIONS.keys())[0]
+    # 定时任务使用独立会话ID，禁止劫持用户工作台会话，避免污染用户对话流、抢占用户SSE推送通道
+    if is_scheduler_task:
+        req.session_id = "scheduler_task"
+        # 广播一条系统通知到所有活跃工作台会话（仅临时UI气泡，不写历史、不注入推理流）
+        broadcast_scheduler_notice(f"⏰ AI 开始执行定时任务:{req.task_name or '定时任务'}")
     # 新对话发起时自动终止同会话的上一个未完成任务:先发送停止信号通知旧任务退出
     # 注意:定时任务不触发停止信号，避免中断用户当前正在进行的对话
     if not is_scheduler_task:
@@ -1293,9 +1303,35 @@ async def chat(req: ChatRequest):
             # 流式接收输出，逐块推送前端
             reasoning_content = ""
             
-            for chunk in output_stream:
+            # 用独立线程执行同步流式生成器，主事件循环只 await 队列，避免同步 next() 独占事件循环导致全站卡死
+            _chunk_queue = asyncio.Queue()
+            _consumer_loop = asyncio.get_running_loop()
+            _chunk_sentinel = object()
+            _stream_stop = threading.Event()
+
+            def _produce_chunks():
+                try:
+                    for _chunk in output_stream:
+                        if _stream_stop.is_set():
+                            break
+                        _consumer_loop.call_soon_threadsafe(_chunk_queue.put_nowait, _chunk)
+                except Exception as _err:
+                    _consumer_loop.call_soon_threadsafe(_chunk_queue.put_nowait, ("__stream_error__", _err))
+                finally:
+                    _consumer_loop.call_soon_threadsafe(_chunk_queue.put_nowait, _chunk_sentinel)
+
+            _producer_thread = threading.Thread(target=_produce_chunks, daemon=True)
+            _producer_thread.start()
+
+            while True:
+                chunk = await _chunk_queue.get()
+                if chunk is _chunk_sentinel:
+                    break
+                if isinstance(chunk, tuple) and len(chunk) == 2 and chunk[0] == "__stream_error__":
+                    raise chunk[1]
                 # 检查停止信号，收到立即终止流式输出
                 if req.session_id in CHAT_STOP_SIGNALS:
+                    _stream_stop.set()
                     break
                 delta = chunk["choices"][0].get("delta", {})
                 delta_content = delta.get("content", "")
@@ -1323,6 +1359,8 @@ async def chat(req: ChatRequest):
                 # 处理完内容后再判断是否结束
                 if chunk["choices"][0].get("finish_reason") == "stop":
                     break
+            # 通知生产者线程停止，释放底层流式连接
+            _stream_stop.set()
             
             # 最后推送完整的正式内容，对齐原有逻辑
             push_sse_message(req.session_id, {

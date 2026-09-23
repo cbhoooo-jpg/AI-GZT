@@ -210,6 +210,7 @@ class SchedulerManager:
                     json={
                         "query": f"【定时任务触发】{task['prompt']}",
                         "session_id": "scheduler_task",
+                        "task_name": task.get("name", ""),
                         "system_prompt": "",
                         "attachments": []
                     },
