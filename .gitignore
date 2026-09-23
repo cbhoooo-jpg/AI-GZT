@@ -1,5 +1,6 @@
 # ===== 运行时配置（含API密钥等敏感信息，禁止提交） =====
-config.json
+# 仅忽略根目录运行时配置；子目录同名文件（如 gte-small-zh/config.json 模型配置）不受影响
+/config.json
 rsa_keys.json
 memory_config.json
 # Cookie加密密钥与加密后的浏览器Cookie（敏感凭据，禁止提交，2026-09-17补登）
@@ -85,3 +86,9 @@ AI智能助手项目手册.md
 长命令后台任务机制_详细方案.md
 长命令后台任务机制_结构图.html
 长命令后台任务机制_执行步骤.md
+
+# ===== 作者侧仓库同步/发布脚本（含个人仓库地址与账号，仅作者本机使用，禁止同步到社区） =====
+/发布GitHubRelease.ps1
+/发布Release.bat
+/同步代码.bat
+/推送到GitHub.bat
