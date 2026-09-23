@@ -82,11 +82,29 @@ class MockModel:
 _model_instance = MockModel()
 
 def _get_config() -> dict:
-    """读取最新配置"""
+    """读取最新配置；文件为空、损坏或解析失败时返回{}并尝试从_internal恢复默认配置，避免启动崩溃"""
     if not os.path.exists(CONFIG_PATH):
         return {}
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            content = f.read()
+        if not content.strip():
+            raise ValueError("配置文件为空(0字节或仅空白)")
+        return json.loads(content)
+    except Exception as e:
+        print(f"[LLMClient] 配置文件读取失败，尝试恢复默认配置: {e}")
+        # 打包环境下尝试从_internal目录恢复默认配置，避免空配置导致启动失败
+        try:
+            if getattr(_sys, 'frozen', False):
+                _internal_default = os.path.join(_internal_dir, "config.json")
+                if os.path.exists(_internal_default):
+                    import shutil
+                    shutil.copy2(_internal_default, CONFIG_PATH)
+                    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                        return json.load(f)
+        except Exception as e2:
+            print(f"[LLMClient] 恢复默认配置失败: {e2}")
+        return {}
 
 def _get_config_hash(config: dict) -> str:
     """计算配置哈希，用于检测变更"""

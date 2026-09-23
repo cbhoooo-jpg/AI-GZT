@@ -61,6 +61,18 @@ else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DOCS_DIR = BASE_DIR
     CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+
+
+def _atomic_write_json(path: str, data, indent: int = 4):
+    """原子写入JSON文件:先写同目录临时文件再os.replace替换，避免写入过程中崩溃/断电导致原文件被截断为空"""
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=indent)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+
+
 DEFAULT_PORT = 8000
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
@@ -165,29 +177,25 @@ def load_config() -> Dict:
             # 配置项缺失或为空串时均自动补全默认仓库路径（Windows为D:/AI仓库文件夹），空串不处理会被解析为当前工作目录
             if not user_config.get("repository_path"):
                 user_config["repository_path"] = default_config["repository_path"]
-            # 自动保存补全后的配置
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                json.dump(user_config, f, ensure_ascii=False, indent=4)
+            # 自动保存补全后的配置（原子写入，避免崩溃/断电把配置文件截断为空）
+            _atomic_write_json(CONFIG_PATH, user_config)
             return user_config
         except Exception as e:
             print(f"⚠️ 配置文件加载失败，使用默认配置:{str(e)}")
             return default_config
-    # 配置文件不存在，创建默认配置
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(default_config, f, ensure_ascii=False, indent=4)
+    # 配置文件不存在，创建默认配置（原子写入）
+    _atomic_write_json(CONFIG_PATH, default_config)
     return default_config
 
 def save_config(config: Dict):
-    # 1. 主写入:EXE同级目录config.json（用户配置主文件，升级不丢失）
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=4)
+    # 1. 主写入:EXE同级目录config.json（用户配置主文件，升级不丢失，原子写入防截断）
+    _atomic_write_json(CONFIG_PATH, config)
     
     # 2. 同步写入:打包环境下同步写入_internal目录下的config.json，兼容旧模块读取路径
     if getattr(_sys, 'frozen', False):
         try:
             internal_config_path = os.path.join(_internal_dir, "config.json")
-            with open(internal_config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, ensure_ascii=False, indent=4)
+            _atomic_write_json(internal_config_path, config)
             print(f"[Config] 配置已同步写入_internal目录: {internal_config_path}")
         except Exception as e:
             # 同步写入_internal失败不影响主流程，仅打印日志
