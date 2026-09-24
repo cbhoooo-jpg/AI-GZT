@@ -41,6 +41,8 @@ plugins/*/runtime/
 build/
 dist/
 *.spec.bak
+# 打包链自动生成的 PyInstaller 规格文件（2026-09-24 起不再纳入版本管理）
+/*.spec
 Output/
 
 # ===== Python虚拟环境（一键打包脚本自动创建，体积约3.5G，禁止提交） =====

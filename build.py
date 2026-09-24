@@ -112,7 +112,7 @@ excludes = [
     'torch', 'torchvision', 'torchaudio', 'tensorboard', 'torch.distributed',
     'sentence_transformers', 'transformers', 'tensorflow', 'keras',
     'scipy', 'sklearn', 'scikit-learn', 'sentencepiece', 'safetensors',
-    'faiss', 'faiss._swigfaiss', 'tokenizers', 'huggingface_hub', 'nltk', 'datasets'
+    'faiss', 'faiss._swigfaiss', 'tokenizers', 'huggingface_hub', 'nltk', 'datasets',
     ]
 
 for mod in excludes:

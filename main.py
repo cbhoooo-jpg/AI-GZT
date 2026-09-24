@@ -332,7 +332,6 @@ except ImportError:
         'Values': _CompatObject,
         'make_option': lambda *args, **kwargs: _CompatObject()
     })
-import tkinter
 
 def handle_exception(exc_type, exc_value, exc_traceback):
     error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
@@ -563,12 +562,13 @@ def inject_external_dependencies():
         # exe内部Python版本
         exe_py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
         
-        # 3. 版本匹配校验
+        # 3. 版本兼容性提示:不再因版本不匹配中断注入，避免"全外置依赖版"在非3.11环境完全无法启动
+        #    仅提示推荐版本；C扩展模块（numpy/pydantic_core/jiter等）ABI与内置解释器不匹配时可能加载失败
         if system_py_major_minor != exe_py_version:
-            print(f"⚠️ Python版本不匹配:系统Python {system_py_version} vs 程序内置Python {exe_py_version}，跳过外部依赖注入，向量检索功能将降级运行")
-            return
-        
-        print(f"✅ Python版本匹配:{system_py_version}")
+            print(f"⚠️ 检测到系统Python {system_py_version}，程序内置Python {exe_py_version}，部分C扩展依赖可能因版本差异加载失败，将继续尝试注入外部依赖")
+            print("💡 推荐使用 Python 3.11（本项目「Python和依赖安装.bat」安装的即为 3.11），可确保全部依赖兼容")
+        else:
+            print(f"✅ Python版本匹配:{system_py_version}")
         
         # 4. 获取系统Python的标准库路径、C扩展DLL路径和第三方库路径
         # 4.1 获取Python安装根目录，定位核心路径
@@ -739,7 +739,18 @@ if __name__ == "__main__":
     inject_external_dependencies()
     
     # ✅ 依赖路径注入完成后再导入LLM模块，确保openai及其依赖可以正常加载
-    from llm_client import UnifiedLLM as Llama, get_config, init_llm
+    try:
+        from llm_client import UnifiedLLM as Llama, get_config, init_llm
+    except ImportError as dep_err:
+        print("=" * 60)
+        print(f"❌ 核心依赖加载失败: {dep_err}")
+        print("💡 请先运行项目目录下的「Python和依赖安装.bat」，安装 Python 3.11 及全部依赖后重试")
+        print("=" * 60)
+        try:
+            input("按回车键退出...")
+        except EOFError:
+            pass
+        sys.exit(1)
     # 初始化全局LLM实例
     init_llm()
     
