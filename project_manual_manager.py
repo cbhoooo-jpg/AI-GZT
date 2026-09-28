@@ -741,12 +741,17 @@ class ProjectManualManager:
             MANUAL_EXCLUDE_EXTS = set(file_filter_config.EXCLUDE_FILE_EXTS) | {".pyd", ".so", ".dll", ".bin", ".exe"}
             for root, dirs, files in os.walk(project_root):
                 # 剪枝:复用统一噪音目录黑名单（.venv/venv/env/dist/build/.git/缓存等，精确匹配），
-                # 另排除手册场景特有的 test_venv（测试用虚拟环境目录），阻止os.walk递归进入
-                file_filter_config.prune_walk_dirs(dirs)
+                # 另排除手册场景特有的 test_venv（测试用虚拟环境目录），阻止os.walk递归进入；
+                # 传入 root 后叠加"项目信息隔离"判断，被隔离目录整棵子树直接跳过，不进入手册二/三章
+                file_filter_config.prune_walk_dirs(dirs, root)
                 dirs[:] = [d for d in dirs if d != "test_venv"]
                 for file in files:
                     # 跳过已加入的手册文件，避免重复
                     if file == manual_filename:
+                        continue
+                    # 动态隔离:被用户右键"加入项目信息隔离"的文件不写入手册第二/三章。
+                    # 原有条目在下次同步时自动消失（因未进入 all_files，不会再生成本行）
+                    if file_filter_config.is_isolated_path(os.path.join(root, file)):
                         continue
                     # 跳过缓存/二进制/噪音文件（统一文件名+后缀黑名单，含Thumbs.db等系统垃圾）
                     ext = os.path.splitext(file)[1].lower()

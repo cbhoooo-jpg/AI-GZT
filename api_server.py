@@ -29,6 +29,15 @@ import platform
 from pypinyin import pinyin, Style
 # 文件扫描噪音过滤统一配置（虚拟环境/打包产物/.git/缓存目录等），所有扫盘链路复用同一黑名单
 import file_filter_config
+# 项目信息隔离管理模块:用户在文件仓库右键"加入项目信息隔离"后，
+# 被隔离路径及其全部子孙不再进入 AI 上下文/项目手册第二三章/RAG索引，根治运行期临时文件导致的信息膨胀
+import isolation_manager
+# 启动即把磁盘上的隔离清单注入统一过滤模块（内存态），
+# 保证所有扫盘链路（AI上下文注入/项目手册同步/RAG索引）在首次调用前即已生效
+try:
+    isolation_manager.refresh_injection()
+except Exception as _iso_err:
+    print(f"⚠️ 项目信息隔离清单启动注入失败:{_iso_err}")
 # 长命令后台任务机制 P0:进程树命令执行器（根治Windows下subprocess.run超时只杀cmd.exe、
 # 孙进程持管道导致communicate永久阻塞，以及pause/set /p无控制台输入挂死）
 import command_runner
@@ -694,6 +703,10 @@ def build_simple_tree(root_path, current_rel_path="", tag="current_project"):
         item_full_path = os.path.join(root_path, item)
         # 统一过滤:目录走噪音目录黑名单（点开头目录默认排除、.github等白名单保留），
         # 文件走文件名/后缀黑名单（点开头文件如.gitignore保留），全部精确匹配无误伤
+        # 动态隔离:被用户右键"加入项目信息隔离"的路径（目录则整棵子树）直接跳过，
+        # 不进入注入 AI 上下文的文件树，根治运行期临时文件导致的项目信息无上限膨胀
+        if file_filter_config.is_isolated_path(item_full_path):
+            continue
         if os.path.isdir(item_full_path):
             if file_filter_config.is_noise_dir(item):
                 continue
@@ -3094,14 +3107,99 @@ async def get_file_list(path: str = ""):
         item_path = os.path.join(target_path, item)
         is_dir = os.path.isdir(item_path)
         stat = os.stat(item_path)
+        # 文件树"只标记不过滤":被隔离条目照常返回，前端淡显+标注"已隔离"，
+        # 保证用户仍可右键解除隔离（若此处直接隐藏会形成"无法解除"的死锁）
         file_list.append({
             "name": item,
             "path": os.path.relpath(item_path, REPOSITORY_PATH).replace("\\", "/"),
             "is_dir": is_dir,
             "size": stat.st_size if not is_dir else 0,
-            "modify_time": stat.st_mtime
+            "modify_time": stat.st_mtime,
+            "is_isolated": file_filter_config.is_isolated_path(item_path)
         })
-    return {"code": 200, "data": sorted(file_list, key=lambda x: (-x["is_dir"], x["name"]))}
+    sorted_list = sorted(file_list, key=lambda x: (-x["is_dir"], x["name"]))
+    # 自动建议:条目数超过阈值时提示"建议隔离"（阈值统一来自 isolation_config.json，前端不硬编码）
+    _iso_cfg = isolation_manager.list_paths()
+    return {
+        "code": 200,
+        "data": sorted_list,
+        "suggest_threshold": _iso_cfg.get("suggest_threshold", 300),
+        "suggest_isolation": isolation_manager.check_suggest(len(sorted_list))
+    }
+
+
+class IsolationPathReq(BaseModel):
+    """项目信息隔离接口请求体:统一承载单条路径"""
+    path: str = ""
+
+
+def _trigger_manual_resync():
+    """隔离清单变更后立即触发一次当前项目手册同步
+
+    作用:让手册第二/三章中"已被隔离路径"的原有条目在本次变更后立刻消失，
+    而不是等到下一次文件事件才消失（无内容变化时内部短路，不会产生冗余写盘）。
+    """
+    try:
+        project_root = (CURRENT_PROJECT or {}).get("project_root") or ""
+        if not project_root or not os.path.isdir(project_root):
+            return
+        # 按命名约定在项目根目录查找项目手册（*项目手册.md）
+        manual_file = ""
+        for name in os.listdir(project_root):
+            if name.endswith("项目手册.md"):
+                manual_file = name
+                break
+        if not manual_file:
+            return
+        # 懒加载手册管理器，避免模块级循环依赖
+        from project_manual_manager import ProjectManualManager
+        manual_rel = os.path.relpath(
+            os.path.join(project_root, manual_file), REPOSITORY_PATH
+        ).replace("\\", "/")
+        ProjectManualManager().update_manual_detail_table(manual_rel)
+        add_operation_log("文件操作", "✅ 隔离清单变更后已同步项目手册")
+    except Exception as e:
+        print(f"⚠️ 隔离清单变更后同步手册失败:{str(e)}")
+
+
+@app.get("/api/isolation/list")
+async def get_isolation_list():
+    """查询当前"项目信息隔离"清单、阈值与启用状态（供文件仓库页面加载时渲染）"""
+    data = isolation_manager.list_paths()
+    data["repository_path"] = REPOSITORY_PATH.replace("\\", "/")
+    return {"code": 200, "data": data}
+
+
+@app.post("/api/isolation/add")
+async def add_isolation(req: IsolationPathReq):
+    """把指定路径加入"项目信息隔离"清单（目录则整棵子树由前缀匹配自动命中）
+
+    加入后:该路径及其全部子孙不再进入 AI 上下文/项目手册第二三章/RAG索引。
+    """
+    rel_path = (req.path or "").strip()
+    if not rel_path:
+        raise HTTPException(status_code=400, detail="路径不能为空")
+    # 边界保护:禁止隔离仓库根目录（会导致手册二/三章被清空）
+    _root_norm = os.path.normpath(REPOSITORY_PATH).replace("\\", "/").lower()
+    _target_norm = os.path.normpath(os.path.join(REPOSITORY_PATH, rel_path)).replace("\\", "/").lower()
+    if _target_norm == _root_norm:
+        raise HTTPException(status_code=400, detail="不允许隔离仓库根目录")
+    data = isolation_manager.add_path(rel_path)
+    add_operation_log("文件操作", f"✅ 已加入项目信息隔离:{rel_path}")
+    _trigger_manual_resync()
+    return {"code": 200, "data": data, "msg": "已加入项目信息隔离"}
+
+
+@app.post("/api/isolation/remove")
+async def remove_isolation(req: IsolationPathReq):
+    """解除"项目信息隔离"（同时清理该路径下的全部子路径，避免残留悬挂项）"""
+    rel_path = (req.path or "").strip()
+    if not rel_path:
+        raise HTTPException(status_code=400, detail="路径不能为空")
+    data = isolation_manager.remove_path(rel_path)
+    add_operation_log("文件操作", f"✅ 已解除项目信息隔离:{rel_path}")
+    _trigger_manual_resync()
+    return {"code": 200, "data": data, "msg": "已解除项目信息隔离"}
 
 @app.get("/api/file/read")
 async def read_file(path: str, start_line: int = None, end_line: int = None, show_line_num: bool = False):

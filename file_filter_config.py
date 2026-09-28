@@ -118,22 +118,101 @@ def is_noise_file(file_name):
     return False
 
 
-def prune_walk_dirs(dirs):
-    """对 os.walk 的 dirs 列表原地剪枝（排除噪音目录，阻止递归进入）
+def prune_walk_dirs(dirs, root=None):
+    """对 os.walk 的 dirs 列表原地剪枝（排除噪音目录 + 动态隔离路径，阻止递归进入）
 
     用法:
         for root, dirs, files in os.walk(path):
-            prune_walk_dirs(dirs)   # 必须在处理 files 前调用
+            prune_walk_dirs(dirs, root)   # 必须在处理 files 前调用
             ...
+    :param dirs: os.walk 第二个返回值（原地修改实现剪枝）
+    :param root: 当前遍历的绝对目录路径；传入后叠加"动态隔离"判断。
+                 不传 root 时行为与历史版本完全一致（向后兼容旧调用点）。
     返回被排除的目录名列表，便于调用方统计或打印日志。
     """
     removed = []
     kept = []
     for d in dirs:
+        # 静态噪音目录黑名单（精确匹配）
         if is_noise_dir(d):
             removed.append(d)
-        else:
-            kept.append(d)
+            continue
+        # 动态隔离路径:命中隔离目录时整棵子树跳过（前缀匹配）
+        if root and is_isolated_path(os.path.join(root, d)):
+            removed.append(d)
+            continue
+        kept.append(d)
     # os.walk 通过原地修改 dirs 实现剪枝
     dirs[:] = kept
     return removed
+
+
+# ==================== 动态"项目信息隔离"上下文（内存态，由 isolation_manager 注入） ====================
+# 说明:
+#   本模块保持"零 IO"纯配置定位，自身不读取任何配置文件；
+#   磁盘上的隔离清单由 isolation_manager.py 负责读写，
+#   并在【程序启动时】与【清单变更时】调用 set_isolation_context() 注入到这里。
+#   由于所有扫盘链路 import 的是同一个模块对象（含 auto_sync_monitor 子线程），
+#   注入一次即全局生效，调用方无需改动任何判断逻辑。
+_ISOLATION_CTX = {
+    "repo_root": "",    # 仓库根目录绝对路径（标准化:反斜杠转/、小写、无尾斜杠）
+    "paths": set(),     # 隔离路径集合（相对仓库根、小写、/ 分隔、无首尾斜杠）
+}
+
+
+def set_isolation_context(repo_root, paths):
+    """注入动态隔离上下文（由 isolation_manager.refresh_injection 调用）
+
+    :param repo_root: 仓库根目录（绝对路径）
+    :param paths: 隔离路径列表（相对路径或绝对路径，内部统一标准化）
+    """
+    global _ISOLATION_CTX
+    root = str(repo_root or "").replace("\\", "/").rstrip("/").lower()
+    norm_paths = set()
+    for p in (paths or []):
+        np = _normalize_isolation_path(p)
+        if np:
+            norm_paths.add(np)
+    _ISOLATION_CTX = {"repo_root": root, "paths": norm_paths}
+
+
+def _normalize_isolation_path(path):
+    """内部工具:把单条隔离路径标准化为"相对仓库根、小写、/ 分隔、无首尾斜杠"
+
+    兼容三种入参:①相对路径（项目A/output）；②带仓库根的绝对路径；③反斜杠/大写形式。
+    特别处理:入参等于仓库根时返回空串（不允许隔离整个仓库，防止手册二/三章被清空）。
+    """
+    if not path:
+        return ""
+    raw = str(path).strip().replace("\\", "/")
+    root = _ISOLATION_CTX.get("repo_root", "")
+    lower_raw = raw.lower()
+    if root:
+        if lower_raw == root:
+            return ""
+        if lower_raw.startswith(root + "/"):
+            raw = raw[len(root) + 1:]
+    return raw.lower().strip("/")
+
+
+def is_isolated_path(abs_or_rel_path):
+    """判断指定路径是否命中"项目信息隔离"清单（含父目录前缀匹配）
+
+    规则:
+      1. 隔离清单为空时恒定返回 False（零开销兜底，未使用该功能时无任何影响）；
+      2. 入参可为绝对路径或相对路径（相对路径按"相对仓库根"处理）；
+      3. 前缀匹配:隔离"项目A/output"时，其下所有子孙文件/目录全部命中。
+    返回 True 表示该路径应被隔离（不进 AI 上下文 / 项目手册 / RAG 索引）。
+    """
+    if not abs_or_rel_path:
+        return False
+    isolated = _ISOLATION_CTX.get("paths") or set()
+    if not isolated:
+        return False
+    rel = _normalize_isolation_path(abs_or_rel_path)
+    if not rel:
+        return False
+    for p in isolated:
+        if rel == p or rel.startswith(p + "/"):
+            return True
+    return False

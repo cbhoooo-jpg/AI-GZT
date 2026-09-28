@@ -213,7 +213,9 @@
                         <!-- 用emoji兜底图标，不依赖字体文件100%显示 -->
                         <span v-if="data.is_dir" style="margin-right: 8px; color: var(--primary);">📁</span>
                         <span v-else style="margin-right: 8px; color: #67C23A;">📄</span>
-                        {{ node.label }}
+                        <!-- 已隔离节点淡显:节点本体仍照常渲染，保证用户可右键解除隔离（只标记不过滤） -->
+                        <span :style="{ opacity: data.is_isolated ? 0.45 : 1 }">{{ node.label }}</span>
+                        <span v-if="data.is_isolated" style="font-size:12px; color:#F56C6C; margin-left:6px;">（已隔离）</span>
                     </span>
                     <span class="node-size" v-if="!data.is_dir">{{ formatFileSize(data.size) }}</span>
                 </span>
@@ -231,6 +233,9 @@
             <div class="context-menu-item" @click="handleOpenFileFromMenu" v-if="currentNode && !currentData.is_dir">打开文件</div>
             <div class="context-menu-item" @click="handleRunFile" v-if="currentData && !currentData.is_dir && isRunnableFile(currentData.name)">运行</div>
             <div class="context-menu-item" @click="handleRagBuildProject" v-if="currentData && currentData.is_dir && currentData.path && currentData.path.indexOf('/') === -1">RAG项目入库</div>
+            <!-- 项目信息隔离:仅在右键具体文件/目录时显示（空白处右键 currentNode 为 null，不显示，防止误隔离仓库根导致手册二/三章被清空） -->
+            <div class="context-menu-item" @click="handleIsolate" v-if="currentNode && !isCurrentIsolated()">加入项目信息隔离</div>
+            <div class="context-menu-item" @click="handleUnisolate" v-if="currentNode && isCurrentIsolated()">解除项目信息隔离</div>
             <div class="context-menu-item" @click="handleNewFile">新建文件</div>
             <div class="context-menu-item" @click="handleNewFolder">新建文件夹</div>
             <div class="context-menu-item" @click="handleCreateProjectManual" v-if="!currentNode">创建项目文件夹</div>
@@ -266,9 +271,16 @@
                     isLoading: false,
                     ragBuilding: false,
                     backupLoading: false,
-                    // 右键菜单宽高（用于边界检测）
+                    // === 项目信息隔离相关状态 ===
+                    // 当前隔离清单（相对仓库根路径，页面加载时从后端拉取）
+                    isolatedPaths: [],
+                    // 自动建议阈值（由后端下发，前端不硬编码）
+                    suggestThreshold: 300,
+                    // 本次会话已提示过的目录（防止同一目录反复弹提示，刷新页面重置）
+                    suggestedDirs: {},
+                    // 右键菜单宽高（用于边界检测；新增隔离两项后调大下边界值）
                     menuWidth: 120,
-                    menuHeight: 240,
+                    menuHeight: 300,
                     // 自动刷新定时器
                     autoRefreshTimer: null,
                     // 已展开的节点路径列表，刷新后恢复状态
@@ -305,6 +317,8 @@
             },
             mounted() {
                 this.loadFileTree()
+                // 页面加载时拉取一次隔离清单与建议阈值，用于节点淡显与右键菜单互斥显示
+                this.loadIsolationList()
                 // 点击空白关闭右键菜单
                 document.addEventListener('click', this.handleDocumentClick)
                 // 窗口大小改变时关闭右键菜单
@@ -349,6 +363,68 @@
                     this.contextMenuVisible = false
                 },
 
+                // ==================== 项目信息隔离相关方法 ====================
+                // 拉取隔离清单与建议阈值（供节点淡显、右键菜单互斥显示使用）
+                async loadIsolationList() {
+                    try {
+                        const res = await axios.get(`${this.apiBase}/isolation/list`)
+                        if (res.data.code === 200) {
+                            this.isolatedPaths = res.data.data.paths || []
+                            this.suggestThreshold = res.data.data.suggest_threshold || 300
+                        }
+                    } catch (e) {
+                        // 拉取失败不阻断文件树正常使用（隔离功能降级为不可见）
+                    }
+                },
+
+                // 判断当前右键目标是否已被隔离（含父路径前缀命中），决定菜单显示"加入"还是"解除"
+                isCurrentIsolated() {
+                    if (!this.currentData || !this.currentData.path) return false
+                    const target = String(this.currentData.path).toLowerCase()
+                    return this.isolatedPaths.some(p => target === p || target.startsWith(p + '/'))
+                },
+
+                // 右键「加入项目信息隔离」:该路径及其全部子孙不再进入 AI 上下文/项目手册第二三章/RAG 索引
+                async handleIsolate() {
+                    this.contextMenuVisible = false
+                    if (!this.currentData) return
+                    try {
+                        const res = await axios.post(`${this.apiBase}/isolation/add`, { path: this.currentData.path })
+                        this.$message.success(res.data.msg || '已加入项目信息隔离')
+                        await this.loadIsolationList()
+                        await this.loadFileTree(true)
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message
+                        this.$message.error('加入隔离失败:' + msg)
+                    }
+                },
+
+                // 右键「解除项目信息隔离」:后端会同时清理该路径下全部子路径的隔离记录
+                async handleUnisolate() {
+                    this.contextMenuVisible = false
+                    if (!this.currentData) return
+                    try {
+                        const res = await axios.post(`${this.apiBase}/isolation/remove`, { path: this.currentData.path })
+                        this.$message.success(res.data.msg || '已解除项目信息隔离')
+                        await this.loadIsolationList()
+                        await this.loadFileTree(true)
+                    } catch (e) {
+                        const msg = e.response?.data?.detail || e.message
+                        this.$message.error('解除隔离失败:' + msg)
+                    }
+                },
+
+                // 自动建议隔离:目录条目数超过后端下发阈值时提示（只提示一次、不自动执行，避免误伤正常代码目录）
+                checkSuggestIsolation(dataList, suggestFlag, threshold, dirPath) {
+                    if (!suggestFlag || !dataList || !dataList.length) return
+                    // 已隔离目录不再提示（隔离后条目数仍可能很大，但用户已处理过）
+                    const key = dirPath || '<root>'
+                    if (this.suggestedDirs[key]) return
+                    this.suggestedDirs[key] = true
+                    const label = dirPath ? `目录「${dirPath}」` : '仓库根目录'
+                    this.$message.warning(`${label}下条目数过多（${dataList.length} 个），建议右键加入项目信息隔离`)
+                },
+
                 // 标准的懒加载节点方法，不要给treeData赋值
                 async loadNode(node, resolve) {
                     try {
@@ -360,6 +436,8 @@
                                     ...item,
                                     leaf: !item.is_dir
                                 }))
+                                // 自动建议隔离:根目录条目数超阈值时提示用户（只提示不自动执行）
+                                this.checkSuggestIsolation(data, res.data.suggest_isolation, res.data.suggest_threshold, '')
                                 // 只通过resolve返回数据，不要修改treeData
                                 this.treeEmpty = data.length === 0
                                 return resolve(data)
@@ -374,6 +452,8 @@
                         }
                         const res = await axios.get(`${this.apiBase}/file/list`, { params: { path: node.data.path } })
                         if (res.data.code === 200) {
+                            // 自动建议隔离:子目录条目数超阈值时提示（仅当该目录未被隔离时才提示）
+                            this.checkSuggestIsolation(res.data.data, res.data.suggest_isolation, res.data.suggest_threshold, node.data.path)
                             return resolve(res.data.data.map(item => ({
                                 ...item,
                                 leaf: !item.is_dir

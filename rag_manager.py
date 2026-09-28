@@ -520,13 +520,18 @@ class CodeRAGManager:
         # 第一步:收集所有符合条件的文件路径
         all_files = []
         for root, dirs, files in os.walk(root_dir):
-            # 剪枝:排除虚拟环境/.git/打包产物等噪音目录，阻止递归进入（精确匹配，不再用"venv" in root子串误伤my_venv_tools类目录）
-            file_filter_config.prune_walk_dirs(dirs)
+            # 剪枝:排除虚拟环境/.git/打包产物等噪音目录，阻止递归进入（精确匹配，不再用"venv" in root子串误伤my_venv_tools类目录）；
+            # 传入 root 后叠加"项目信息隔离"判断，被隔离目录整棵子树直接跳过，不进入 RAG 索引
+            file_filter_config.prune_walk_dirs(dirs, root)
             for file in files:
                 # 文件级噪音过滤:统一复用 file_filter_config 配置中心黑名单（.pyc/.log/.tmp/.bak/.index/.min.js/.min.css 等）
                 if file_filter_config.is_noise_file(file):
                     continue
                 file_path = os.path.join(root, file)
+                # 动态隔离:被用户右键"加入项目信息隔离"的文件不入 RAG 库，
+                # 避免运行期临时文件碎片稀释向量检索 top_k（第 5 步:隔离链路最后一环）
+                if file_filter_config.is_isolated_path(file_path):
+                    continue
                 # 只处理支持的文件类型
                 ext = os.path.splitext(file_path)[1].lower()
                 # HTML已从RAG入库白名单移除:HTML含大量中文界面文本，可由findstr/read_file直接检索，无符号硬切碎片会稀释向量top_k
