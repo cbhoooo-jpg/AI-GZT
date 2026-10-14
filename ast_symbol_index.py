@@ -188,7 +188,9 @@ def _scan_py_files(repo_path):
     if not repo_path or not os.path.isdir(repo_path):
         return results
     for root, dirs, files in os.walk(repo_path):
-        file_filter_config.prune_walk_dirs(dirs)
+        # 传入 root 后叠加"项目信息隔离"判断:被隔离目录整棵子树直接跳过，
+        # 避免隔离目录内的 .py 被 locate_symbol 扫进符号索引
+        file_filter_config.prune_walk_dirs(dirs, root)
         for name in files:
             if file_filter_config.is_noise_file(name):
                 continue

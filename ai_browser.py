@@ -249,6 +249,11 @@ class DownloadManagerDialog(QDialog):
             del self.tasks[item]
 # 自定义WebPage，自动授予剪贴板读写权限（全版本PySide6兼容）+ 导航拦截
 from PySide6.QtWebEngineCore import QWebEnginePage
+try:
+    # Qt6.8+ 新版权限对象（permissionRequested 信号的实参类型）
+    from PySide6.QtWebEngineCore import QWebEnginePermission
+except ImportError:
+    QWebEnginePermission = None
 class CustomWebPage(QWebEnginePage):
     def __init__(self, browser_window, web_view, parent=None):
         super().__init__(parent)
@@ -284,16 +289,28 @@ class CustomWebPage(QWebEnginePage):
         # 非工作台页面全部正常放行，遵循默认跳转逻辑
         return super().acceptNavigationRequest(url, navigation_type, is_main_frame)
 
-    def _handle_permission_new(self, origin, permission_type):
-        """新版API权限请求处理"""
-        # 自动允许剪贴板读写权限
-        if permission_type in (QWebEnginePage.ClipboardRead, QWebEnginePage.ClipboardWrite):
-            self.setPermission(origin, permission_type, QWebEnginePage.PermissionGrantedByUser)
-        else:
-            # 其他权限透传给父类处理
+    def _handle_permission_new(self, permission):
+        """新版API权限请求处理（Qt6.8: permissionRequested 单参 QWebEnginePermission）"""
+        try:
+            ptype = permission.permissionType()
+            # 剪贴板类权限的新枚举名(ClipboardReadWrite/ClipboardSanitizedWrite)与旧版不同，动态取保证兼容
+            PT = getattr(QWebEnginePermission, 'PermissionType', None)
+            clipboard_types = [t for t in (
+                getattr(PT, 'ClipboardReadWrite', None),
+                getattr(PT, 'ClipboardSanitizedWrite', None),
+            ) if t is not None]
+            if ptype in clipboard_types:
+                # 剪贴板权限:直接授权
+                permission.grant()
+            else:
+                # 其他权限:AI 自动化内嵌浏览器统一放行
+                # （原代码对非剪贴板"透传父类"，新 API 下会递归触发本槽，改为直接授权更稳）
+                permission.grant()
+        except Exception:
+            # 兜底:确保权限请求被响应（未响应的请求默认拒绝，会导致页面功能异常）
             try:
-                super().permissionRequested.emit(origin, permission_type)
-            except:
+                permission.grant()
+            except Exception:
                 pass
 
     def _handle_permission_old(self, origin, feature):
@@ -420,7 +437,7 @@ class AIBrowserWindow(QMainWindow):
         self.refresh_favorites_menu()
 
     def init_window(self):
-        self.setWindowTitle("AI智能助手桌面软件 V1.1")
+        self.setWindowTitle("AI智能助手桌面软件 V2.0")
         self.setGeometry(100, 100, 1200, 800)
         # 设置窗口图标:使用项目实际存在的 logo.png（修复原空图标问题）
         self.setWindowIcon(QIcon("logo.png"))

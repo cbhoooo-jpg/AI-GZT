@@ -71,6 +71,10 @@ else:
     DOCS_DIR = BASE_DIR
     CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
+# 9 槽位模型配置统一落位:与 config.json 同目录（开发环境=项目根，打包后=exe 同级），
+# 复用 CONFIG_PATH 已解析好的目录，避免打包环境下两处路径口径分叉
+MODELS_CONFIG_PATH = os.path.join(os.path.dirname(CONFIG_PATH), "models_config.json")
+
 
 def _atomic_write_json(path: str, data, indent: int = 4):
     """原子写入JSON文件:先写同目录临时文件再os.replace替换，避免写入过程中崩溃/断电导致原文件被截断为空"""
@@ -101,8 +105,9 @@ def get_default_repository_path() -> str:
 REPOSITORY_PATH = ""
 
 # 全局最近N轮对话持久化文件，按项目隔离存储
+# 该文件同时承担「次级 @主控 的内容落点」:由 append_main_context 追加，主控下轮 load_global_history 读取
 def get_project_history_file():
-    """获取当前项目对应的历史存储文件路径"""
+    """获取当前项目对应的历史存储文件路径（主控上下文 + 次级 @主控 通知共用）"""
     project_name = CURRENT_PROJECT.get("project_name", "default") if CURRENT_PROJECT else "default"
     # 处理项目名特殊字符，避免非法文件名
     safe_project_name = re.sub(r'[\\/*?:"<>|]', "_", project_name)
@@ -127,13 +132,8 @@ def load_config() -> Dict:
             "/System", "/usr", "/bin", "/sbin", "/etc", "/var", "/root", "/private", "/Library"
         ]
     default_config = {
-        "model_provider": "模型厂商自行设置",
-        "api_url": "https://ark.cn-beijing.volces.com/api/v3",
-        "model_name": "deepseek-v4.1-flash",
-        "api_key": "",
-        "timeout": 200,
-        "stream_output": True,
-        "temperature": 0.5,
+        # 单模型时代的 model_provider/api_url/model_name/api_key/timeout/stream_output/temperature
+        # 已全部迁入 models_config.json 的 9 槽位，此处不再保留（并由下方 deprecated 列表主动清理老配置回写）
         "download_path": os.path.join(os.path.expanduser("~"), "Downloads"),
         "max_parse_fail_count": 3, # 单个文件解析失败最多重试次数，超过后24小时内自动跳过
         "repository_path": get_default_repository_path(), # 默认仓库路径
@@ -145,6 +145,14 @@ def load_config() -> Dict:
         "theme_primary_color": "#165DFF", # 界面主题主色（前端各页+Qt外壳统一生效，配置页可视化编辑）
         "theme_bg_page": "#F5F7FA", # 界面底色（页面框架底色，与主色独立设置，配置页可视化编辑）
         "theme_bg_card": "#FFFFFF", # 卡片底色（卡片/容器底色，与主色独立设置，配置页可视化编辑）
+        # ===== AI思考模式开关（三个页面各自独立持久化，互不同步、互不覆盖）=====
+        # show_think_mode       :主对话页（PageO0x2f.vue 的普通实例）
+        # show_think_mode_float :悬浮窗（PageO0x2f.vue 的 ?mode=float 实例，与主对话页同文件、靠 isFloat 分流）
+        # show_think_mode_dev   :次级开发页（1.vue）
+        # 兜底策略:老用户 config.json 缺上述字段时，load_config 会自动补 True（等价改造前的"默认开启"行为，无感升级）
+        "show_think_mode": True,
+        "show_think_mode_float": True,
+        "show_think_mode_dev": True,
         "system": {
             "project_root_absolute_path": BASE_DIR,
             "tos_endpoint": "https://tos-cn-beijing.volces.com",
@@ -173,7 +181,12 @@ def load_config() -> Dict:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 user_config = json.load(f)
             # 清理历史遗留的废弃配置项（本地模型相关，已全面切换云端）
-            for deprecated_key in ["model_repo_path", "default_local_model"]:
+            # 补充:单模型时代的模型字段已迁入 models_config.json 9 槽位，此处主动清理防止老 config.json 回写复活
+            for deprecated_key in [
+                "model_repo_path", "default_local_model",
+                "model_provider", "api_url", "model_name", "api_key",
+                "timeout", "stream_output", "temperature", "lastCloudProvider",
+            ]:
                 if deprecated_key in user_config:
                     del user_config[deprecated_key]
             # 合并用户配置，缺失字段自动补全默认值
@@ -220,6 +233,127 @@ def save_config(config: Dict):
     # 同步更新智能编辑模块顶层导入的路径变量，解决from导入复制值不更新的问题
     import tools.intelligent_file_editor as intelligent_file_editor_module
     intelligent_file_editor_module.REPOSITORY_PATH = REPOSITORY_PATH
+
+
+# ==================== 9 槽位模型配置模块（阶段 2 新增） ====================
+# 用途:9 个模型槽位（模型1~模型9）的读写与密钥脱敏，字段与前端 9 个模型配置页一一对应。
+# 设计要点:
+#   1. 单一数据源:所有读写均走 MODELS_CONFIG_PATH（与 CONFIG_PATH 同级同规则）；
+#   2. 自动补全:文件缺失自动生成 9 槽默认结构；已有文件缺槽自动补齐（用户零操作）；
+#   3. 密钥脱敏:对外 list 接口返回脱敏值（保留前 4 位 + ****），内部 get 接口返回明文；
+#   4. 空值不回写:save 时若密钥为空或脱敏形态，保留原值不覆盖（防止"只改温度丢密钥"）。
+
+# 单个槽位字段定义（键名与前端 9 个配置页控件一一对应）
+_MODEL_SLOT_FIELDS = {
+    "display_name": "",       # 槽位别名（前端展示用）
+    "api_url": "",            # API地址
+    "model_name": "",         # 模型ID
+    "api_key": "",            # API-keys（落盘明文，接口返回时脱敏）
+    "timeout": 200,           # 请求超时（秒）
+    "temperature": 0.5,       # 温度参数
+    "max_tokens": 0,          # 单次输出上限（0=自动，调用时不发送该参数，自动使用模型上限）
+    "max_reply_rounds": 20,   # 每轮回复次数上限（承接旧界面「回复上限」的循环次数语义）
+    "max_chat_rounds": 10,    # 上下文轮数
+    "enabled_plugins": [],    # 已启用插件ID列表（空数组=全量注入，向后兼容）
+    "stream_output": True,    # 输出模式（流式开关）
+    "persona_name": "",       # 人设名称
+    "persona_prompt": "",     # 人设提示词
+    "fixed_prompt_1": "",     # 固定提示1
+    "fixed_prompt_2": "",     # 固定提示2
+    "fixed_prompt_3": "",     # 固定提示3
+}
+
+
+def _default_model_slot(slot: int) -> Dict:
+    """生成单个槽位的默认配置（每次新建对象，避免多槽位共享同一引用）"""
+    item = {"slot": int(slot)}
+    item.update(_MODEL_SLOT_FIELDS)
+    return item
+
+
+def _load_models_config() -> Dict:
+    """读取 9 槽位模型配置:文件缺失/损坏自动重建，缺槽自动补齐后回写，保证始终 9 槽齐全"""
+    raw: Dict[str, Any] = {}
+    # 首次启动:exe 同级无 models_config.json 时，从 _internal 的脱敏模板复制生成（预置 9 槽位人设/固定提示，用户只需填 API Key）
+    if not os.path.exists(MODELS_CONFIG_PATH) and getattr(_sys, 'frozen', False):
+        try:
+            import shutil
+            _tpl = os.path.join(os.path.dirname(MODELS_CONFIG_PATH), "_internal", "models_config.example.json")
+            if os.path.exists(_tpl):
+                shutil.copy2(_tpl, MODELS_CONFIG_PATH)
+                print(f"[api_server] 首次启动自动从模板生成 models_config.json: {MODELS_CONFIG_PATH}")
+        except Exception as e:
+            print(f"[api_server] 复制 models_config 模板失败（不影响空壳兜底）: {e}")
+    if os.path.exists(MODELS_CONFIG_PATH):
+        try:
+            with open(MODELS_CONFIG_PATH, "r", encoding="utf-8") as f:
+                raw = json.load(f) or {}
+        except Exception as e:
+            print(f"⚠️ models_config.json 解析失败，将重建默认结构: {e}")
+            raw = {}
+    models = raw.get("models", [])
+    if not isinstance(models, list):
+        models = []
+    # 按 slot 号建索引，保留用户已填内容
+    by_slot: Dict[int, Dict] = {}
+    for item in models:
+        if isinstance(item, dict):
+            try:
+                by_slot[int(item.get("slot"))] = item
+            except (TypeError, ValueError):
+                continue
+    # 1~9 逐一补齐（缺槽用默认值；已有槽位缺字段也补齐）
+    merged: List[Dict] = []
+    for s in range(1, 10):
+        base = by_slot.get(s) or _default_model_slot(s)
+        for k, v in _MODEL_SLOT_FIELDS.items():
+            base.setdefault(k, v)
+        base["slot"] = s
+        if not base.get("display_name"):
+            base["display_name"] = f"模型{s}"
+        merged.append(base)
+    # 透传 runtime 节（读写全量往返不得丢失；缺失/损坏用出厂默认兜底，与 model_registry.get_runtime 一致）
+    runtime = raw.get("runtime")
+    if not isinstance(runtime, dict):
+        runtime = {}
+    runtime.setdefault("max_concurrency", 3)
+    runtime.setdefault("retry", 1)
+    result = {"version": raw.get("version", 1), "runtime": runtime, "models": merged}
+    # 首次生成 / 槽位数不齐时回写，保持磁盘状态与内存一致
+    if (not os.path.exists(MODELS_CONFIG_PATH)) or (len(models) != len(merged)):
+        try:
+            _atomic_write_json(MODELS_CONFIG_PATH, result)
+        except Exception as e:
+            print(f"⚠️ models_config.json 回写失败（不影响本次读取）: {e}")
+    return result
+
+
+def _save_models_config(data: Dict) -> None:
+    """写盘 9 槽位模型配置（复用 _atomic_write_json，避免写入中断导致文件被截断）"""
+    _atomic_write_json(MODELS_CONFIG_PATH, data)
+
+
+def _mask_api_key(key: Any) -> str:
+    """密钥脱敏:长度 <8 返回 ****；否则保留前 4 位 + ****（列表页展示用）"""
+    if not key or not isinstance(key, str):
+        return ""
+    if len(key) < 8:
+        return "****"
+    return key[:4] + "****"
+
+
+def _is_masked_or_empty(key: Any) -> bool:
+    """判断密钥是否为「空值 / 脱敏形态」—— 是则保存时保留原值不覆盖（防误清空）"""
+    if key is None or not isinstance(key, str):
+        return True
+    if key.strip() == "":
+        return True
+    if key.endswith("****"):
+        return True
+    return False
+
+
+# ==================== 9 槽位模型配置模块结束 ====================
 
 # 初始化仓库路径:从配置读取，自动创建不存在的目录
 def init_repository_path():
@@ -281,6 +415,79 @@ def save_global_history(query: str, response: str, rounds: int):
         history = history[-rounds:]
     with open(history_file, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
+
+# 次级模型 @主控 → 投递主控上下文（真送达主模型，而非只到前端）
+# 由 orchestrator 通过 set_main_injector 注入后回调调用（不反向 import，杜绝循环依赖）
+def append_main_context(text: str, sender: str = "") -> None:
+    """把次级消息追加到「当前项目」历史文件，主控下轮 load_global_history 即可读到"""
+    body = str(text or "").strip()
+    if not body:
+        return
+    history_file = get_project_history_file()
+    try:
+        history = []
+        if os.path.exists(history_file):
+            with open(history_file, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        if not isinstance(history, list):
+            history = []
+    except (json.JSONDecodeError, OSError, IOError):
+        history = []
+    sender_tag = f"来自{sender}|" if sender else ""
+    history.append({
+        "content": f"【{sender_tag}次级消息】{body}",
+        "timestamp": int(time.time() * 1000),
+    })
+    try:
+        rounds = memory_cache.config["history_context_rounds"]
+    except Exception:
+        rounds = 20
+    if len(history) > rounds:
+        history = history[-rounds:]
+    try:
+        with open(history_file, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        print(f"[AI] 追加主控上下文失败: {e}")
+
+# ========== 次级 @主控 唤醒主控模型（2026-10-13 新增；S1 走 /api/chat 主链路自调用）==========
+# 模块级端口变量:由 start_api_server 在运行时确定 use_port 后写入，供 wake_main 读取（不硬编码端口）
+_SERVER_PORT: int = 0
+
+
+def wake_main(text: str, sender: str = "", task_id: str = "") -> None:
+    """次级 @主控 → 唤醒主控模型跑一轮（把回报作为"一条用户提交"打进 /api/chat 主链路）
+
+    - 复用 scheduler_manager 现成 HTTP 自调用范式（同 /api/chat 自调用写法，端口动态读取）;
+    - 上下文与人手对话天然同源: /api/chat 内部走 load_global_history + 全链路装配，
+      且 append_main_context 已把本回报写入同一历史文件 → 主控看到的视图与人手一致;
+    - session_id 用主会话 "default"（与前端主控页一致，前端能在主控页看到唤醒交互）;
+    - 无兜底: 调用失败仅打印，不重试、不降级（按用户口径:测试期能立刻发现链路断开）;
+    - 来源标识: 保持现状 header 口径 "[来自{sender}|任务 #{task_id}]"，拼在 query 前，
+      不新增字段、不改存历史逻辑（零侵入）。
+    """
+    body = str(text or "").strip()
+    if not body:
+        return
+    port = int(_SERVER_PORT or 0)
+    if port <= 0:
+        print("[Wake] 唤醒主控失败:端口未注入（服务尚未启动?）")
+        return
+    header = f"[来自{sender}|任务 #{task_id}]" if (sender or task_id) else ""
+    query = f"{header}\n\n{body}" if header else body
+    try:
+        import httpx
+        httpx.post(
+            f"http://127.0.0.1:{port}/api/chat",
+            json={
+                "query": query,
+                "session_id": "default",
+                "attachments": [],
+            },
+            timeout=300,
+        )
+    except Exception as e:
+        print(f"[Wake] 唤醒主控失败: {e}")
 
 # 检测端口是否被占用
 def is_port_used(port: int) -> bool:
@@ -455,52 +662,48 @@ def is_path_forbidden(target_path: str, operation_type: str = "write") -> tuple[
 # 挂载为静态路由，前端可直接访问预览
 app.mount("/upload", StaticFiles(directory=UPLOAD_ROOT), name="upload")
 
-@app.get("/web_file_repo.html", include_in_schema=False)
-async def get_file_repo_page():
-    return FileResponse(os.path.join(BASE_DIR, "web_file_repo.html"))
+# 阶段1（前端重构 · 决策C① · 步骤1.6）:新前端 AI-GZT-v2 静态产物挂载为 /webapp
+#  —— 与上方 /upload 及下方全部旧页面路由【并存】，旧功能一行不动、零影响；
+#  —— html=True:访问 /webapp 或子目录时自动返回 index.html（SPA 入口）；
+#  —— 前端路由已改 Hash 模式（createWebHashHistory），# 之后不发给服务端，无需额外 catch-all 回退；
+#  —— os.path.isdir 保护:前端尚未执行 npm run build（dist 不存在）时不挂载，
+#     避免 StaticFiles 指向不存在的目录导致启动报错，旧页面照常可用。
+_WEBAPP_DIST_DIR = os.path.join(BASE_DIR, "AI-GZT-v2", "dist")
+if os.path.isdir(_WEBAPP_DIST_DIR):
+    app.mount("/webapp", StaticFiles(directory=_WEBAPP_DIST_DIR, html=True), name="webapp")
+    print(f"✅ 新前端已挂载:http://127.0.0.1:<端口>/webapp  ->  {_WEBAPP_DIST_DIR}")
+else:
+    print(f"ℹ️ 新前端产物不存在（{_WEBAPP_DIST_DIR}），/webapp 暂未挂载；"
+          f"请先在 AI-GZT-v2 目录执行 npm install && npm run build")
+
+# 修复方案A（头像接入 · 2026-10-13）:补挂 /assets 静态路由，解决「头像/图标 404 → 显示 alt 文字」
+#  —— 根因:前端 8 个次级对话页（1.vue ~ 7-2.vue）与主对话页 PageO0x2f.vue 的
+#     头像/图标均使用【绝对路径】/assets/xxx（如 /assets/avatars/model_2.png、
+#     /assets/icons/logo.png），而 vite base:'./' 只重写相对路径引用、【不重写绝对路径】
+#     → 构建产物里仍是 /assets/...；但整个新前端挂在 /webapp 子路径下
+#     → 浏览器请求漏掉 /webapp 前缀 → 404 → <img> 加载失败 → 渲染 alt="AI" 文字
+#     （即"看起来还是原来的 AI 文字徽标"现象的成因）。
+#  —— 方案:将 /assets 直接映射到 dist/assets，1 处改动同时覆盖
+#     8 个次级页头像 + 主对话页 + 悬浮窗 + 主控图标兜底。
+#  —— 保护:os.path.isdir 判断，dist 不存在时不挂载，避免 StaticFiles 指向不存在目录导致启动报错。
+#  —— 兼容:与 /webapp、/static、/upload 挂载并存，互不冲突（/webapp/assets/... 仍可访问）。
+_WEBAPP_ASSETS_DIR = os.path.join(_WEBAPP_DIST_DIR, "assets")
+if os.path.isdir(_WEBAPP_ASSETS_DIR):
+    app.mount("/assets", StaticFiles(directory=_WEBAPP_ASSETS_DIR), name="webapp_assets")
+    print(f"✅ 前端 absolute 资源已挂载:/assets  ->  {_WEBAPP_ASSETS_DIR}")
+
 @app.get("/logo.png", include_in_schema=False)
 async def get_logo():
     return FileResponse(os.path.join(BASE_DIR, "logo.png"))
 
-@app.get("/web_settings.html", include_in_schema=False)
-async def get_settings_page():
-    return FileResponse(os.path.join(BASE_DIR, "web_settings.html"))
-@app.get("/chat_ui.html", include_in_schema=False)
-async def get_chat_ui_page():
-    return FileResponse(os.path.join(BASE_DIR, "chat_ui.html"))
-@app.get("/chat_float.html", include_in_schema=False)
-async def get_chat_float_page():
-    return FileResponse(os.path.join(BASE_DIR, "chat_float.html"))
-@app.get("/file_editor.html", include_in_schema=False)
-async def get_file_editor_page():
-    return FileResponse(os.path.join(BASE_DIR, "file_editor.html"))
-
-@app.get("/web_log.html", include_in_schema=False)
-async def get_log_page():
-    return FileResponse(os.path.join(BASE_DIR, "web_log.html"))
-
-@app.get("/web_backup.html", include_in_schema=False)
-async def get_backup_page():
-    return FileResponse(os.path.join(BASE_DIR, "web_backup.html"))
-
-@app.get("/workspace", include_in_schema=False)
-async def get_workspace_page():
-    return FileResponse(os.path.join(BASE_DIR, "web_workspace.html"))
-@app.get("/web_plugin_market.html", include_in_schema=False)
-async def get_plugin_market_page():
-    return FileResponse(os.path.join(BASE_DIR, "web_plugin_market.html"))
-
-@app.get("/web_about.html", include_in_schema=False)
-async def get_about_page():
-    return FileResponse(os.path.join(BASE_DIR, "web_about.html"))
-# 统一入口重定向，所有访问默认跳转到多标签工作台
+# 统一入口重定向，所有访问默认跳转到新前端（AI-GZT-v2 构建产物）
 @app.get("/", include_in_schema=False)
 async def root_redirect():
-    return RedirectResponse(url="/workspace")
+    return RedirectResponse(url="/webapp/")
 
 @app.get("/chat", include_in_schema=False)
 async def redirect_chat():
-    return RedirectResponse(url="/workspace")
+    return RedirectResponse(url="/webapp/")
 
 # 跨域配置
 app.add_middleware(
@@ -514,18 +717,25 @@ app.add_middleware(
 # ========================== OpenAI兼容对外接口 ==========================
 @app.get("/v1/models")
 async def get_models():
-    """兼容OpenAI模型列表接口"""
-    config = load_config()
+    """兼容OpenAI模型列表接口
+    模型名统一取自 models_config.json 槽位1（与 /api/models/* 唯一数据源一致）；
+    单模型时代的 config["model_name"] 已废弃，避免删字段后 KeyError
+    """
+    _models = _load_models_config().get("models", []) or []
+    _slot1 = next((m for m in _models if int(m.get("slot", 0) or 0) == 1), None)
+    if _slot1 is None and _models:
+        _slot1 = _models[0]
+    _model_name = str((_slot1 or {}).get("model_name", "") or "unknown")
     return {
         "object": "list",
         "data": [
             {
-                "id": config["model_name"],
+                "id": _model_name,
                 "object": "model",
                 "created": 1677610605,
                 "owned_by": "openai",
                 "permission": [],
-                "root": config["model_name"],
+                "root": _model_name,
                 "parent": None
             }
         ]
@@ -570,21 +780,153 @@ session_context: Dict[str, Dict[str, Any]] = {
     "default": {} # 默认项目，未选中项目时使用
 }
 
-# 全局SSE流式推送连接存储:key=session_id，value=消息队列，实现显示与推理解耦
+# 全局SSE流式推送连接存储:key=session_id，value=该会话所有窗口的队列集合（订阅池），实现显示与推理解耦 + 多窗实时同达
 SSE_CONNECTIONS = {}
+
+def _strip_naked_tool_json(text: str) -> str:
+    """【M1·根因修复】剥离"无标记包裹的裸工具调用对象"文本块。
+
+    背景:工具/插件模板会以「双下划线模板版本字段 + name + parameters」这种
+    无中文标记的裸对象形态出现在模型输出里；现有净化只认「工具调用开始…结束」
+    中文标记块 → 裸对象两头都抓不到，会被原样落盘、原样派发给次级对话。
+    实现（2026-10-12 加固:只删"确定是裸对象"的整块，绝不误伤后续轮次）:
+      ① 定位模板版本字段 → 向前取最近左花括号作为候选对象起点；
+      ② 候选起点必须与字段同行且距离 ≤200 字符，跨行/过远一律视为正文引用 → 跳过不删；
+      ③ 向后逐字符做括号配对（感知引号与反斜杠转义）；
+      ④ 配对失败 → 跳过不删（旧实现此处从起点截到末尾，是"首轮之后内容全丢"的根因）；
+      ⑤ 待删区间若跨轮次/工具结果边界（含「第N轮交互」或「工具执行结果」）→ 跳过不删；
+      ⑥ 用 search_from 游标单调推进，跳过时不回头，避免死循环。
+    最后收敛多余空行，避免历史里出现大片空白。
+    """
+    if not text:
+        return text
+    key = '"__template_version"'
+    out = str(text)
+    search_from = 0   # 搜索游标:跳过时不回头，避免死循环
+    guard = 0
+    while guard < 500:
+        guard += 1
+        pos = out.find(key, search_from)
+        if pos < 0:
+            break
+        start = out.rfind("{", 0, pos)
+        # 约束1:候选起点必须存在、与字段同行、且距离 ≤200 字符，否则视为正文引用 → 跳过不删
+        if start < 0 or "\n" in out[start:pos] or (pos - start) > 200:
+            search_from = pos + len(key)
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        end = -1
+        for i in range(start, len(out)):
+            ch = out[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        # 约束2:配对失败 → 跳过不删（宁可留残留，绝不截断后续内容）
+        if end < 0:
+            search_from = pos + len(key)
+            continue
+        segment = out[start:end]
+        # 约束3:待删区间跨轮次/工具结果边界 → 说明锚定到了正文，跳过不删
+        if ("【第" in segment and "轮交互】" in segment) or "工具执行结果" in segment:
+            search_from = pos + len(key)
+            continue
+        out = out[:start] + out[end:]
+        search_from = start   # 删除成功后从删除点继续搜索后续残留
+    while "\n\n\n" in out:
+        out = out.replace("\n\n\n", "\n\n")
+    return out.strip()
+
+
+# 方案A:会话级"本轮输出"实时快照，key=session_id，value={"query","reasoning","output","done"}
+# 用途:切页/断线时SSE增量被丢弃，前端切回后按query据此补齐缺口（记忆库与生成完整，仅前端展示链路丢包）
+SESSION_LAST_OUTPUT = {}
 
 def push_sse_message(session_id: str, data: dict):
     """线程安全的SSE消息推送，支持在子线程中调用，解决TestClient跨事件循环无法唤醒主循环Queue的问题"""
     global global_event_loop
-    if session_id in SSE_CONNECTIONS:
-        queue = SSE_CONNECTIONS[session_id]
-        if not global_event_loop:
-            return
-        try:
-            import asyncio
+    # 方案A:实时累积本轮输出快照（不依赖SSE队列存活，断线期间仍持续累积，供前端切回补齐）
+    # 【修复·根因级】原实现是 `if _snap is not None` —— 快照不存在就完全不累积。
+    # 而 SESSION_LAST_OUTPUT 全项目只有一处创建（主控 POST /api/chat 时建 "default"），
+    # 次级通道 sec_{slot} 从未被创建过快照 → 次级事件在"无人订阅"时永久丢失，
+    # 这就是"打开次级页看不到内容、必须切页回读"的根因。
+    # 现改为:任何通道（含 sec_{slot}）首次出现事件即自动建快照，与主控 default 同一套机制。
+    _stype = str(data.get("type") or "")
+    _snap = SESSION_LAST_OUTPUT.get(session_id)
+    if _snap is None:
+        # events:无订阅期间发生的业务事件序列（供前端建连时按序回放"过程"，见 chat_stream 的 sec_ 分支）
+        _snap = {"query": "", "reasoning": "", "output": "", "done": False, "events": []}
+        SESSION_LAST_OUTPUT[session_id] = _snap
+    # 兼容老结构快照（进程热更/历史对象缺字段时不炸）
+    if not isinstance(_snap.get("events"), list):
+        _snap["events"] = []
+    if _stype == "dispatch":
+        # 新一轮派发 → 清空快照（重放时只回放"本轮"内容，不与上一轮混淆）
+        _snap["query"] = str(data.get("content") or "")
+        _snap["reasoning"] = ""
+        _snap["output"] = ""
+        _snap["done"] = False
+        # 【事件回放·新增】新一轮起手 → 事件序列同步清空（回放只保留"本轮"过程，不与上一轮混淆）
+        _snap["events"] = []
+        # 【M4a·根因修复】新一轮派发 → 同时复位"上一轮已闭轮"标记
+        _snap["_stream_closed"] = False
+    elif _stype == "ai_reasoning":
+        _snap["reasoning"] += str(data.get("content") or "")
+    elif _stype == "ai_output_stream":
+        # 【M4b·根因修复】上一轮已闭轮（ai_output 已把快照固化为"单轮完整正文"）→ 本轮流式从空重累，
+        #   避免快照把"第1轮 + 第2轮 + …"整轮拼接成一条，被前端 syncLastOutput 整段顶替当前气泡
+        if _snap.get("_stream_closed"):
+            _snap["output"] = ""
+            _snap["_stream_closed"] = False
+        _snap["output"] += str(data.get("content") or "")
+    elif _stype == "ai_output":
+        # 【M4b·根因修复】终态直接用"单轮完整正文"覆盖快照（原实现仅在为空时兜底，流式已累加过就永不纠偏），
+        #   并打上闭轮标记，供下一轮流式分支识别"该从空重累"
+        _snap["output"] = str(data.get("content") or "") or _snap["output"]
+        _snap["done"] = True
+        _snap["_stream_closed"] = True
+    elif _stype in ("report", "secondary_summary"):
+        _snap["done"] = True
+    # 【事件回放·新增】无论当前是否有订阅者，先把本次事件按序记入回放队列；
+    # 位置必须在下方 `if not queues: return` 之前 —— 这是"无订阅期间的过程留痕"的唯一落点。
+    # 上限 2000 条（超出裁头），防长任务把内存堆爆；只记前端可渲染的业务事件，跳过 heartbeat。
+    if _stype in ("dispatch", "ai_reasoning", "ai_output_stream", "ai_output", "report", "secondary_summary"):
+        _rev = _snap.get("events")
+        if isinstance(_rev, list):
+            try:
+                _rev.append(dict(data))
+            except Exception:
+                _rev.append({"type": _stype, "content": str(data.get("content") or "")})
+            if len(_rev) > 2000:
+                del _rev[:len(_rev) - 2000]
+    # 订阅池取该会话队列:无队列=该通道当前无窗口订阅，静默丢弃（级别=debug，不打印以免刷屏）
+    queues = SSE_CONNECTIONS.get(session_id)
+    if not queues:
+        return
+    if not global_event_loop:
+        return
+    try:
+        import asyncio
+        # 订阅池模式:向该会话所有已连接窗口广播（主窗 + 悬浮窗实时同达）
+        for queue in list(queues):
             asyncio.run_coroutine_threadsafe(queue.put(data), global_event_loop)
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 def broadcast_scheduler_notice(text: str):
     """向所有活跃工作台会话广播一条定时任务系统通知（复用push_sse_message，非阻塞；不写历史、不污染推理流）"""
@@ -595,6 +937,18 @@ def broadcast_scheduler_notice(text: str):
 
 # P1:把线程安全的SSE推送函数注入后台任务管理器（监控线程在提升/完成/取消/超时时推送事件，P2卡片消费）
 background_task_manager.background_task_manager.set_sse_pusher(push_sse_message)
+
+# P1(阶段4):任务编排器挂接 —— SSE 推送复用同一线程安全函数；启动超时守护线程（硬终止②兜底）
+try:
+    import orchestrator as _orch
+    _orch.set_sse_pusher(push_sse_message)
+    # 注入「主控上下文追加器」:次级 @主控 的内容会被真正写入当前项目历史，主控下轮可读到（回调注入，杜绝循环依赖）
+    _orch.set_main_injector(append_main_context)
+    # 【2026-10-13 新增】注入「主控唤醒器」:次级 @主控 后触发一次主控模型调用（走 /api/chat 主链路，与人手对话上下文同源）
+    _orch.set_main_waker(wake_main)
+    _orch.start_timeout_guard()
+except Exception as _orch_err:
+    print(f"⚠️ 任务编排器挂接失败（不影响旧链路）: {_orch_err}")
 
 # 全局文件变动SSE连接存储
 FILE_CHANGE_CONNECTIONS = set()
@@ -986,7 +1340,10 @@ def truncate_tool_output(tool_name: str, index, full_text) -> str:
 def _contains_dangerous_command(cmd: str) -> bool:
     """危险命令判定:拆分管道/分号后逐段检查段首程序名，避免\\bformat\\b误杀Format-Table等
     PowerShell cmdlet（段首token含连字符不命中纯单词黑名单）。段首为rm/rd/del/erase/format/
-    mkfs/dd等危险程序才拦截；含&的命令拼接拦截由调用方维持原逻辑。判定异常时保守放行。"""
+    mkfs/dd等危险程序才拦截。判定异常时保守放行。
+    【2026-10-12 调整】按用户要求取消「命令拼接（&）」单独拦截，含&的拼接命令照常放行；
+    危险程序保护仍按段首程序名生效（如 "dir & del x" 依旧命中 del 段被拦）。
+    """
     try:
         dangerous_progs = {"rm", "rmdir", "rd", "del", "erase", "format", "mkfs", "dd"}
         segments = re.split(r'\|\|?|&&?|;', cmd)
@@ -1004,6 +1361,56 @@ def _contains_dangerous_command(cmd: str) -> bool:
         return False
     except Exception:
         return False
+
+
+# P0 兜底（2026-10-12 用户方案）:工具调用块未闭合自动补足
+# 背景:AI 输出被模型/网络原生截断、或 AI 漏写结束标记时，下方解析处的全量正则匹配会把
+#       这些块静默丢弃 → 工具未执行 → 文件没写成、任务中断。本函数只补结束标记，绝不猜内容。
+# 规则（保守，避免误判）:
+#   1. 只认「独占一行」的起止标记（strip 后与该行完全相同才算），正文句中提及、示例引用一律不计数；
+#   2. 按行序栈式扫描:先见到开始标记才计深度，孤立结束标记不倒扣；
+#   3. 开始数 > 结束数时，仅在文本末尾补齐缺失的结束标记，不做任何猜内容操作；
+#   4. 数量匹配 / 无开始标记 → 原样返回，零开销；
+#   5. 标记字面量用常量拼接构造，源码中不出现完整标记，避免本文件被上层标记扫描误判。
+# 返回:(补全后的文本, 补足的结束标记数量)
+def _autoclose_tool_blocks(text: str):
+    try:
+        _begin_mark = "【" + "工具调用开始" + "】"
+        _end_mark = "【" + "工具调用结束" + "】"
+        if not text or _begin_mark not in text:
+            return text, 0
+        # 【2026-10-12 升级·遇新开先闭合旧块】逐行重建:
+        #   ① 遇到新的开始标记时，若上一块尚未闭合，先就地补一个结束标记再开新块；
+        #   ② 文本结束时若仍处于开块状态，逐层补齐剩余结束标记；
+        #   ③ 本次无任何补足时，原样返回入参，保证"块本就配平"场景与改动前 100% 一致。
+        # 背景:原实现只在文本末尾一次性补 N 个结束标记，导致"连续多个未闭合开始标记"
+        #   会被下游非贪婪正则跨块合并成一个大块（首行变叙述文字）→ 结构校验整批静默丢弃。
+        _out_lines = []
+        _depth = 0
+        _padded = 0
+        for _raw_line in text.splitlines():
+            _line = _raw_line.strip()
+            if _line == _begin_mark:
+                if _depth > 0:
+                    _out_lines.append(_end_mark)
+                    _padded += 1
+                _depth += 1
+                _out_lines.append(_raw_line)
+            elif _line == _end_mark:
+                if _depth > 0:
+                    _depth -= 1
+                _out_lines.append(_raw_line)
+            else:
+                _out_lines.append(_raw_line)
+        while _depth > 0:
+            _out_lines.append(_end_mark)
+            _padded += 1
+            _depth -= 1
+        if _padded <= 0:
+            return text, 0
+        return "\n".join(_out_lines), _padded
+    except Exception:
+        return text, 0
 
 # P1-9.3: 不计入连续错误计数的结果标记——参数/指令格式纠正信号、系统保护路径提示属于给AI的
 # 纠正信号而非系统故障，累计到3次会误杀长任务；其余真正含❌的执行失败才计数（阈值3不变）
@@ -1079,11 +1486,15 @@ def update_current_project_file_list():
 
 # 兼容原有接口请求结构体
 class ChatRequest(BaseModel):
+    # 消 Pydantic v2 的 model_ 命名空间冲突警告（model_slot 等字段会触发 UserWarning，此处显式放行，零副作用）
+    model_config = {"protected_namespaces": ()}
     query: str
     system_prompt: Optional[str] = "" # 自定义系统提示词，不传用默认值
     session_id: Optional[str] = "default" # 会话ID，不传默认用公共会话
     attachments: list = []  # 附件列表，支持多文件/图片上传
     task_name: Optional[str] = "" # 定时任务名称，仅定时任务触发时携带（用于系统提示文案，默认空对普通对话无影响）
+    thinking: bool = False # AI思考模式开关:开启后透传 reasoning_effort="high" 驱动模型深度思考，默认关闭保证向后兼容
+    model_slot: int = 1 # 模型槽位（主对话固定 1，系统自动按该槽位读 models_config.json 的人设/3固定提示/温度/回复上限/api_url/model_name/api_key，用户无感）
 # 异步任务相关模型
 class TaskSubmitRequest(BaseModel):
     task_type: str # chat/read_file/write_file等
@@ -1095,6 +1506,8 @@ system_prompt: str = """你是资深全栈开发工程师，一个严谨的分�
 async def chat(req: ChatRequest):
     global CURRENT_PROJECT
     import asyncio
+    # 方案A:初始化/重置本轮会话输出快照（供前端切回后按query补齐断线期间丢弃的流式增量）
+    SESSION_LAST_OUTPUT[req.session_id] = {"query": req.query, "reasoning": "", "output": "", "done": False}
     # 判断是否为定时任务触发
     is_scheduler_task = req.session_id == "scheduler_task"
     # 定时任务使用独立会话ID，禁止劫持用户工作台会话，避免污染用户对话流、抢占用户SSE推送通道
@@ -1115,7 +1528,10 @@ async def chat(req: ChatRequest):
         CHAT_STOP_SIGNALS.discard(req.session_id)
     # 注意:正常运行时集合中无当前session_id，停止信号仅在用户点击停止/新请求发起终止旧任务时才会临时添加
     # 1. 合并当前会话历史+全局持久化历史，自动去重保留最近N轮，重启永不丢失
-    history_rounds = memory_cache.config["history_context_rounds"]
+    # 上下文轮数:优先读当前模型槽位 max_chat_rounds（页面「上下文轮数」），缺失回退全局 history_context_rounds
+    from model_registry import get_slot_config as _get_slot_cfg_hist
+    _hist_slot_cfg = _get_slot_cfg_hist(int(getattr(req, "model_slot", 1) or 1)) or {}
+    history_rounds = int(_hist_slot_cfg.get("max_chat_rounds", 0) or 0) or memory_cache.config["history_context_rounds"]
     session_history = memory_cache.get_session_history(req.session_id, rounds=history_rounds)
     global_history = load_global_history(history_rounds)
     # 合并去重：相同内容的历史只保留1份，按时间戳排序取最新的N轮
@@ -1127,25 +1543,41 @@ async def chat(req: ChatRequest):
             seen_content.add(item["content"])
             unique_history.append(item)
     session_history = unique_history[-history_rounds:] if len(unique_history) >= history_rounds else unique_history
-    # 转为正序：最早的对话在前，最新的在后，保证上下文逻辑正确
-    session_history = session_history[::-1]
+    # 升序:最早的对话在前，最新的在后，保证上下文逻辑正确
+    # （unique_history 已按 timestamp 升序排序并取最近 N 条，此处不再反转）
     # 格式转换为会话上下文格式，支持自动注入时间戳
     current_session = []
     show_timestamp = memory_cache.config.get("show_timestamp_in_context", True)
     for mem in session_history:
             # 拆分用户提问和AI回答
+            # 【修复·根因级】兜底赋值:历史里可能存在非"用户问:...\n回答:..."标准格式的记录
+            # （例如只有用户侧提问、或内容里含多个"回答:"导致 split 出 3 段以上）。
+            # 旧代码在 len(parts) != 2 时不赋值，随后 if show_timestamp 分支直接引用
+            # user_content / ai_content → UnboundLocalError → FastAPI 500，
+            # 表现为"主控派发过一次任务后，第二次对话直接断开、必须切项目才能再发"。
+            # 现改为:先兜底置空，split 成功才覆盖；非标准格式整段作为用户内容，
+            #          不生成空字符串的 AI 回复，避免污染上下文。
+            user_content = ""
+            ai_content = ""
             parts = mem["content"].split("\n回答:")
             if len(parts) == 2:
                 user_content = parts[0].replace("用户问:", "")
                 ai_content = parts[1]
+            else:
+                user_content = str(mem.get("content") or "").replace("用户问:", "")
             # 开启时间戳则格式化注入
             if show_timestamp:
-                # 时间戳格式：[YYYY-MM-DD HH:MM] 极简显示不占空间
+                # 时间戳格式:[YYYY-MM-DD HH:MM] 极简显示不占空间
                 time_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(mem["timestamp"] / 1000))
-                user_content = f"[{time_str}] {user_content}"
-                ai_content = f"[{time_str}] {ai_content}"
-            current_session.append({"role": "user", "content": user_content})
-            current_session.append({"role": "assistant", "content": ai_content})
+                if user_content:
+                    user_content = f"[{time_str}] {user_content}"
+                if ai_content:
+                    ai_content = f"[{time_str}] {ai_content}"
+            # 仅在内容非空时入上下文，防止出现 {"role":"assistant","content":""} 这类空消息
+            if user_content:
+                current_session.append({"role": "user", "content": user_content})
+            if ai_content:
+                current_session.append({"role": "assistant", "content": ai_content})
     
     # P1:跨轮"完成回灌"——取出本会话所有已结束后台任务的真实结果，成对注入历史之后、当前提问之前；
     # 只进本轮上下文、不写向量记忆库，drain一次性清空，AI下一轮即可看到真实退出码/耗时/日志尾部
@@ -1173,10 +1605,35 @@ async def chat(req: ChatRequest):
         _obs_triggered = False
         _obs_reason = "无匹配记忆（候选均低于相似度阈值或被近期上下文过滤）"
     record_recall_observation(req.query, current_project_name, _obs_triggered, _obs_reason, _obs_mems)
+    # 【模块0前置:按模型槽位读配置（人设/3个固定提示）——主对话自动分配 model_slot=1，用户无感】
+    from model_registry import get_slot_config as _get_slot_config
+    _slot_no = int(getattr(req, "model_slot", 1) or 1)
+    _slot_cfg = _get_slot_config(_slot_no) or {}
+    _persona_name = str(_slot_cfg.get("persona_name", "") or "")
+    _persona_prompt = str(_slot_cfg.get("persona_prompt", "") or "").strip()
     # 固定召回（工具+预留插槽）拼入系统prompt，不占用上下文配额
-    fixed_prompt = "\n".join([item["content"] for item in recall_result["fixed_recall"]])
+    # 【唯一数据源】按模型槽位读 models_config.json 的 fixed_prompt_1/2/3（memory_config.fixed_recall 仅作兜底）
+    _slot_fixed_parts = []
+    for _fk in ("fixed_prompt_1", "fixed_prompt_2", "fixed_prompt_3"):
+        _fv = str(_slot_cfg.get(_fk, "") or "").strip()
+        if _fv:
+            _slot_fixed_parts.append(_fv)
+    if _slot_fixed_parts:
+        fixed_prompt = "\n".join(_slot_fixed_parts)
+    else:
+        fixed_prompt = "\n".join([item["content"] for item in recall_result["fixed_recall"]])
     # 新增:追加已启用插件列表描述
+    # 【插件按槽位过滤】enabled_plugins 缺失/非list/空数组 → 全量注入（向后兼容，防误清空致模型裸奔）
     merged_tools = tool_template_manager.get_merged_tool_list()
+    _enabled_plugins = _slot_cfg.get("enabled_plugins")
+    if isinstance(_enabled_plugins, list) and len(_enabled_plugins) > 0:
+        _allowed_plugins = set(str(x) for x in _enabled_plugins)
+        _filtered_tools = {}
+        for _tid, _tpl in merged_tools.items():
+            _pid = str((_tpl.get("plugin_config") or {}).get("plugin_id", _tid))
+            if _pid in _allowed_plugins or str(_tid) in _allowed_plugins:
+                _filtered_tools[_tid] = _tpl
+        merged_tools = _filtered_tools
     plugin_desc = []
     for tool_id, template in merged_tools.items():
         if "plugin_config" in template:
@@ -1223,12 +1680,30 @@ async def chat(req: ChatRequest):
         project_context_prompt += "==================================\n"
 
     # 4. 拼接记忆到prompt
-    system_prompt = req.system_prompt
+    # 【模块0:模型人设 —— 按模型ID读 models_config.json（主对话自动分配 model_slot=1）】
+    # 说明:3 个固定提示已统一由下方「固定召回内容」段按槽位注入（唯一数据源），此处不再重复拼接，杜绝双份注入
+    system_prompt = ""
+    if _persona_prompt:
+        system_prompt += f"========== 模型人设（{_persona_name or _slot_cfg.get('display_name', '')}）==========\n{_persona_prompt}\n==================================\n"
+    if req.system_prompt:
+        system_prompt += req.system_prompt
     # 【模块1:固定召回（工具+预留插槽）】不占用上下文配额，100%生效
     if fixed_prompt.strip():
         system_prompt += "\n========== 固定召回内容 ==========\n"
         system_prompt += fixed_prompt + "\n"
         system_prompt += "==================================\n"
+    # 【模块1.2:可派发角色清单 + 派发协议】纯复用 orchestrator.build_role_pool，排除主控自身槽位
+    # 作用:让主控模型"看得见"次级角色，能自主 @人设名 派发；异常静默兜底，池空不注入，绝不改原 system_prompt 行为
+    try:
+        _dispatchable = [r for r in _orch.build_role_pool() if int(r.get("slot", 0) or 0) != _slot_no]
+        if _dispatchable:
+            system_prompt += "\n========== 可派发角色清单 ==========\n"
+            system_prompt += _orch.pool_brief(_dispatchable) + "\n"
+            system_prompt += "【派发协议】如需把任务派给某角色，请在回复正文中以 @人设名 标记（如 @开发），系统会自动派发。\n"
+            system_prompt += "==================================\n"
+    except Exception as _rp_err:
+        print(f"⚠️ 可派发角色清单注入失败（不影响主对话）: {_rp_err}")
+
     # 【模块1.5:当前开发项目上下文】不占用上下文配额，100%生效，选中项目时自动注入
     if project_context_prompt.strip():
         system_prompt += project_context_prompt
@@ -1258,6 +1733,7 @@ async def chat(req: ChatRequest):
     # 附件智能分流处理：自动判断直传/工具调用
     content_list = [{"type": "text", "text": req.query}]
     use_direct_mode = False # 标记是否使用直传模式
+    _image_hints = []  # 【多图修正】收集所有图片附件的提示文案，循环结束后统一前置，避免后图覆盖前图提示导致顺序颠倒
     
     if req.attachments:
         for att in req.attachments:
@@ -1269,6 +1745,8 @@ async def chat(req: ChatRequest):
             # 判断是否符合图片直传条件
             if ext in DIRECT_UPLOAD_CONFIG['image']['exts'] and size <= DIRECT_UPLOAD_CONFIG['image']['max_size']:
                 use_direct_mode = True
+                # 【多图修正】每张图片各收集一条提示（顺序即发送顺序），循环结束后统一前置到提问原文上方
+                _image_hints.append(original_name)
                 # 图片转base64直传
                 with open(local_path, "rb") as f:
                     base64_data = base64.b64encode(f.read()).decode('utf-8')
@@ -1284,16 +1762,20 @@ async def chat(req: ChatRequest):
                 content_list[0]['text'] = f"📎 上传的文件【{original_name}】内容：\n```\n{text_content}\n```\n\n用户提问：{content_list[0]['text']}"
             # 不符合直传条件，传路径给AI调用工具
             else:
-                content_list[0]['text'] = f"📎 上传的文件【{original_name}】本地路径：{local_path}\n请调用对应工具读取文件内容后响应用户提问。\n\n用户提问：{content_list[0]['text']}"
+                content_list[0]['text'] = f"📎 上传的文件【{original_name}】本地路径:{local_path}\n请调用对应工具读取文件内容后响应用户提问。\n\n用户提问:{content_list[0]['text']}"
+        # 【多图修正】所有附件处理完毕后统一前置图片提示:每张图独立一行，顺序与发送顺序一致（图A→图B→→原文）
+        if _image_hints:
+            _hint_block = "\n".join([f"（用户上传了图片【{_n}】）" for _n in _image_hints])
+            content_list[0]['text'] = f"{_hint_block}\n\n{content_list[0]['text']}"
     
     # 初始化消息列表，兼容直传/普通模式
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": content_list if use_direct_mode else content_list[0]['text']}
     ]
-    # 从配置读取每轮回复最大次数（安全上限，防止无限循环），AI完成任务后自动停止
+    # 从槽位配置读取每轮回复最大次数（承接页面「回复上限」语义 max_reply_rounds），缺失时回退 20
     config = load_config()
-    max_tool_calls = config.get("max_chat_rounds", 20)
+    max_tool_calls = int(_slot_cfg.get("max_reply_rounds", 20) or 20) if _slot_cfg else int(config.get("max_reply_rounds", 20) or 20)
     current_calls = 0
     response = ""
     last_tool_calls = [] # 记录最近2次工具调用，检测重复调用死循环
@@ -1310,14 +1792,39 @@ async def chat(req: ChatRequest):
             response += "\n\n[已手动终止输出]"
             break
         try:
-            # 模型推理（统一流式调用，本地/云端逻辑完全对齐）
-            output_stream = llm.create_chat_completion(
-                messages = messages,
-                temperature=0.5,
-                top_p=0.9,
-                stream=True,
-                reasoning_effort="high"
-            )
+            # 模型推理（按模型槽位调用独立客户端:api_url/model_name/api_key/timeout/temperature/max_tokens 全部来自 models_config.json）
+            # AI思考模式开关:开启（thinking=True）时通过 extra_body 透传 reasoning_effort="high" 驱动深度思考；
+            # 关闭时完全不带该参数（而非传 None），避免部分推理客户端拒绝空值导致调用失败
+            # 【甲+乙】标准 OpenAI SDK 的 chat.completions.create() 不认顶层 reasoning_effort（会抛 unexpected keyword argument）；
+            #   甲:统一放进 extra_body 官方透传口子，网关不认也仅是无害参数，不报错；
+            #   乙:万一某客户端连 extra_body 都不支持 → try/except TypeError 去掉该参数原样重试一次，兜底绝不崩。
+            _reasoning_on = bool(getattr(req, "thinking", False))
+            from model_registry import get_client as _get_slot_client
+            _slot_client = _get_slot_client(_slot_no)
+            _slot_max_tokens = int(_slot_cfg.get("max_tokens", 0) or 0)
+            _slot_call_kwargs = {
+                "model": _slot_cfg.get("model_name", ""),
+                "messages": messages,
+                "temperature": float(_slot_cfg.get("temperature", 0.5) or 0.5),
+                "top_p": 0.9,
+                "stream": True,
+                "timeout": int(_slot_cfg.get("timeout", 200) or 200),
+            }
+            if _slot_max_tokens > 0:
+                _slot_call_kwargs["max_tokens"] = _slot_max_tokens
+            if _reasoning_on:
+                # 双保险口径:方舟（doubao-seed 系）认 thinking；OpenAI 系认 reasoning_effort；互不认均为无害透传
+                _slot_call_kwargs["extra_body"] = {"thinking": {"type": "enabled"}, "reasoning_effort": "high"}
+            try:
+                output_stream = _slot_client.chat.completions.create(**_slot_call_kwargs)
+            except TypeError as _reason_err:
+                # 兜底:客户端不认 thinking/reasoning_effort/extra_body → 去掉后原样重试一次（保证任何客户端都不再报错中断）
+                if _reasoning_on and ("reasoning_effort" in str(_reason_err) or "extra_body" in str(_reason_err) or "thinking" in str(_reason_err)):
+                    print(f"⚠️ 客户端不支持思考模式透传，已自动去掉该参数重试:{str(_reason_err)[:120]}")
+                    _slot_call_kwargs.pop("extra_body", None)
+                    output_stream = _slot_client.chat.completions.create(**_slot_call_kwargs)
+                else:
+                    raise
 
             current_response = ""
             current_calls += 1
@@ -1354,10 +1861,22 @@ async def chat(req: ChatRequest):
                 if req.session_id in CHAT_STOP_SIGNALS:
                     _stream_stop.set()
                     break
-                delta = chunk["choices"][0].get("delta", {})
-                delta_content = delta.get("content", "")
+                # 兼容 OpenAI SDK 对象（ChatCompletionChunk）与 dict 两种返回形态:SDK 对象属性访问优先，dict 下标兜底
+                # （切换 get_client(slot) 后返回的是 SDK 对象，chunk["choices"] 会抛 not subscriptable）
+                _choices = getattr(chunk, "choices", None)
+                if _choices is None and isinstance(chunk, dict):
+                    _choices = chunk.get("choices") or []
+                if not _choices:
+                    continue
+                _choice = _choices[0]
+                _delta = getattr(_choice, "delta", None)
+                if _delta is None and isinstance(_choice, dict):
+                    _delta = _choice.get("delta")
+                if _delta is None:
+                    continue
+                delta_content = (getattr(_delta, "content", None) if not isinstance(_delta, dict) else _delta.get("content")) or ""
                 # 直接读取模型返回的专用思考内容字段（豆包/深度思考模型原生支持，无需自己解析<|im_start|>标签）
-                delta_reasoning = delta.get("reasoning_content", "")
+                delta_reasoning = (getattr(_delta, "reasoning_content", None) if not isinstance(_delta, dict) else _delta.get("reasoning_content")) or ""
                 current_response += delta_content
                 
                 # 推送思考内容（增量推送，无需等全部输出完）
@@ -1377,8 +1896,11 @@ async def chat(req: ChatRequest):
                         "timestamp": time.time()
                     })
                 
-                # 处理完内容后再判断是否结束
-                if chunk["choices"][0].get("finish_reason") == "stop":
+                # 处理完内容后再判断是否结束（同一兼容口径:SDK 对象属性访问优先，dict 兜底）
+                _finish_reason = getattr(_choice, "finish_reason", None)
+                if _finish_reason is None and isinstance(_choice, dict):
+                    _finish_reason = _choice.get("finish_reason")
+                if _finish_reason == "stop":
                     break
             # 通知生产者线程停止，释放底层流式连接
             _stream_stop.set()
@@ -1391,11 +1913,59 @@ async def chat(req: ChatRequest):
             })
 
             all_exec_results = []
-            # 新增：处理纯文本格式的工具调用请求，自动转换为模板生成的合法JSON指令
+            # 新增:处理纯文本格式的工具调用请求，自动转换为模板生成的合法JSON指令
             import re
-            # 新方案：纯中文边界标记，零特殊符号，零转义风险
-            # 全量匹配所有工具块，一次性处理所有指令，避免残留
-            tool_blocks = re.findall(r'【工具调用开始】(.*?)【工具调用结束】', current_response, re.S)
+            # 【P0 兜底 2026-10-12】解析前先做一次"未闭合补足":AI 输出可能被模型/网络原生截断，
+            #   或 AI 漏写结束标记 → 下方全量匹配会把这部分块静默丢弃 → 文件没写成 / 任务中断。
+            #   这里只补结束标记、不补内容；残缺内容由 AI 在回读校验环节自行发现并续写剩余部分。
+            _autoclosed_response, _autoclose_padded = _autoclose_tool_blocks(current_response)
+            if _autoclose_padded > 0:
+                # 未补足时函数返回原文，此分支不进入，行为与改动前 100% 一致
+                current_response = _autoclosed_response
+                # 提示不带❌前缀，不参与连续错误计数，避免长任务被连续误杀
+                all_exec_results.append(
+                    f"⚠️ 系统检测到本轮回复中有 {_autoclose_padded} 个工具块缺少结束标记，"
+                    "已在解析前自动补全（仅补标记，不补内容）。"
+                    "如本轮写入结果不完整，请对本轮工具执行结果进行回读校验，并继续补写剩余内容。"
+                )
+            # [A2B-B] 成对代码围栏保护:反引号内不参与识别，识别后逐块还原
+            _a2b_fence_store = []
+            def _a2b_fence_hide(_m):
+                _a2b_fence_store.append(_m.group(0))
+                return "__A2B_FENCE_" + str(len(_a2b_fence_store) - 1) + "__"
+            _a2b_scan_text = re.sub(r"```[\s\S]*?```", _a2b_fence_hide, current_response)
+            # [A2B-A] 结构校验:块内首个非空行必须是 工具名称<冒号>xxx，否则静默丢弃
+            _a2b_tk_o = chr(0x3010) + "工具调用" + "开始" + chr(0x3011)
+            _a2b_tk_c = chr(0x3010) + "工具调用" + "结束" + chr(0x3011)
+            _a2b_colon = chr(0xFF1A)
+            # 【2026-10-12 切块口径统一】由"非贪婪正则"改为"行首独占逐行扫描":
+            #   正则 .*? 会把相邻两个块跨块合并成一个大块（首行变成叙述文字）→ 结构校验整批丢弃。
+            #   改为与补全器同一套口径（行 strip 后与标记整行全等才算起止），保证每块首行即工具名。
+            _a2b_raw = []
+            _a2b_in_block = False
+            _a2b_buf = []
+            for _a2b_scan_line in _a2b_scan_text.splitlines():
+                _a2b_s = _a2b_scan_line.strip()
+                if _a2b_s == _a2b_tk_o:
+                    _a2b_in_block = True
+                    _a2b_buf = []
+                elif _a2b_s == _a2b_tk_c:
+                    if _a2b_in_block:
+                        _a2b_raw.append("\n".join(_a2b_buf))
+                        _a2b_in_block = False
+                        _a2b_buf = []
+                elif _a2b_in_block:
+                    _a2b_buf.append(_a2b_scan_line)
+            tool_blocks = []
+            for _a2b_b in _a2b_raw:
+                _a2b_b_restored = re.sub(r"__A2B_FENCE_(\d+)__", lambda _m: _a2b_fence_store[int(_m.group(1))], _a2b_b)
+                _a2b_first = ""
+                for _a2b_ln in _a2b_b_restored.splitlines():
+                    if _a2b_ln.strip():
+                        _a2b_first = _a2b_ln.strip()
+                        break
+                if re.match("^工具名称[" + _a2b_colon + r":]\s*\w+", _a2b_first):
+                    tool_blocks.append(_a2b_b_restored)
             # 初始化待执行指令列表，仅接收自定义标记解析出来的合法指令
             json_blocks = []
             
@@ -1599,9 +2169,9 @@ async def chat(req: ChatRequest):
                         all_exec_results.append(f'❌ 工具指令生成失败：工具名称{tool_name}或参数不合法')
                         add_operation_log("工具执行", f'❌ 工具指令生成失败：工具名称{tool_name}或参数不合法')
             
-            response += "\n" # 换行分隔指令
+            response += current_response + "\n" # 换行分隔指令:同步保留本轮AI原文（含工具调用原文）
             # 追加当前轮AI输出到结构化记忆
-            structured_content += f"【第{current_round}轮交互】\nAI输出：{current_response}\n"
+            structured_content += f"【第{current_round}轮交互】\nAI输出:{current_response}\n"
             current_round += 1
             
             # 循环执行每一个工具调用
@@ -1799,6 +2369,79 @@ async def chat(req: ChatRequest):
                             
                             all_exec_results.append(exec_result)
                             continue
+                        # ==================== 媒体读取（read_media）:图片直通 / 视频抽帧 ====================
+                        # 设计要点:工具层只做「转码 + 登记像素 + 返回文字」，像素由消息构造层补插一条 user 多模态消息送达模型
+                        if func_call.get("name") == "read_media":
+                            media_params = func_call.get("parameters") or {}
+                            media_path = (media_params.get("path") or "").strip()
+                            media_start = media_params.get("start") or ""
+                            media_duration = media_params.get("duration") or ""
+                            # 宿主层可能为未传的可选参数注入空串，统一转字符串再 strip，避免被误判为"已传参"
+                            media_start = (media_start if isinstance(media_start, str) else str(media_start)).strip()
+                            media_duration = (media_duration if isinstance(media_duration, str) else str(media_duration)).strip()
+                            if not media_path:
+                                all_exec_results.append("❌ 参数错误:read_media 缺少必填参数 path（媒体文件路径，如 D:/xxx/a.png 或 D:/xxx/a.mp4）")
+                                continue
+                            # 路径标准化（与 read_file 同源入口，自动处理绝对/相对路径与斜杠格式）
+                            media_abs_path = get_real_physical_path(media_path)
+                            if not media_abs_path:
+                                all_exec_results.append(f"❌ 路径为空:{media_path}")
+                                continue
+                            # 复用统一禁止路径校验:读取类操作，仅拦截保护目录下的高危可执行文件
+                            media_forbidden, media_reason = is_path_forbidden(media_abs_path, operation_type="read")
+                            if media_forbidden:
+                                add_file_operation_log("read", media_path, "fail", media_reason)
+                                all_exec_results.append(f"⚠️ {media_reason}，禁止读取")
+                                continue
+                            if not os.path.exists(media_abs_path):
+                                all_exec_results.append(f"❌ 媒体文件不存在:{media_path}（标准化后路径:{media_abs_path}）\n⚠️ 请检查路径拼写是否正确，或文件是否已被移动，确认后重新调用。")
+                                continue
+                            if not os.path.isfile(media_abs_path):
+                                all_exec_results.append(f"❌ 路径是文件夹不是文件:{media_path}（标准化后路径:{media_abs_path}）")
+                                continue
+                            # 扩展名一级粗分流:图片 / 视频 / 其他（真实类型以转码或探测结果为准）
+                            media_ext = os.path.splitext(media_abs_path)[1].lower()
+                            # 图片与视频扩展名集合（视频集合统一取 media_reader 内定义，避免重复维护）
+                            import media_reader as _mr
+                            _IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".ico", ".psd", ".tga", ".pcx", ".dds", ".qoi", ".icns"}
+                            if media_ext in _IMG_EXTS:
+                                # 图片分支:三级降级转码（像素级 → 质量级 → 兜底只返元信息）
+                                try:
+                                    media_b64, media_meta = _mr.media_image_to_base64(media_abs_path)
+                                except Exception as e:
+                                    all_exec_results.append(f"❌ 图片读取失败:{media_path}（绝对路径:{media_abs_path}）\n原因:{e}\n💡 heic/avif/svg/相机RAW 等格式 PIL 无法解码，请先转换为 PNG/JPG 后再读取。")
+                                    continue
+                                _mtip = f"尺寸 {media_meta.get('width')}x{media_meta.get('height')}｜格式 {media_meta.get('format')}｜原始 {media_meta.get('original_size_mb')}MB｜输出 {media_meta.get('final_size_mb')}MB"
+                                if not media_b64:
+                                    # 第三级兜底:仅返回元信息文字，不登记像素（永不 OOM、永不爆 token）
+                                    media_log_msg = f"✅ 读取图片成功（已降级为元信息）:{media_path}\n📸 {_mtip}\n⚠️ {media_meta.get('degrade_reason')}"
+                                else:
+                                    # 登记像素，由消息构造层补插一条 user 多模态消息送达模型
+                                    _mr.register_media("image", media_abs_path, media_b64, media_meta)
+                                    media_log_msg = f"✅ 读取图片文件成功:{media_path}（绝对路径:{media_abs_path}）\n📸 {_mtip}\n💡 图片像素已随本消息传入，可直接识别其中的文字、场景、物体与图表，无需再次读取。"
+                                add_operation_log("文件操作", media_log_msg)
+                                all_exec_results.append(media_log_msg)
+                                continue
+                            elif media_ext in _mr.VIDEO_EXTENSIONS:
+                                # 视频分支（阶段B）:ffprobe 探测 → 停滞段扫描 → 五道闸门智能抽帧 → 逐帧三级降级 → 登记像素
+                                # 起止时间支持纯秒数 / 分:秒 / 时:分:秒 三种写法，非法写法由 media_reader 返回明确纠正
+                                _vres = _mr.extract_video_frames(media_abs_path, media_start or None, media_duration or None)
+                                if _vres.get("ok"):
+                                    _vframes = _vres.get("frames") or []
+                                    _vstamps = [f.get("timestamp") for f in _vframes if isinstance(f, dict)]
+                                    media_log_msg = (
+                                        f"✅ 读取视频文件成功:{media_path}（绝对路径:{media_abs_path}）\n"
+                                        f"{_vres.get('report') or _vres.get('message')}\n"
+                                        f"💡 已抽取 {len(_vframes)} 帧（时间戳(s): {_vstamps}），帧像素已随本消息传入，可直接识别画面内容，无需再次读取。"
+                                    )
+                                else:
+                                    media_log_msg = f"⚠️ 视频读取暂不可用:{media_path}\n{_vres.get('message')}"
+                                add_operation_log("文件操作", media_log_msg)
+                                all_exec_results.append(media_log_msg)
+                                continue
+                            else:
+                                all_exec_results.append(f"⚠️ read_media 不支持该类型:{media_ext or '无扩展名'}（{media_path}）\n💡 支持图片（jpg/png/webp/gif/bmp 等）与视频（mp4/mov/mkv 等）；其他文件请改用 read_file 按文本读取。")
+                                continue
                         if func_call.get("name") == "read_file":
                             file_name = func_call["parameters"]["file_name"].strip()
                             # P0-2: 可选按行翻页参数（大文件分段读取，避免全量内容撑爆上下文）
@@ -1966,11 +2609,10 @@ async def chat(req: ChatRequest):
                             # P0-3: 危险命令判定改用段首程序名匹配，避免\bformat\b误杀Format-Table等PowerShell cmdlet
                             lower_cmd = cmd.lower()
                             is_dangerous = _contains_dangerous_command(cmd)
-                            # 非curl/wget命令额外禁止&命令拼接（curl/wget的URL参数允许带&），维持原有拼接拦截策略
-                            if not is_dangerous and not (lower_cmd.startswith("curl") or lower_cmd.startswith("wget")):
-                                is_dangerous = ("&" in cmd)
+                            # 【2026-10-12 调整】按用户要求取消 & 命令拼接拦截（原「仅允许执行单条查询类命令」过严），
+                            #   危险程序（rm/del/format/mkfs/dd 等）保护仍由 _contains_dangerous_command 段首匹配生效。
                             if is_dangerous:
-                                exec_result = "❌ 禁止执行危险命令/命令拼接，仅允许执行单条查询类命令"
+                                exec_result = "❌ 禁止执行危险命令，仅允许执行查询类命令"
                                 add_operation_log("AI执行命令", exec_result, "error")
                                 all_exec_results.append(exec_result)
                                 continue
@@ -2366,8 +3008,7 @@ async def chat(req: ChatRequest):
                                     })
                                     all_exec_results.append(exec_result)
                                     continue
-                            # 未知工具类型，直接返回原始内容
-                            response += current_response
+                            # 未知工具类型:本轮AI原文已在上方统一追加进response，此处不再重复追加
                             break
                 except json.JSONDecodeError as e:
                     # 单条指令解析失败，上报错误后跳过继续执行其他指令
@@ -2424,12 +3065,70 @@ async def chat(req: ChatRequest):
                 structured_content += f"工具执行结果:{final_result}\n"
                 messages.append({"role": "assistant", "content": current_response})
                 messages.append({"role": "user", "content": final_result})
+                # P0-6: 媒体像素补插——read_media 登记的图片/视频帧只能落在 user 角色多模态消息内（工具角色消息不接受 image_url 块）
+                # 位置固定在 age_tool_messages 之前，否则刚插入的像素消息可能被老化归档；无登记则零开销跳过
+                try:
+                    import media_reader as _mr_push
+                    _pending_media = _mr_push.take_media()
+                    if _pending_media:
+                        _media_cfg = _mr_push.get_media_config()
+                        # 总量红线闸门:超出 media_total_max_mb 时按登记顺序裁剪（至少保留1项）
+                        _total_limit = int(float(_media_cfg.get("media_total_max_mb", 2.0)) * 1024 * 1024)
+                        _kept_media, _used_bytes, _dropped_cnt = [], 0, 0
+                        for _item in _pending_media:
+                            _item_bytes = int(len(_item.get("b64", "")) * 3 / 4)
+                            if _kept_media and _used_bytes + _item_bytes > _total_limit:
+                                _dropped_cnt += 1
+                                continue
+                            _kept_media.append(_item)
+                            _used_bytes += _item_bytes
+                        # 组装:第一块为文字说明，其后每项媒体一个 image_url 块
+                        _media_lines = [f"📎 本次共读取 {len(_pending_media)} 项媒体，随本消息传入 {len(_kept_media)} 项:"]
+                        _media_blocks = [{"type": "text", "text": ""}]
+                        for _idx, _item in enumerate(_kept_media, 1):
+                            _m = _item.get("meta") or {}
+                            _kind_cn = "图片" if _item.get("kind") == "image" else "视频帧"
+                            _media_lines.append(
+                                f"{_idx}. [{_kind_cn}] {_item.get('path')}｜"
+                                f"{_m.get('width')}x{_m.get('height')}｜输出 {_m.get('final_size_mb')}MB"
+                            )
+                            _media_blocks.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{_m.get('mime', 'image/jpeg')};base64,{_item.get('b64')}"},
+                            })
+                        if _dropped_cnt:
+                            _media_lines.append(f"⚠️ 受总量上限 {_media_cfg.get('media_total_max_mb')}MB 限制，已裁剪 {_dropped_cnt} 项未传入")
+                        _media_blocks[0]["text"] = "\n".join(_media_lines)
+                        messages.append({"role": "user", "content": _media_blocks})
+                        add_operation_log("文件操作", f"✅ 已补插多模态消息:{len(_kept_media)} 项媒体像素传入模型")
+                except Exception as _media_e:
+                    # 补插失败不阻断主流程（工具文字结果里已说明读取情况），仅记录日志便于排查
+                    add_operation_log("文件操作", f"⚠️ 媒体像素补插失败:{_media_e}", "error")
                 # P0-5: 跨轮老化——messages总字符超60000时，把最老的工具结果（保护最近2代）原地替换为一行结论+落盘指针，单轮最多归档3条
                 age_tool_messages(messages, current_round)
                 continue
             # ========== 无工具调用直接停止 ==========
+            # 【2026-10-13 根因修复·取消静默收尾（主控侧对齐次级侧已验证口径）】
+            # 原逻辑:all_exec_results 为空 → 直接 break 收尾。存在一种盲区:
+            #   模型输出里有工具调用开始标记（_a2b_tk_o），却因生成被截断（连"独占一行"的
+            #   完整开始标记都没成形）→ 补全器够不着、A2B 切块也扫不到 → all_exec_results 为空
+            #   → 被误判成"模型已给出总结" → 静默 break → 主控链路断开、用户永久失联。
+            # 按用户口径:闭环只能由「模型不再调工具、给出总结」体现，代码不得代判。
+            #   ① 输出里无开始标记 → 真·模型已给总结 → 正常 break（唯一合法闭环出口）;
+            #   ② 输出里有开始标记但本轮零可执行块 → 截断异常，回灌纠错提示让模型重发。
+            #   轮次上限（max_tool_calls，配置项）天然封顶;不设深度上限，回到模型自己判断。
+            if _a2b_tk_o in current_response:
+                print("[API] 检测到工具调用开始标记但本轮无完整可执行块，已回灌纠错提示要求模型重发")
+                messages.append({"role": "assistant", "content": current_response})
+                messages.append({"role": "user", "content": (
+                    "⚠️【系统提示】你上一条回复中的工具调用块不完整:缺少"
+                    "「工具名称」/「参数列表」/「" + _a2b_tk_c + "」中的一项或多项，系统无法执行。"
+                    "请重新完整输出该工具调用块（四部分必须齐全），不要输出任何额外解释。")})
+                continue
             # 没有任何工具执行结果，说明AI已经返回最终答案，直接停止循环
-            response = current_response.strip()
+            # 本轮AI原文已在上方统一追加进response；此处仅在response为空时兜底，避免重复追加
+            if not response.strip():
+                response = current_response.strip()
             break
 
         except Exception as llm_e:
@@ -2476,6 +3175,15 @@ async def chat(req: ChatRequest):
     if req.query.strip() or final_structured.strip():
         # 结构化记忆内容生成，外层格式完全保留原有规范
         import re
+        # 【P1·根因修复】上下文净化（顺序调整:摘要替换提前、裸JSON剥离与空行收敛后置）
+        #   ① 保留「第N轮交互」轮次标记（结构化多轮，便于日后排查），仅去掉"AI输出:"前缀
+        #   ② 去掉工具调用原文块（严格成对匹配「工具调用开始…工具调用结束」），工具结果摘要行保留
+        #   ③ 空行收敛改到摘要替换之后统一执行（见下方后置净化）
+        final_structured = re.sub(r'(【第\d+轮交互】)\s*\n?AI输出[::]\s*', r'\1\n', final_structured)
+        # 标记拆分拼接:规避外层指令解析截断（源码中不出现连续完整标记）
+        _TK_O = chr(0x3010) + "工具调用" + "开始" + chr(0x3011)
+        _TK_C = chr(0x3010) + "工具调用" + "结束" + chr(0x3011)
+        final_structured = re.sub(_TK_O + r'[\s\S]*?' + _TK_C + r'\s*', '', final_structured)
         # 🔹 修复1:兼容全角/半角冒号，匹配所有读取文件成功场景（当前项目/全局/白名单/仓库根目录/全路径/跨目录），正确提取文件名
         final_structured = re.sub(
             r'🔹 指令\d+执行结果[:：]✅ 读取(?:当前项目文件|全局文件|全局白名单文件|仓库根目录文件|文件)成功[:：](.+?)\n[\s\S]*?(?=\n🔹 指令|\n【第|\Z)',
@@ -2506,6 +3214,11 @@ async def chat(req: ChatRequest):
             r'🔹 执行结果：✅ 命令执行成功，输出结果已在对话中返回',
             final_structured
         )
+        # 【M2·根因修复·后置】剥离"无标记包裹的裸工具调用对象"（模板版本字段形态）:
+        #   已后置到全部摘要替换之后（大段含 `{` 的原文已被压成一行），误命中率降到接近 0
+        final_structured = _strip_naked_tool_json(final_structured)
+        # 收敛连续空行，避免历史里出现大片空白（后置到净化最后一步）
+        final_structured = re.sub(r'\n{3,}', '\n\n', final_structured).strip()
         content = f"用户问:{req.query}\n回答:{final_structured}"
         tags = []
         # 自动判断内容类型打标签
@@ -2522,8 +3235,11 @@ async def chat(req: ChatRequest):
         project_name = CURRENT_PROJECT.get("project_name", "default") if CURRENT_PROJECT else "default"
         tags.append(f"project:{project_name}")
         memory_cache.add_memory(content, tags=tags)
-    # 同步更新全局持久化历史，自动按配置轮数轮动
-    save_global_history(req.query, final_structured, memory_cache.config["history_context_rounds"])
+    # 同步更新全局持久化历史，自动按配置轮数轮动（取当前模型槽位 max_chat_rounds，缺失回退全局）
+    from model_registry import get_slot_config as _get_slot_cfg_save
+    _save_slot_cfg = _get_slot_cfg_save(int(getattr(req, "model_slot", 1) or 1)) or {}
+    _save_hist_rounds = int(_save_slot_cfg.get("max_chat_rounds", 0) or 0) or memory_cache.config["history_context_rounds"]
+    save_global_history(req.query, final_structured, _save_hist_rounds)
 
     # 记忆落盘后推送"整轮真正结束"信号:前端收到memory_saved事件才熄灭能量条
     # add_memory在全部工具链完成后同步执行，是比ai_output/done更晚的业务终态；
@@ -2533,19 +3249,156 @@ async def chat(req: ChatRequest):
         "timestamp": time.time()
     })
 
+    # T4: 解析主控回复中的 @角色 → 自动派发（对话驱动主线 甲-2/甲-2a/Q3）
+    # 旁路派发:仅当主控回复命中可用角色 mention 时触发;任何异常只打印,绝不改原返回值
+    # [DISPATCH-DIAG] 临时诊断日志（定位"回复带 @角色却没派发"真因，定位后删除本段）
+    try:
+        _resp_txt = str(response or "")
+        # 【P2·根因修复】派发前净化:@角色识别仍用原文 _resp_txt（零影响），投递改用净化版
+        #   目的:避免"轮次标记 + 工具调用原文 + 前几轮全文"原样进入次级对话窗口
+        import re as _re_disp
+        _resp_txt_clean = _re_disp.sub(r'【第\d+轮交互】\s*\n?AI输出[::]\s*', '', _resp_txt)
+        _resp_txt_clean = _re_disp.sub(r'【工具调用[^\n]*】[\s\S]*?【工具调用[^\n]*】\s*', '', _resp_txt_clean)
+        _resp_txt_clean = _re_disp.sub(r'\n{3,}', '\n\n', _resp_txt_clean).strip()
+        # 【M3·根因修复】剥离"无标记包裹的裸工具调用对象"，避免其原样派发进次级对话窗口
+        #   净化后为空则回退原文兜底，避免派发出空需求
+        _resp_txt_clean = _strip_naked_tool_json(_resp_txt_clean).strip() or _resp_txt.strip()
+        print(f"[DISPATCH-DIAG] enter sid={req.session_id} resp_len={len(_resp_txt)}")
+        if _resp_txt.strip():
+            _pool = _orch.build_role_pool()
+            print(f"[DISPATCH-DIAG] pool_len={len(_pool)} slots={[it.get('slot') for it in _pool]}")
+            _slot = _orch.extract_dispatch_mentions(_resp_txt, _pool)
+            print(f"[DISPATCH-DIAG] extract_slot={_slot} resp_head={_resp_txt[:200]!r}")
+            if _slot is not None:
+                # 透传当前项目名，任务 meta 记录归属项目 → 次级对话按「项目 × 槽位」双维度隔离
+                # 【P2·根因修复】投递净化版文本（不含轮次标记与工具调用原文块），避免次级被主控中间态污染
+                _disp = _orch.submit_by_mention(_resp_txt_clean, req.session_id, forced_slot=_slot,
+                                                project_name=current_project_name)
+                print(f"[DISPATCH-DIAG] submit ok={_disp.get('ok')} msg={_disp.get('msg')} task_id={_disp.get('task_id')}")
+                print(f"[Dispatch] mention派发 slot={_slot} ok={_disp.get('ok')} task_id={_disp.get('task_id')}")
+        else:
+            print(f"[DISPATCH-DIAG] empty response, skip dispatch")
+    except Exception as _e:
+        import traceback as _tb
+        print(f"[DISPATCH-DIAG] EXCEPTION: {_e}")
+        print(_tb.format_exc())
+        print(f"[Dispatch] mention派发失败（已忽略，不影响对话）: {_e}")
+
     # 新增:记录AI回复完成日志
     return {"response": response, "recalled_memory_count": len(recall_result["memory_recall"]), "session_id": req.session_id}
 
 @app.get("/api/chat/stream/{session_id}")
-async def chat_stream(session_id: str):
-    """SSE流式推送AI输出通道，完全独立于推理逻辑，实现显示与推理100%解耦"""
+async def chat_stream(session_id: str, fast: bool = False):
+    """SSE流式推送AI输出通道，完全独立于推理逻辑，实现显示与推理100%解耦
+
+    【方案A·回放提速】fast 参数（query: ?fast=1）:
+      · 仅影响「建连时的历史快照回放节奏」，与实时流式完全无关（实时 chunk 不受任何影响）；
+      · fast=False（默认）:保持原 18ms/条 打字机节奏；
+      · fast=True（前端切回/刷新时使用）:回放 0ms 快发，整体从秒级压到毫秒级；
+      · 回放的内容 / 顺序 / 条数 100% 不变，仅改下发节奏 —— 前端气泡最终形态与逐字回放完全一致。
+    """
     global global_event_loop
     import asyncio
     global_event_loop = asyncio.get_running_loop()
     queue = asyncio.Queue()
-    SSE_CONNECTIONS[session_id] = queue
+    # 订阅池模式:同一会话可挂多个窗口队列，实现双窗实时同达（对齐 RECALL_SUBSCRIBERS 范式）
+    SSE_CONNECTIONS.setdefault(session_id, set()).add(queue)
     
     async def event_generator():
+        # 【新增·根因级】连接建立时，对「次级通道 sec_{slot}」一次性重放当前轮快照。
+        # 根因:次级事件由编排器在后台线程主动推送（先于浏览器 EventSource 建连），
+        #      旧实现在"无订阅者"时直接丢弃 → 用户必须切页回读才能看到内容。
+        # 范围:仅 sec_ 前缀通道；主控 default 保持原状（它已有 syncLastOutput 快照拉取兜底，
+        #      若此处也重放会造成双通道重复显示，故显式排除）。
+        if session_id.startswith("sec_"):
+            try:
+                _snap0 = SESSION_LAST_OUTPUT.get(session_id)
+                _rev = list(_snap0.get("events") or []) if _snap0 else []
+                if _rev:
+                    # 【回放节奏真实化·新增】先下发"回放开始"标记与总条数，
+                    # 前端据此进入"回放期"（期间不做整段重建式合并，保护逐字气泡不被旧落盘内容顶掉）。
+                    _begin = json.dumps({"type": "sec_replay_begin", "total": len(_rev)},
+                                        ensure_ascii=False).replace('\n', '\\n').replace('\r', '\\r')
+                    yield f"data: {_begin}\n\n"
+                    # 【回放节奏真实化·重写】按事件类型分速回放（替换原"固定 5ms / 超 300 条压到 1.5s"口径）:
+                    #   · ai_output_stream / ai_reasoning / think（逐字正文与思考）→ 18ms/条（≈55 字/秒，接近真人打字节奏）；
+                    #   · dispatch / report / ai_output / secondary_summary（结构性节点）→ 5ms/条；
+                    #   · 总时长上限 12 秒:超出按比例整体压缩，单条下限保底 2ms（长任务回放不至于久等）。
+                    # 【方案A·回放提速】节奏常量按 fast 参数分支（默认保持原口径不变）:
+                    #   · 默认（fast=False）:18ms/5ms 打字机节奏 + 12s 总时长上限（实时任务进行中的流式观感不受影响）；
+                    #   · fast=True:正文与元事件统一 0ms + 0.5s 总上限 → 回放瞬间铺完；
+                    #     配合下方循环体的"每 50 条 sleep(0) 让出事件循环"，避免一次性大量 yield 堵住 asyncio 主循环。
+                    if fast:
+                        _IV_TEXT = 0.0
+                        _IV_META = 0.0
+                        _TOTAL_CAP = 0.5
+                        _IV_FLOOR = 0.0
+                    else:
+                        _IV_TEXT = 0.018
+                        _IV_META = 0.005
+                        _TOTAL_CAP = 12.0
+                        _IV_FLOOR = 0.002
+                    _text_kinds = ("ai_output_stream", "ai_reasoning", "think")
+                    _est_total = 0.0
+                    for _ev in _rev:
+                        _et0 = str(_ev.get("type") or "") if isinstance(_ev, dict) else ""
+                        _est_total += _IV_TEXT if _et0 in _text_kinds else _IV_META
+                    _scale = (_TOTAL_CAP / _est_total) if (_est_total > _TOTAL_CAP and _est_total > 0) else 1.0
+                    # 【回放期排空实时队列·新增】每回放一条前，先排空一次 queue 并暂存到 _pending_live:
+                    #   避免"回放期间生成器停在 for 循环里、不消费实时队列"，
+                    #   导致回放期间新到的实时 chunk 全堆在 queue、回放结束时一次性涌出（又一次整段蹦出）。
+                    _pending_live = []
+                    # 【方案A·回放提速】_emitted:统计已下发条数，仅 fast 模式（_iv==0）时使用——
+                    #   每 50 条主动 sleep(0) 让出事件循环一次，保证毫秒级铺完的同时不阻塞心跳/取消信号处理。
+                    _emitted = 0
+                    for _ev in _rev:
+                        try:
+                            while True:
+                                try:
+                                    _pending_live.append(queue.get_nowait())
+                                except asyncio.QueueEmpty:
+                                    break
+                            _et = str(_ev.get("type") or "") if isinstance(_ev, dict) else ""
+                            _base = _IV_TEXT if _et in _text_kinds else _IV_META
+                            _iv = max(_IV_FLOOR, _base * _scale)
+                            _es = json.dumps(_ev, ensure_ascii=False).replace('\n', '\\n').replace('\r', '\\r')
+                            yield f"data: {_es}\n\n"
+                            # 【方案A·回放提速】分发节奏分支:
+                            #   · _iv > 0（默认 fast=False）→ 走原有单条 sleep 节奏，观感完全不变；
+                            #   · _iv == 0（fast=True）→ 每 50 条 sleep(0)，避免一次性大量 yield 把
+                            #     asyncio 事件循环堵住（否则心包/取消信号将无法及时处理）。
+                            if _iv > 0:
+                                await asyncio.sleep(_iv)
+                            else:
+                                _emitted += 1
+                                if _emitted % 50 == 0:
+                                    await asyncio.sleep(0)
+                        except Exception:
+                            continue
+                    # 【回放期排空实时队列·新增】回放结束后，先把暂存的实时事件按原序补发，
+                    #   再进入下方 while True 实时循环（既不堆积堆爆内存，也不丢事件）。
+                    for _pd in _pending_live:
+                        try:
+                            _ps = json.dumps(_pd, ensure_ascii=False).replace('\n', '\\n').replace('\r', '\\r')
+                            yield f"data: {_ps}\n\n"
+                        except Exception:
+                            continue
+                    # 【回放节奏真实化·新增】下发"回放结束"标记，前端据此解除保护并做一次最终对齐。
+                    _end = json.dumps({"type": "sec_replay_end"}, ensure_ascii=False).replace('\n', '\\n').replace('\r', '\\r')
+                    yield f"data: {_end}\n\n"
+                elif _snap0 and (_snap0.get("query") or _snap0.get("reasoning") or _snap0.get("output")):
+                    # 兼容老会话（本次改动前产生的快照无 events 字段）→ 退回单条 sec_snapshot 补齐
+                    _replay = {
+                        "type": "sec_snapshot",
+                        "query": _snap0.get("query") or "",
+                        "reasoning": _snap0.get("reasoning") or "",
+                        "output": _snap0.get("output") or "",
+                        "done": bool(_snap0.get("done")),
+                    }
+                    _rs = json.dumps(_replay, ensure_ascii=False).replace('\n', '\\n').replace('\r', '\\r')
+                    yield f"data: {_rs}\n\n"
+            except Exception as _re:
+                print(f"[SSE] 次级快照重放失败（已忽略，不影响实时流）: {_re}")
         try:
             while True:
                 # 等待消息或30秒超时（心跳间隔）
@@ -2578,11 +3431,60 @@ async def chat_stream(session_id: str):
             # 捕获所有其他异常（如客户端断开连接），避免连接残留
             print(f"⚠️ SSE连接异常断开: session_id={session_id}, 错误: {str(e)}")
         finally:
-            # 无论正常还是异常，都清理连接，避免残留无效队列导致消息丢失
-            if session_id in SSE_CONNECTIONS:
-                del SSE_CONNECTIONS[session_id]
+            # 无论正常还是异常，都清理本连接，避免残留无效队列导致消息丢失
+            # 订阅池模式:仅移除本连接队列，不影响同会话其他窗口
+            _qs = SSE_CONNECTIONS.get(session_id)
+            if _qs is not None:
+                _qs.discard(queue)
+                if not _qs:
+                    SSE_CONNECTIONS.pop(session_id, None)
     
     return EventSourceResponse(event_generator(), media_type="text/event-stream")
+
+@app.get("/api/chat/last_output/{session_id}")
+async def get_last_output(session_id: str):
+    """方案A:返回指定会话本轮输出的实时快照（query/reasoning/output/done），供前端切回后补齐断线期间丢弃的流式增量"""
+    snap = SESSION_LAST_OUTPUT.get(session_id)
+    if not snap:
+        return {"code": 200, "data": None}
+    return {"code": 200, "data": snap}
+# ===== 会话消息持久化（方案A:重启后对话不丢，与 latest_chat_history_*.json 记忆文件完全隔离）=====
+class ChatHistorySaveRequest(BaseModel):
+    project: str = "default"
+    messages: List[Dict[str, Any]] = []
+
+def _safe_chat_history_file(project: str) -> str:
+    """获取项目对应的会话消息持久化文件路径（sessions/chat_{项目}.json）"""
+    safe = re.sub(r'[\\/*?:"<>|]', "_", project or "default")
+    safe = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fa5_-]', "_", safe) or "default"
+    sessions_dir = os.path.join(BASE_DIR, "sessions")
+    os.makedirs(sessions_dir, exist_ok=True)
+    return os.path.join(sessions_dir, f"chat_{safe}.json")
+
+@app.post("/api/chat/history/save")
+async def save_chat_history(req: ChatHistorySaveRequest):
+    """方案A:持久化前端对话消息数组（user/ai/think/task），与 origin/端口无关，重启后前端可回读"""
+    try:
+        path = _safe_chat_history_file(req.project)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(req.messages, f, ensure_ascii=False, indent=2)
+        return {"code": 200, "msg": "ok"}
+    except (OSError, IOError) as e:
+        return JSONResponse(status_code=500, content={"code": 500, "msg": f"保存失败:{e}"})
+
+@app.get("/api/chat/history/load")
+async def load_chat_history(project: str = "default"):
+    """方案A:读取指定项目的会话消息数组，供前端启动时回读（localStorage 为空时的兜底）"""
+    try:
+        path = _safe_chat_history_file(project)
+        if not os.path.exists(path):
+            return {"code": 200, "data": []}
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {"code": 200, "data": data if isinstance(data, list) else []}
+    except (json.JSONDecodeError, OSError, IOError):
+        return {"code": 200, "data": []}
+
 # 终止对话请求模型
 class ChatStopRequest(BaseModel):
     session_id: str
@@ -2975,13 +3877,12 @@ async def submit_task(req: TaskSubmitRequest, session_id: str = "default"):
                     TASK_STORAGE[task_id]["progress"] = "❌ 参数错误:缺少command参数或参数类型非法"
                     return
                 command = command.strip()
-                # 安全审核修复:与对话链路exec_cmd同一防护标准——段首危险程序名匹配+非curl/wget禁止&拼接
+                # 安全审核修复:与对话链路exec_cmd同一防护标准——段首危险程序名匹配
+                # 【2026-10-12 调整】按用户要求取消 & 命令拼接拦截，仅保留危险程序段首匹配保护。
                 _lower_cmd = command.lower()
-                if _contains_dangerous_command(command) or (
-                        not (_lower_cmd.startswith("curl") or _lower_cmd.startswith("wget"))
-                        and "&" in command):
+                if _contains_dangerous_command(command):
                     TASK_STORAGE[task_id]["status"] = TASK_STATUS_FAILED
-                    TASK_STORAGE[task_id]["progress"] = "❌ 禁止执行危险命令/命令拼接，仅允许执行单条查询类命令"
+                    TASK_STORAGE[task_id]["progress"] = "❌ 禁止执行危险命令，仅允许执行查询类命令"
                     add_operation_log("AI执行命令", f"网页异步任务拦截危险命令:{command}", "error")
                     return
                 # 安全审核修复:timeout整数归一+钳制到1~1800秒（上限与后台任务硬超时一致），非法值回退30秒
@@ -3031,6 +3932,98 @@ async def get_task_status(task_id: str):
     if task_id not in TASK_STORAGE:
         raise HTTPException(status_code=404, detail="任务不存在")
     return {"code": 200, "data": TASK_STORAGE[task_id]}
+
+# ==================== 阶段4 任务编排器接口（6态状态机 + 三条硬终止）====================
+# 注意:与上方旧「工具任务」(/api/task/*) 路径严格分离,互不覆盖
+
+class OrchestratorSubmitRequest(BaseModel):
+    requirement: str  # 开发需求描述
+    session_id: str = "default"
+
+
+@app.post("/api/orch/submit")
+async def orch_submit(req: OrchestratorSubmitRequest):
+    """提交编排任务:建任务 + 异步派发（主控→开发→审查→裁决），立即返回 task_id（不阻塞）"""
+    try:
+        import orchestrator as orch
+        result = orch.submit_task(req.requirement, req.session_id)
+        if not result.get("ok"):
+            add_operation_log("任务编排", f"❌ 提交失败:{result.get('msg')}", "error")
+            return {"code": 400, "msg": result.get("msg", "提交失败"), "data": None}
+        add_operation_log("任务编排", f"✅ 提交任务 #{result.get('task_id')}")
+        return {"code": 200, "msg": "任务已提交", "data": result}
+    except Exception as e:
+        add_operation_log("任务编排", f"❌ 提交异常:{str(e)}", "error")
+        raise HTTPException(status_code=500, detail=f"任务编排提交失败: {str(e)}")
+
+
+@app.get("/api/orch/query")
+async def orch_query(task_id: str):
+    """查询编排任务:meta 快照（state/history）+ 开发/审查次级会话全文"""
+    try:
+        import orchestrator as orch
+        result = orch.query_task(task_id)
+        if not result.get("ok"):
+            raise HTTPException(status_code=404, detail=result.get("msg", "任务不存在"))
+        return {"code": 200, "msg": "ok", "data": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"编排任务查询失败: {str(e)}")
+
+
+@app.get("/api/orch/list")
+async def orch_list(session_id: str = "default"):
+    """列出指定会话下全部编排任务（按 task_id 升序）"""
+    try:
+        import orchestrator as orch
+        return {"code": 200, "msg": "ok", "data": orch.list_tasks(session_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"编排任务列表失败: {str(e)}")
+
+
+@app.post("/api/orch/abort")
+async def orch_abort(req: Request):
+    """中止编排任务；body: {task_id}"""
+    try:
+        data = await req.json()
+        task_id = (data.get("task_id") or "").strip()
+        if not task_id:
+            raise HTTPException(status_code=400, detail="缺少 task_id")
+        import orchestrator as orch
+        result = orch.abort_task(task_id)
+        if not result.get("ok"):
+            return {"code": 400, "msg": result.get("msg", "中止失败"), "data": None}
+        add_operation_log("任务编排", f"🛑 用户中止任务 #{task_id}")
+        return {"code": 200, "msg": "任务已中止", "data": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"编排任务中止失败: {str(e)}")
+
+
+@app.get("/api/orch/roles")
+async def orch_roles():
+    """当前可用角色池快照（槽位 / 人设 / 连通状态），供前端展示当前可接活儿的角色"""
+    try:
+        import orchestrator as orch
+        return {"code": 200, "msg": "ok", "data": orch.get_role_pool_brief()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"角色池查询失败: {str(e)}")
+
+
+@app.get("/api/orch/secondary_history")
+async def orch_secondary_history(session_id: str = "default", slot: int = 0, project_name: str = ""):
+    """次级对话页历史回读（方案A/B-1）:按会话+槽位筛选次级会话（dev/review）历史消息，补齐 SSE 无回溯缺口
+
+    - project_name（新增,可选）:非空时按项目维度再多筛一层，实现「项目 × 槽位」双维度隔离；
+      不传 → 保持原行为（旧调用零回归）。
+    """
+    try:
+        import orchestrator as orch
+        return {"code": 200, "msg": "ok", "data": orch.get_secondary_history(session_id, slot, project_name)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"次级会话历史回读失败: {str(e)}")
 # ==================== P1 后台任务 HTTP 接口（供 P2 任务卡片/前端查询，核心对话链路不依赖）====================
 
 @app.get("/api/bg_task/list")
@@ -3063,16 +4056,6 @@ async def bg_task_logs(task_id: str, session_id: str = "default", lines: int = 2
         raise HTTPException(status_code=404, detail="未找到属于当前会话的后台任务")
     return {"code": 200, "data": {"task_id": task_id, "tail": tail}}
 
-
-@app.get("/train", include_in_schema=False)
-async def get_train_page():
-    return FileResponse(os.path.join(BASE_DIR, "train.html"))
-
-# 同时注册/sample和/sample.html两个路径，前端「在新窗口打开」跳转sample.html?observe=1也能命中，双保险
-@app.get("/sample", include_in_schema=False)
-@app.get("/sample.html", include_in_schema=False)
-async def get_sample_page():
-    return FileResponse(os.path.join(BASE_DIR, "sample.html"))
 
 # 修复OpenAI兼容接口逻辑（去掉不存在的chat_handler依赖）
 @app.post("/v1/chat/completions")
@@ -3987,8 +4970,179 @@ async def delete_forbidden_path(req: ForbiddenPathDeleteRequest):
         add_operation_log("安全配置", f"✅ 删除禁止路径：{del_path}")
         return {"code": 200, "msg": "禁止路径删除成功", "data": {"forbidden_paths": new_list}}
     except Exception as e:
-        add_operation_log("安全配置", f"❌ 删除禁止路径失败：{str(e)}", "error")
+        add_operation_log("安全配置", f"❌ 删除禁止路径失败:{str(e)}", "error")
         raise HTTPException(status_code=500, detail=f"删除禁止路径失败: {str(e)}")
+
+# -------------------------- 9 槽位模型配置接口（阶段 2 新增） --------------------------
+# 返回规范沿用既有 /api/config/*:{"code": 200, "msg": "...", "data": ...}
+# 密钥处理:list 返回脱敏（前 4 位 + ****），get 返回明文（供编辑页回填），save 时空值不回写。
+
+class ModelConfigSaveRequest(BaseModel):
+    """单槽位模型配置保存请求体（字段与 models_config.json 槽位同构，全部可选）"""
+    slot: int
+    display_name: Optional[str] = None
+    api_url: Optional[str] = None
+    model_name: Optional[str] = None
+    api_key: Optional[str] = None
+    timeout: Optional[int] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    max_reply_rounds: Optional[int] = None
+    max_chat_rounds: Optional[int] = None
+    stream_output: Optional[bool] = None
+    persona_name: Optional[str] = None
+    persona_prompt: Optional[str] = None
+    fixed_prompt_1: Optional[str] = None
+    fixed_prompt_2: Optional[str] = None
+    fixed_prompt_3: Optional[str] = None
+    enabled_plugins: Optional[List[str]] = None
+
+
+@app.get("/api/models/list")
+async def list_models():
+    """列出 9 槽位模型配置（api_key 脱敏返回，供列表页展示）"""
+    try:
+        data = _load_models_config()
+        safe_list = []
+        for m in data.get("models", []):
+            item = dict(m)
+            item["api_key"] = _mask_api_key(item.get("api_key"))
+            safe_list.append(item)
+        return {"code": 200, "data": safe_list}
+    except Exception as e:
+        add_operation_log("模型配置", f"❌ 读取模型列表失败:{str(e)}", "error")
+        raise HTTPException(status_code=500, detail=f"读取模型列表失败: {str(e)}")
+
+
+@app.get("/api/models/get")
+async def get_model(slot: int):
+    """读取指定槽位完整配置（api_key 明文返回，供编辑页回填）"""
+    try:
+        if slot < 1 or slot > 9:
+            return {"code": 400, "msg": "slot 需为 1~9 的整数"}
+        data = _load_models_config()
+        for m in data.get("models", []):
+            if int(m.get("slot", 0)) == slot:
+                return {"code": 200, "data": m}
+        return {"code": 404, "msg": f"未找到 slot={slot} 的配置"}
+    except Exception as e:
+        add_operation_log("模型配置", f"❌ 读取模型配置失败:{str(e)}", "error")
+        raise HTTPException(status_code=500, detail=f"读取模型配置失败: {str(e)}")
+
+
+@app.post("/api/models/save")
+async def save_model(request: ModelConfigSaveRequest):
+    """保存指定槽位配置（api_key 为空/脱敏形态时保留原值，防止误清空）"""
+    try:
+        slot = int(request.slot)
+        if slot < 1 or slot > 9:
+            return {"code": 400, "msg": "slot 需为 1~9 的整数"}
+        data = _load_models_config()
+        models = data.get("models", [])
+        target = None
+        for m in models:
+            if int(m.get("slot", 0)) == slot:
+                target = m
+                break
+        if target is None:
+            target = _default_model_slot(slot)
+            models.append(target)
+        # 提交数据按字段合并；api_key 特殊处理（空值/脱敏形态 → 保留原值）
+        payload = request.dict(exclude_unset=True)
+        for k, v in payload.items():
+            if k == "slot":
+                continue
+            if k == "api_key":
+                if _is_masked_or_empty(v):
+                    continue
+                target["api_key"] = v
+                continue
+            if k in _MODEL_SLOT_FIELDS and v is not None:
+                target[k] = v
+        data["models"] = models
+        _save_models_config(data)
+        # 保存后清除该槽位客户端缓存（热更新范围隔离:只失效被改的 slot，其余槽位客户端不受影响）
+        try:
+            from model_registry import invalidate as _invalidate_slot
+            _invalidate_slot(slot)
+        except Exception as _inv_err:
+            print(f"⚠️ 模型客户端缓存失效失败 slot={slot}:{_inv_err}")
+        add_operation_log("模型配置", f"✅ 保存模型{slot}配置")
+        safe = dict(target)
+        safe["api_key"] = _mask_api_key(safe.get("api_key"))
+        return {"code": 200, "msg": f"模型{slot}配置保存成功", "data": safe}
+    except Exception as e:
+        add_operation_log("模型配置", f"❌ 保存模型配置失败:{str(e)}", "error")
+        raise HTTPException(status_code=500, detail=f"保存模型配置失败: {str(e)}")
+
+
+@app.get("/api/models/roles")
+async def list_model_roles():
+    """列出已填写 persona_name 的槽位（供任务模式选角色；只返回有内容的）"""
+    try:
+        data = _load_models_config()
+        roles = [
+            {"slot": m.get("slot"), "persona_name": m.get("persona_name", "")}
+            for m in data.get("models", [])
+            if m.get("persona_name")
+        ]
+        return {"code": 200, "data": roles}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取角色列表失败: {str(e)}")
+
+class ModelVerifyRequest(BaseModel):
+    slot: int
+
+@app.post("/api/models/verify")
+async def verify_model(request: ModelVerifyRequest):
+    """按 slot 发起一次极短真实请求:验证该槽位客户端可用（保存后确认可用），并支持并发隔离验收
+
+    返回:ok / slot / model_name / api_url / api_key_prefix（前4位+脱敏）/ elapsed_ms / 错误摘要。
+    独立走 model_registry.get_client 取客户端（不走全局单例），并发打多个 slot 时
+    可直接比对 model_name 与密钥前缀是否各自正确，用于判定「是否串味」。
+    """
+    import time as _time
+    base = None
+    try:
+        slot = int(request.slot)
+        if slot < 1 or slot > 9:
+            return {"code": 400, "msg": "slot 需为 1~9 的整数"}
+        from model_registry import get_slot_config
+        from llm_client import chat_with
+        cfg = get_slot_config(slot)
+        if not cfg:
+            return {"code": 404, "msg": f"未找到 slot={slot} 的配置", "data": {"ok": False, "slot": slot}}
+        api_key = str(cfg.get("api_key", "") or "")
+        base = {
+            "slot": slot,
+            "model_name": cfg.get("model_name", ""),
+            "api_url": cfg.get("api_url", ""),
+            "api_key_prefix": (api_key[:4] + "****") if api_key else "",
+        }
+        started = _time.time()
+        # 探针用极短输出（16 tokens）:不改变配置里 max_tokens=0=自动 的口径，仅验证连通性
+        reply = chat_with(
+            slot,
+            [{"role": "user", "content": "hi"}],
+            temperature=0.1,
+            max_tokens=16,
+            stream=False,
+        )
+        content = ""
+        try:
+            content = reply.get("choices", [{}])[0].get("message", {}).get("content", "")
+        except Exception:
+            content = ""
+        base["ok"] = True
+        base["elapsed_ms"] = int((_time.time() - started) * 1000)
+        base["reply_preview"] = str(content or "")[:50]
+        return {"code": 200, "msg": f"模型{slot}连接正常", "data": base}
+    except Exception as e:
+        if not base:
+            base = {"slot": int(request.slot), "model_name": "", "api_url": "", "api_key_prefix": ""}
+        base["ok"] = False
+        base["error"] = str(e)[:200]
+        return {"code": 500, "msg": f"模型连接失败:{str(e)[:200]}", "data": base}
 
 # -------------------------- 功能操作接口 --------------------------
 @app.get("/api/download/list")
@@ -5444,10 +6598,6 @@ async def open_browser(request: BrowserOpenRequest):
     browser_window.show()
     return {"code": 200, "msg": "浏览器已启动"}
 # ========================== 定时任务管理接口 ==========================
-@app.get("/web_scheduler.html", include_in_schema=False)
-async def get_scheduler_page():
-    return FileResponse(os.path.join(BASE_DIR, "web_scheduler.html"))
-
 @app.get("/api/scheduler/tasks")
 async def get_scheduler_tasks():
     """获取所有定时任务列表"""
@@ -5496,8 +6646,9 @@ async def get_project_list():
     try:
         project_list = []
         for root, dirs, files in os.walk(REPOSITORY_PATH):
-            # 剪枝:排除虚拟环境/.git/打包产物等噪音目录，避免遍历数万依赖文件
-            file_filter_config.prune_walk_dirs(dirs)
+            # 剪枝:排除虚拟环境/.git/打包产物等噪音目录，避免遍历数万依赖文件；
+            # 传入 root 后叠加"项目信息隔离"判断，被隔离目录整棵子树直接跳过
+            file_filter_config.prune_walk_dirs(dirs, root)
             for file in files:
                 if file.endswith("项目手册.md"):
                     project_name = os.path.basename(root)
@@ -6016,6 +7167,9 @@ def start_api_server(port=8000):
     if is_port_used(port):
         port = get_available_port()
     use_port = port
+    # 【2026-10-13 新增】把运行时真实端口写入模块级变量，供 wake_main（次级 @主控 唤醒主控）读取，避免硬编码
+    global _SERVER_PORT
+    _SERVER_PORT = use_port
     
     def run_server():
         # global变量声明必须放在函数最顶部，符合Python语法规范
@@ -6074,8 +7228,9 @@ def start_api_server(port=8000):
             print("🔄 后台开始更新所有项目手册...")
             # 遍历所有项目手册
             for root, dirs, files in os.walk(REPOSITORY_PATH):
-                # 剪枝:排除虚拟环境/.git/打包产物等噪音目录，避免遍历数万依赖文件
-                file_filter_config.prune_walk_dirs(dirs)
+                # 剪枝:排除虚拟环境/.git/打包产物等噪音目录，避免遍历数万依赖文件；
+                # 传入 root 后叠加"项目信息隔离"判断，被隔离目录整棵子树直接跳过
+                file_filter_config.prune_walk_dirs(dirs, root)
                 for file in files:
                     if file.endswith("项目手册.md"):
                         try:

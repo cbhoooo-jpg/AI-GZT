@@ -15,6 +15,12 @@ class ToolTemplateManager:
             "required_params": ["file_name"],
             "structure": {"__template_version": TEMPLATE_VERSION, "name": "read_file", "parameters": {"file_name": ""}}
         },
+        # 媒体读取工具:图片直通 / 视频抽帧统一入口（阶段A 图片、阶段B 视频）
+        # path: 媒体文件路径；start: 视频起始时间（秒/分:秒/时:分:秒，可空）；duration: 读取时长秒（可空）
+        "read_media": {
+            "required_params": ["path"],
+            "structure": {"__template_version": TEMPLATE_VERSION, "name": "read_media", "parameters": {"path": "", "start": "", "duration": ""}}
+        },
         "edit_file": {
             "required_params": ["file_name", "operation", "gzt_anchor", "gzt_newtext"],
             "structure": {"__template_version": TEMPLATE_VERSION, "name": "edit_file", "parameters": {"file_name": "", "operation": "", "gzt_anchor": "", "gzt_newtext": ""}}

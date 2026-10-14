@@ -1,5 +1,16 @@
 # 全局异常捕获，防止打包后闪退无法看到错误
 import sys
+# 强制标准输出/错误为UTF-8:避免打包版在中文Windows（GBK控制台）打印emoji触发UnicodeEncodeError秒退
+if sys.stdout is not None:
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr is not None:
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import faulthandler
 # 启用C层崩溃栈捕获，彻底解决无提示静默闪退问题，C层abort/段错误时会打印完整调用栈
 faulthandler.enable(all_threads=True)
@@ -18,6 +29,8 @@ def _check_single_instance():
     # 源码版（非打包运行）不做单实例互斥校验，避免被安装版/残留进程占锁导致静默秒退无法启动
     if not getattr(sys, "frozen", False):
         return True
+    # 测试期临时取消安装版工作台互斥:直接放行（删掉下面这一行 return 即可恢复原互斥逻辑）
+    return True
     if sys.platform != "win32":
         # 非Windows平台暂不处理，直接放行
         return True
@@ -430,11 +443,12 @@ QApplication = None
 AIBrowserWindow = None
 Qt = None
 def load_qt_modules():
-    global QApplication, AIBrowserWindow, Qt, QWidget, QVBoxLayout, QObject, Slot, QWebEngineView, QWebChannel
+    global QApplication, AIBrowserWindow, Qt, QWidget, QVBoxLayout, QObject, Slot, QWebEngineView, QWebChannel, QMenu, QAction
     try:
-        from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
+        from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QMenu
         from PySide6.QtCore import Qt, QObject, Slot
         from PySide6.QtWebEngineWidgets import QWebEngineView
+        from PySide6.QtGui import QAction
         from PySide6.QtWebChannel import QWebChannel
         from ai_browser import AIBrowserWindow
         return True
@@ -959,11 +973,11 @@ if __name__ == "__main__":
     # 接收实际启动端口，同步更新全局变量，避免端口检测时间差导致的不一致问题
     SERVER_PORT = api_server.start_api_server(port=SERVER_PORT)
     
-    # 启动双向自动同步监听服务（后台守护线程，不阻塞主程序，主程序退出自动销毁）
+    # 启动文件变动自动同步监听服务（后台守护线程，不阻塞主程序，主程序退出自动销毁）
     from auto_sync_monitor import start_monitor
     sync_thread = threading.Thread(target=start_monitor, daemon=True)
     sync_thread.start()
-    print("✅ [调试7.5/8] 双向自动同步监听服务已启动，文件变动实时同步")
+    print("✅ [调试7.5/8] 文件变动自动同步监听服务已启动，文件变动实时同步")
     
     # 等待2秒确保所有服务启动完成
     time.sleep(2)
@@ -976,7 +990,7 @@ if __name__ == "__main__":
             
             
             # 1. 后台仅预加载浏览器框架，不打开任何页面、不显示，完全静默
-            main_browser = AIBrowserWindow(home_url=f"http://127.0.0.1:{SERVER_PORT}/chat", auto_open_home=False, show_immediately=False)
+            main_browser = AIBrowserWindow(home_url=f"http://127.0.0.1:{SERVER_PORT}/webapp/", auto_open_home=False, show_immediately=False)
             browser_window = main_browser
             main_browser.setWindowFlag(Qt.WindowType.Tool)
             # 给主窗口设置全局唯一标识，供单实例校验时查找并激活已有窗口
@@ -986,7 +1000,7 @@ if __name__ == "__main__":
             from PySide6.QtCore import QTimer
             def _preload_workbench():
                 # 原有open_page逻辑完全不变
-                web_view = main_browser.open_page(f"http://127.0.0.1:{SERVER_PORT}/workspace", page_id="workbench", title="AI工作台")
+                web_view = main_browser.open_page(f"http://127.0.0.1:{SERVER_PORT}/webapp/", page_id="workbench", title="AI工作台")
                 # 【修复空指针问题】加web_view有效性校验，避免对象为空时报错
                 if web_view and hasattr(web_view, 'loadFinished'):
                     # 【修复时序问题】页面加载完成后再隐藏，避免Web引擎资源被提前回收
@@ -1089,7 +1103,69 @@ if __name__ == "__main__":
             layout = QVBoxLayout(float_window)
             layout.setContentsMargins(0,0,0,0) # 无边距铺满窗口
             
-            web_view = QWebEngineView()
+            # 悬浮窗专用 WebView:覆盖 contextMenuEvent 提供中文右键菜单，显示上与主对话窗口保持一致
+            class FloatWebView(QWebEngineView):
+                """悬浮窗 WebView:内置中文右键菜单。
+                菜单项与 ai_browser.CustomWebView 保持视觉一致，仅去除悬浮窗单页 SPA 无意义的"后退/前进"。"""
+
+                def contextMenuEvent(self, event):
+                    # 延迟导入:QWebEnginePage 在调用方为局部作用域，此处独立导入保证方法内可用
+                    from PySide6.QtWebEngineCore import QWebEnginePage
+                    menu = QMenu(self)
+
+                    # ---------- 编辑类操作（原生功能） ----------
+                    select_all_action = QAction("全选", self)
+                    select_all_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.SelectAll))
+                    menu.addAction(select_all_action)
+
+                    copy_action = QAction("复制", self)
+                    copy_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Copy))
+                    menu.addAction(copy_action)
+
+                    cut_action = QAction("剪切", self)
+                    cut_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Cut))
+                    menu.addAction(cut_action)
+
+                    paste_action = QAction("粘贴", self)
+                    paste_action.triggered.connect(lambda: self.page().triggerAction(QWebEnginePage.WebAction.Paste))
+                    menu.addAction(paste_action)
+
+                    menu.addSeparator()
+
+                    # ---------- 浏览器操作（悬浮窗为单页 SPA，省略"后退/前进"） ----------
+                    reload_action = QAction("刷新页面", self)
+                    reload_action.triggered.connect(lambda: self.reload())
+                    menu.addAction(reload_action)
+
+                    inspect_action = QAction("检查元素", self)
+                    inspect_action.triggered.connect(lambda: self._open_devtools())
+                    menu.addAction(inspect_action)
+
+                    # 显示菜单
+                    menu.exec(event.globalPos())
+
+                def _open_devtools(self):
+                    """打开独立"开发者工具"窗口。
+                    悬浮窗的 CustomWebPage.createWindow 已被覆写（拦截新窗口并转发给主浏览器），
+                    直接照搬主窗 setDevToolsPage(createWindow(...)) 会静默失效，
+                    因此改为新建独立 QWebEngineView 承载 DevTools 页并 show()。"""
+                    try:
+                        if getattr(self, '_devtools_view', None) is not None:
+                            # 已创建过则复用（同时保持强引用，避免窗口因局部变量被 GC 而闪退）
+                            self.page().setDevToolsPage(self._devtools_view.page())
+                            self._devtools_view.show()
+                            self._devtools_view.raise_()
+                            return
+                        dev_view = QWebEngineView()
+                        dev_view.setWindowTitle("开发者工具 - 检查元素")
+                        dev_view.resize(1000, 640)
+                        self._devtools_view = dev_view
+                        self.page().setDevToolsPage(dev_view.page())
+                        dev_view.show()
+                    except Exception as e:
+                        print(f"⚠️ 打开开发者工具失败: {e}")
+
+            web_view = FloatWebView()
             # 允许JS弹出新窗口，解除弹窗拦截
             from PySide6.QtWebEngineCore import QWebEngineSettings, QWebEnginePage
             web_view.settings().setAttribute(QWebEngineSettings.JavascriptCanOpenWindows, True)
@@ -1104,7 +1180,7 @@ if __name__ == "__main__":
                         global main_browser
                         url_str = url.toString()
                         # 工作台页面固定page_id实现去重，其他页面按需扩展
-                        page_id = "workbench" if "/workspace" in url_str else None
+                        page_id = "workbench" if "/webapp" in url_str else None
                         main_browser.open_page(url_str, page_id=page_id)
                     # 监听新窗口的URL加载请求
                     dummy_page = QWebEnginePage(self)
@@ -1129,7 +1205,7 @@ if __name__ == "__main__":
             # 注入pywebview兼容对象，加自动重试逻辑，等待后端服务启动
             retry_count = [0] # 用可变列表规避Python作用域问题，无需nonlocal
             def load_page():
-                web_view.load(f"http://127.0.0.1:{SERVER_PORT}/chat_float.html")
+                web_view.load(f"http://127.0.0.1:{SERVER_PORT}/webapp/#/page-o0x2f?mode=float")
             
             def on_load_finished(success):
                 if not success and retry_count[0] < 10:
@@ -1151,11 +1227,13 @@ if __name__ == "__main__":
                     """)
             
             web_view.loadFinished.connect(on_load_finished)
+            # 悬浮窗复用新前端 SPA（page-o0x2f?mode=float），与主窗天然互通
             load_page()
             
             layout.addWidget(web_view)
+            # 悬浮窗启动即显示，加载新前端 SPA 对话区
             float_window.show()
-            print("✅ AI悬浮助手已启动，可在桌面找到")
+            print("✅ AI主窗口已启动（旧悬浮窗已停用）")
 
             # 4. 启动Qt主循环，两个窗口共用同一个线程，零冲突
             sys.exit(qt_app.exec())

@@ -90,14 +90,14 @@ if !errorlevel! neq 0 (
 echo.
 
 :: [5/5] 打包完成，报告产物路径
-echo [5/5] 打包流程全部结束
+echo [5/5] BUILD PIPELINE FINISHED - 打包流程全部结束
 echo ==============================================
 echo ✅  打包完成！产物位置:
 echo.
 echo    绿色版目录: %~dp0dist\AI_GZT_NoDeps\
 echo    启动程序:   %~dp0dist\AI_GZT_NoDeps\AI_GZT_NoDeps.exe
-if exist "%~dp0dist\AI_GZT_NoDeps_Setup_v1.1.exe" (
-    echo    安装包:     %~dp0dist\AI_GZT_NoDeps_Setup_v1.1.exe
+if exist "%~dp0dist\AI_GZT_NoDeps_Setup_V2.0.exe" (
+    echo    安装包:     %~dp0dist\AI_GZT_NoDeps_Setup_V2.0.exe
 ) else (
     echo    安装包:     未生成（未安装Inno Setup 6，仅输出绿色版，不影响使用）
 )

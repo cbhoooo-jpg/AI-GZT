@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-双向自动同步监听模块
-功能特性：
+文件变动自动同步监听模块
+功能特性:
 1. 监听仓库文件夹下所有文件变动，自动更新对应子项目手册明细
-2. 监听所有*项目手册.md文件的明细清单变动
-3. 内置防抖、循环拦截、异常兜底，无需确认直接执行
-4. 完全复用现有project_manual_manager核心能力，无侵入式开发
+2. 内置防抖、循环拦截、异常兜底，无需确认直接执行
+3. 完全复用现有project_manual_manager核心能力，无侵入式开发
 """
 import os
 import time
@@ -152,7 +151,7 @@ def _manual_update_worker():
 
 
 class FileChangeHandler(FileSystemEventHandler):
-    """普通文件变动事件处理器：反向同步 → 文件变动更新对应项目手册"""
+    """普通文件变动事件处理器:文件变动 → 更新对应项目手册"""
     def _find_nearest_manual(self, file_path: str) -> Optional[str]:
         """向上递归查找最近一级的项目手册，修复目录不存在报错"""
         current_dir = os.path.normpath(os.path.dirname(file_path)).replace("\\", "/")
@@ -272,7 +271,7 @@ class ManualChangeHandler(FileSystemEventHandler):
         return False
     
 def start_monitor():
-    """启动双向监听服务"""
+    """启动文件变动监听服务"""
     # 校验仓库路径存在
     # Windows系统下显式初始化COM多线程公寓，解决PyInstaller打包环境watchdog COM线程冲突
     com_initialized = False
@@ -316,7 +315,7 @@ def start_monitor():
     observer.schedule(FileChangeHandler(), path=REPOSITORY_PATH, recursive=True)
     observer.start()
 
-    logging.info(f"🚀 双向自动同步服务已启动，监听路径：{REPOSITORY_PATH}")
+    logging.info(f"🚀 文件变动自动同步服务已启动，监听路径:{REPOSITORY_PATH}")
     logging.info(f"⚙️  配置：防抖{CONFIG['debounce_time']*1000}ms，自动执行无需确认")
     logging.info("📢 按Ctrl+C停止服务")
     

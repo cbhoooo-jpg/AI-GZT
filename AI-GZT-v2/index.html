@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>未命名项目</title>
+    <!-- 【主题统一·L1-①】引入全局主题令牌与主题工具（方式A:单一数据源 /static）
+         · theme.css:定义 --border-color / --text-main / --radius 等静态令牌（CSS 层）
+         · theme.js:读取后端 theme_primary_color，派生并注入 --primary / -hover / -active 等 9 变量
+         两条都必须在 <head> 内加载（theme.js 在 head 内同步执行首屏防闪逻辑），缺一不可。 -->
+    <link rel="stylesheet" href="/static/theme.css" />
+    <script src="/static/theme.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

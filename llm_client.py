@@ -22,7 +22,10 @@ if getattr(_sys, 'frozen', False):
     CONFIG_PATH = os.path.join(_exe_dir, "config.json")
     # 兜底逻辑:如果EXE同级目录没有config.json，自动从_internal复制默认配置，避免首次启动读不到配置
     if not os.path.exists(CONFIG_PATH) and os.path.exists(_internal_dir):
+        # 打包清单实际只含 config.example.json（_internal/config.json 不存在），故以其为兜底模板，否则 config.json 永不生成
         _internal_default_config = os.path.join(_internal_dir, "config.json")
+        if not os.path.exists(_internal_default_config):
+            _internal_default_config = os.path.join(_internal_dir, "config.example.json")
         if os.path.exists(_internal_default_config):
             import shutil
             try:
@@ -266,18 +269,14 @@ def _init_model(config: dict):
         _model_instance = MockModel()
         _model_type = "mock"
         return
-    # 第一步:先获取模型厂商，修复变量未定义问题
-    model_provider = config.get("model_provider", "火山引擎·豆包")
     
 
     # 第三步:云模型初始化（所有支持OpenAI兼容接口的厂商通用）
     if CLOUD_MODEL_AVAILABLE:
         _model_type = "cloud"
         api_key = config.get("api_key", "")
-        # 脱敏打印配置，定位配置加载问题
-        masked_key = api_key[:4] + "*" * (len(api_key)-4) if len(api_key) > 4 else "未配置"
-        print(f"🔧 加载配置:API密钥={masked_key} 接口地址={config.get('api_url', '默认豆包地址')} 模型名={config.get('model_name', 'default')} 超时时间={config.get('request_timeout',200)}s")
-        print(f"🔧 初始化云模型:{model_provider} - {config.get('model_name', 'default')}")
+        # 已剥离旧单模型链路的配置打印:模型相关字段统一由 models_config.json 9 槽位承载，
+        # 保留此打印会误导排查（启动日志显示的模型名并不等于当前生效槽位）
         try:
             # 🔹 AI自动补全:URL自动去重逻辑，自动识别并去除末尾的/chat/completions后缀
             base_url = config.get("api_url", "https://ark.cn-beijing.volces.com/api/v3")
@@ -300,34 +299,8 @@ def _init_model(config: dict):
                 http_client=custom_http_client
             )
             print("✅ 云模型初始化成功")
-            
-            # 🔹 AI自动补全:模型可用性预校验，发送轻量测试请求提前发现问题
-            try:
-                test_model = config.get("model_name", "")
-                if test_model:
-                    # 发送一个极短的测试请求，验证模型是否可用
-                    _model_instance.chat.completions.create(
-                        model=test_model,
-                        messages=[{"role": "user", "content": "hi"}],
-                        max_tokens=1,
-                        timeout=30
-                    )
-                    print(f"✅ 模型可用性校验通过:模型「{test_model}」可正常调用")
-            except Exception as test_err:
-                error_msg = str(test_err)
-                print(f"⚠️ 模型可用性预校验失败:")
-                if "401" in error_msg or "authentication" in error_msg.lower() or "invalid_api_key" in error_msg:
-                    print("   原因:API密钥无效，请检查密钥是否正确")
-                elif "404" in error_msg or "model_not_found" in error_msg.lower() or "not found" in error_msg.lower():
-                    print("   原因:模型不存在，请确认模型名称是否正确，或该模型是否已在对应平台激活")
-                elif "connection" in error_msg.lower() or "proxy" in error_msg.lower() or "dns" in error_msg.lower():
-                    print("   原因:无法连接接口地址，请检查网络或接口地址是否正确")
-                elif "timeout" in error_msg.lower():
-                    print("   原因:接口响应超时，请检查网络或调大超时时间")
-                else:
-                    print(f"   原因:{error_msg[:150]}")
-                print("   提示:仍可继续使用，实际调用时会自动重试")
-            
+            # 已剥离模型可用性预校验（旧单模型链路遗留:启动即向 config.json 里的模型发测试请求，
+            # 模型字段迁走后必然失败并刷屏 401/404 噪音；实际调用时 OpenAI 会自然重试，无需预检）
             return
         except Exception as e:
             error_msg = str(e)
@@ -546,6 +519,98 @@ class UnifiedLLM:
                 if current_retry > max_retries:
                     raise Exception(f"❌ 所有云端模型调用失败:{error_msg}")
                     
+def chat_with(
+    slot: int,
+    messages: List[dict],
+    temperature: float = 0.5,
+    max_tokens: Optional[int] = None,
+    stream: bool = False,
+    **kwargs,
+):
+    """按 slot 调用独立模型客户端（替代全局单例）；不依赖全局态，供 orchestrator 与 verify 复用"""
+    from model_registry import get_client, get_slot_config, get_runtime, get_semaphore
+
+    cfg = get_slot_config(slot)
+    if not cfg:
+        err = f"⚠️ 未找到 slot={slot} 的模型配置"
+        if stream:
+            def _err_stream():
+                yield {"choices": [{"delta": {"content": err}, "finish_reason": "stop"}]}
+            return _err_stream()
+        return {"choices": [{"message": {"role": "assistant", "content": err}}]}
+
+    client = get_client(slot)
+    messages = _process_multimodal_messages(messages)
+    total_content_length = sum(len(str(m.get("content", ""))) for m in messages)
+    estimated_tokens = int(total_content_length * 1.5)
+    try:
+        base_timeout = int(cfg.get("timeout", 200))
+    except (TypeError, ValueError):
+        base_timeout = 200
+    dynamic_timeout = min(base_timeout + (estimated_tokens // 10000) * 30, 600)
+    max_retries = int(get_runtime().get("retry", 1))
+    if max_retries < 0:
+        max_retries = 0
+    sem = get_semaphore()
+    current_retry = 0
+    while current_retry <= max_retries:
+        try:
+            request_kwargs = {
+                "model": cfg.get("model_name", ""),
+                "messages": messages,
+                "temperature": temperature,
+                "stream": stream,
+                "timeout": dynamic_timeout,
+            }
+            if max_tokens:
+                request_kwargs["max_tokens"] = max_tokens
+            request_kwargs.update(kwargs)
+            with sem:
+                response = client.chat.completions.create(**request_kwargs)
+                if stream:
+                    def _stream_gen():
+                        try:
+                            for chunk in response:
+                                if not chunk.choices:
+                                    continue
+                                choice = chunk.choices[0]
+                                delta = choice.delta
+                                delta_data = {}
+                                if delta.content:
+                                    delta_data["content"] = delta.content
+                                if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                                    delta_data["reasoning_content"] = delta.reasoning_content
+                                if delta_data:
+                                    yield {"choices": [{"delta": delta_data, "finish_reason": None}]}
+                                if choice.finish_reason == "stop":
+                                    yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+                                    break
+                        except Exception as stream_err:
+                            yield {"choices": [{"delta": {"content": f"\n\n⚠️ 响应接收异常:{str(stream_err)[:100]}"}, "finish_reason": "stop"}]}
+                    return _stream_gen()
+                msg = response.choices[0].message
+                return {"choices": [{"message": {
+                    "role": "assistant",
+                    "content": msg.content,
+                    "reasoning_content": getattr(msg, "reasoning_content", "")
+                }}]}
+        except Exception as e:
+            error_msg = str(e)
+            _msg_low = error_msg.lower()
+            _is_max_tokens_err = ("max_tokens" in _msg_low) and any(
+                k in error_msg for k in ("above maximum", "invalid", "exceed", "less than",
+                                        "超过", "上限", "最大", "不能大于", "小于等于")
+            )
+            if _is_max_tokens_err:
+                model_max_tokens = _extract_model_max_tokens(error_msg)
+                if model_max_tokens:
+                    max_tokens = int(model_max_tokens * 0.9)
+                    continue
+            current_retry += 1
+            if current_retry > max_retries:
+                raise Exception(f"❌ slot={slot} 模型调用失败:{error_msg}")
+
+
 # 全局统一LLM实例，延迟初始化（必须在外部依赖路径注入完成后调用init_llm()初始化）
 llm = None
 

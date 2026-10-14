@@ -34,7 +34,7 @@
 
 | 文件                      | 说明                                                                                             | 下载链接                                                               |
 | ----------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| AI智能助手 v1.1 Windows 安装包 | 安装包（约 199 MB），已内置 Python 运行环境与全部依赖，安装后开箱即用                                                     | [123 云盘（国内推荐）](https://4004388641.share.123pan.cn/123pan/NFTTwh-jSDpv?pwd=5yyL#) ／ [GitHub Release 直链](https://github.com/cbhoooo-jpg/AI-GZT/releases/download/v1.1/AI_GZT_Setup_v1.1.exe) |
+| AI智能助手 V2.0 Windows 安装包 | 安装包（约 199 MB），已内置 Python 运行环境与全部依赖，安装后开箱即用                                                     | [123 云盘（国内推荐）](https://4004388641.share.123pan.cn/123pan/NFTTwh-jSDpv?pwd=5yyL#) ／ [GitHub Release 直链](https://github.com/cbhoooo-jpg/AI-GZT/releases/download/v1.1/AI_GZT_Setup_v1.1.exe) |
 | Python 环境一键安装脚本         | `Python和依赖安装.bat`，完整依赖安装，大约需要3G的C盘空间。*安装完整依赖才可以使用RAG 知识库和向量记忆召回功能，没有安装完整依赖可以在设置中把上下文轮数的参数适当调高* | [123 云盘下载](https://4004388641.share.123pan.cn/123pan/NFTTwh-hLR4v) |
 
 > 📥 123 云盘链接免登录、免费用户下载不限速，浏览器打开即可下载，无需安装客户端。
@@ -223,6 +223,20 @@ gte-small-zh/
 └── ...
 ```
 
+## 媒体处理依赖:ffmpeg（源码用户必读）
+
+工作台的视频剪辑、音视频转码等媒体处理能力依赖 **ffmpeg**。安装包用户已内置，**源码用户需自行下载放置**。
+
+- **用途**:视频剪辑、格式转换等媒体处理能力的底层依赖
+- **官方下载地址**:<https://ffmpeg.org/download.html>（Windows 推荐 [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) 构建版）
+- **放置目录**:解压后取 `ffmpeg.exe` 与 `ffprobe.exe` 两个文件，放入项目根目录下的 `bin/` 文件夹
+- ⚠️ `bin/` 目录已加入 `.gitignore`（二进制体积大，不随仓库分发），需自行下载放置
+
+```
+bin/
+├── ffmpeg.exe
+└── ffprobe.exe
+```
 ## 插件开发
 
 插件由**插件市场按需安装**到 `plugins/` 目录（不随安装包内置），也可手动放置；每个插件包含 `main.py` + `plugin.json`，模板参考 `plugin_templates/` 目录下的三类标准模板（AIGC 生成类 / 信息采集查询类 / 本地操作类）。

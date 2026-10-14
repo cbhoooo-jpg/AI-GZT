@@ -77,7 +77,10 @@ class MemoryCache:
         if faiss is not None:
             if os.path.exists(self.index_path):
                 try:
-                    self.index = faiss.read_index(self.index_path)
+                    # faiss 底层用 C++ fopen 打开文件，Windows 下不认中文路径（Illegal byte sequence），
+                    # 改由 Python open 读取字节流 + deserialize_index 还原，与 _save 的 serialize 配套
+                    with open(self.index_path, "rb") as f:
+                        self.index = faiss.deserialize_index(np.frombuffer(f.read(), dtype=np.uint8))
                     # 校验索引维度和编码器维度是否匹配，不匹配则重建
                     if self.encoder is not None and self.index.d != self.index_dim:
                         print(f"⚠️ 索引维度{self.index.d}与模型维度{self.index_dim}不匹配，将自动重建索引")
@@ -565,7 +568,10 @@ class MemoryCache:
     def _save(self) -> None:
         """持久化数据"""
         if self.index is not None:
-            faiss.write_index(self.index, self.index_path)
+            # faiss 底层用 C++ fopen 打开文件，Windows 下不认中文路径（Illegal byte sequence），
+            # 改用 Python open 落盘 serialize_index 字节流，绕开该问题（读侧同步用 deserialize_index）
+            with open(self.index_path, "wb") as f:
+                f.write(faiss.serialize_index(self.index).tobytes())
         with open(self.meta_path, 'w', encoding='utf-8') as f:
             json.dump(self.meta, f, ensure_ascii=False, indent=2)
     def load_config(self) -> None:

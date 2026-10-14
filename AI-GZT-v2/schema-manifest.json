@@ -1,0 +1,889 @@
+{
+  "generatedBy": "低代码前端开发平台",
+  "generatedAt": "2026-10-06T15:46:36.906Z",
+  "schemaVersion": "1.0.0",
+  "projectName": "未命名项目",
+  "stats": {
+    "pageCount": 34,
+    "snippetCount": 0,
+    "fileCount": 34,
+    "boxCount": 1228,
+    "tagCount": {
+      "div": 614,
+      "span": 129,
+      "button": 143,
+      "p": 166,
+      "h2": 22,
+      "select": 10,
+      "textarea": 45,
+      "input": 97,
+      "h3": 2
+    },
+    "eventCount": 55,
+    "apiCount": 0,
+    "fieldCount": 0,
+    "snippetRefCount": 0,
+    "todoCount": 64
+  },
+  "pages": [
+    {
+      "id": "o0x2f",
+      "name": "首页",
+      "routePath": "/page-o0x2f",
+      "routeName": "pageO0x2f",
+      "fileName": "PageO0x2f.vue",
+      "isHome": true,
+      "boxCount": 69,
+      "eventCount": 6,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "92v36",
+      "name": "1",
+      "routePath": "/1",
+      "routeName": "1",
+      "fileName": "1.vue",
+      "isHome": false,
+      "boxCount": 60,
+      "eventCount": 6,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "yh03s",
+      "name": "2",
+      "routePath": "/2",
+      "routeName": "2",
+      "fileName": "2.vue",
+      "isHome": false,
+      "boxCount": 105,
+      "eventCount": 1,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "hd6w2",
+      "name": "3",
+      "routePath": "/3",
+      "routeName": "3",
+      "fileName": "3.vue",
+      "isHome": false,
+      "boxCount": 58,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "1jkgc",
+      "name": "4",
+      "routePath": "/4",
+      "routeName": "4",
+      "fileName": "4.vue",
+      "isHome": false,
+      "boxCount": 32,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "ozauo",
+      "name": "5",
+      "routePath": "/5",
+      "routeName": "5",
+      "fileName": "5.vue",
+      "isHome": false,
+      "boxCount": 23,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "2yl73",
+      "name": "6",
+      "routePath": "/6",
+      "routeName": "6",
+      "fileName": "6.vue",
+      "isHome": false,
+      "boxCount": 14,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "7ecd1",
+      "name": "7",
+      "routePath": "/7",
+      "routeName": "7",
+      "fileName": "7.vue",
+      "isHome": false,
+      "boxCount": 8,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "1qzp8",
+      "name": "8",
+      "routePath": "/8",
+      "routeName": "8",
+      "fileName": "8.vue",
+      "isHome": false,
+      "boxCount": 16,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "walc9",
+      "name": "9",
+      "routePath": "/9",
+      "routeName": "9",
+      "fileName": "9.vue",
+      "isHome": false,
+      "boxCount": 23,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "oifl5",
+      "name": "10",
+      "routePath": "/10",
+      "routeName": "10",
+      "fileName": "10.vue",
+      "isHome": false,
+      "boxCount": 3,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "ae0d5",
+      "name": "1",
+      "routePath": "/1-2",
+      "routeName": "12",
+      "fileName": "1-2.vue",
+      "isHome": false,
+      "boxCount": 47,
+      "eventCount": 6,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "7f4nj",
+      "name": "2",
+      "routePath": "/2-2",
+      "routeName": "22",
+      "fileName": "2-2.vue",
+      "isHome": false,
+      "boxCount": 47,
+      "eventCount": 6,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "bywey",
+      "name": "3",
+      "routePath": "/3-2",
+      "routeName": "32",
+      "fileName": "3-2.vue",
+      "isHome": false,
+      "boxCount": 47,
+      "eventCount": 6,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "1olpv",
+      "name": "4",
+      "routePath": "/4-2",
+      "routeName": "42",
+      "fileName": "4-2.vue",
+      "isHome": false,
+      "boxCount": 47,
+      "eventCount": 6,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "1ccfq",
+      "name": "5",
+      "routePath": "/5-2",
+      "routeName": "52",
+      "fileName": "5-2.vue",
+      "isHome": false,
+      "boxCount": 47,
+      "eventCount": 6,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "yf2v9",
+      "name": "6",
+      "routePath": "/6-2",
+      "routeName": "62",
+      "fileName": "6-2.vue",
+      "isHome": false,
+      "boxCount": 47,
+      "eventCount": 6,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "ysbps",
+      "name": "7",
+      "routePath": "/7-2",
+      "routeName": "72",
+      "fileName": "7-2.vue",
+      "isHome": false,
+      "boxCount": 47,
+      "eventCount": 6,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "rl8u4",
+      "name": "1",
+      "routePath": "/1-3",
+      "routeName": "13",
+      "fileName": "1-3.vue",
+      "isHome": false,
+      "boxCount": 45,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "wnlk7",
+      "name": "2",
+      "routePath": "/2-3",
+      "routeName": "23",
+      "fileName": "2-3.vue",
+      "isHome": false,
+      "boxCount": 45,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "z0eyl",
+      "name": "3",
+      "routePath": "/3-3",
+      "routeName": "33",
+      "fileName": "3-3.vue",
+      "isHome": false,
+      "boxCount": 45,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "80y40",
+      "name": "4",
+      "routePath": "/4-3",
+      "routeName": "43",
+      "fileName": "4-3.vue",
+      "isHome": false,
+      "boxCount": 45,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "unjj6",
+      "name": "5",
+      "routePath": "/5-3",
+      "routeName": "53",
+      "fileName": "5-3.vue",
+      "isHome": false,
+      "boxCount": 45,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "ffrmk",
+      "name": "6",
+      "routePath": "/6-3",
+      "routeName": "63",
+      "fileName": "6-3.vue",
+      "isHome": false,
+      "boxCount": 45,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "8mqg8",
+      "name": "7",
+      "routePath": "/7-3",
+      "routeName": "73",
+      "fileName": "7-3.vue",
+      "isHome": false,
+      "boxCount": 45,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "xlvlb",
+      "name": "8",
+      "routePath": "/8-2",
+      "routeName": "82",
+      "fileName": "8-2.vue",
+      "isHome": false,
+      "boxCount": 45,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "514de",
+      "name": "1",
+      "routePath": "/1-4",
+      "routeName": "14",
+      "fileName": "1-4.vue",
+      "isHome": false,
+      "boxCount": 29,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "3z36i",
+      "name": "2",
+      "routePath": "/2-4",
+      "routeName": "24",
+      "fileName": "2-4.vue",
+      "isHome": false,
+      "boxCount": 22,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "qwpat",
+      "name": "3",
+      "routePath": "/3-4",
+      "routeName": "34",
+      "fileName": "3-4.vue",
+      "isHome": false,
+      "boxCount": 48,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "a6omf",
+      "name": "1",
+      "routePath": "/1-5",
+      "routeName": "15",
+      "fileName": "1-5.vue",
+      "isHome": false,
+      "boxCount": 5,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "sbu42",
+      "name": "2",
+      "routePath": "/2-5",
+      "routeName": "25",
+      "fileName": "2-5.vue",
+      "isHome": false,
+      "boxCount": 3,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "qzimq",
+      "name": "1",
+      "routePath": "/1-6",
+      "routeName": "16",
+      "fileName": "1-6.vue",
+      "isHome": false,
+      "boxCount": 8,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "61bmg",
+      "name": "2",
+      "routePath": "/2-6",
+      "routeName": "26",
+      "fileName": "2-6.vue",
+      "isHome": false,
+      "boxCount": 6,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    },
+    {
+      "id": "1s2kg",
+      "name": "3",
+      "routePath": "/3-5",
+      "routeName": "35",
+      "fileName": "3-5.vue",
+      "isHome": false,
+      "boxCount": 7,
+      "eventCount": 0,
+      "apiCount": 0,
+      "snippetRefCount": 0
+    }
+  ],
+  "snippets": [],
+  "todos": [
+    {
+      "file": "PageO0x2f.vue",
+      "boxId": "644z5",
+      "boxName": "历史对话下拉",
+      "kind": "event",
+      "desc": "绑定 change 事件 → handleChatGroupChange():切换历史会话后拉取对应记录"
+    },
+    {
+      "file": "PageO0x2f.vue",
+      "boxId": "ywdge",
+      "boxName": "开启新对话按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleNewChat():开启新对话（清空上下文 / 新建会话）"
+    },
+    {
+      "file": "PageO0x2f.vue",
+      "boxId": "2seb1",
+      "boxName": "复制按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleCopyThink():复制思考内容"
+    },
+    {
+      "file": "PageO0x2f.vue",
+      "boxId": "3h58p",
+      "boxName": "截图按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleScreenshot():截图并回填输入框"
+    },
+    {
+      "file": "PageO0x2f.vue",
+      "boxId": "qit6d",
+      "boxName": "发送文件按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleSendFile():上传文件"
+    },
+    {
+      "file": "PageO0x2f.vue",
+      "boxId": "6jw94",
+      "boxName": "输入框",
+      "kind": "data",
+      "desc": "双向绑定 chatInput，需在 script 中初始化该响应式数据"
+    },
+    {
+      "file": "PageO0x2f.vue",
+      "boxId": "ery33",
+      "boxName": "发送按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleChatSend():发送对话内容"
+    },
+    {
+      "file": "1.vue",
+      "boxId": "22m8f",
+      "boxName": "历史对话下拉",
+      "kind": "event",
+      "desc": "绑定 change 事件 → handleChatGroupChange():切换历史会话后拉取对应记录"
+    },
+    {
+      "file": "1.vue",
+      "boxId": "7u0t5",
+      "boxName": "开启新对话按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleNewChat():开启新对话（清空上下文 / 新建会话）"
+    },
+    {
+      "file": "1.vue",
+      "boxId": "lo98c",
+      "boxName": "复制按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleCopyThink():复制思考内容"
+    },
+    {
+      "file": "1.vue",
+      "boxId": "4r28n",
+      "boxName": "截图按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleScreenshot():截图并回填输入框"
+    },
+    {
+      "file": "1.vue",
+      "boxId": "1tf3w",
+      "boxName": "发送文件按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleSendFile():上传文件"
+    },
+    {
+      "file": "1.vue",
+      "boxId": "nvw17",
+      "boxName": "输入框",
+      "kind": "data",
+      "desc": "双向绑定 chatInput，需在 script 中初始化该响应式数据"
+    },
+    {
+      "file": "1.vue",
+      "boxId": "stgen",
+      "boxName": "发送按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleChatSend():发送对话内容"
+    },
+    {
+      "file": "2.vue",
+      "boxId": "r9cwr",
+      "boxName": "保存按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleFileSave():保存文件内容"
+    },
+    {
+      "file": "1-2.vue",
+      "boxId": "3232j",
+      "boxName": "历史对话下拉",
+      "kind": "event",
+      "desc": "绑定 change 事件 → handleChatGroupChange():切换历史会话后拉取对应记录"
+    },
+    {
+      "file": "1-2.vue",
+      "boxId": "0utnw",
+      "boxName": "开启新对话按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleNewChat():开启新对话（清空上下文 / 新建会话）"
+    },
+    {
+      "file": "1-2.vue",
+      "boxId": "cjat0",
+      "boxName": "复制按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleCopyThink():复制思考内容"
+    },
+    {
+      "file": "1-2.vue",
+      "boxId": "h5nyx",
+      "boxName": "截图按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleScreenshot():截图并回填输入框"
+    },
+    {
+      "file": "1-2.vue",
+      "boxId": "b89tj",
+      "boxName": "发送文件按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleSendFile():上传文件"
+    },
+    {
+      "file": "1-2.vue",
+      "boxId": "hb43v",
+      "boxName": "输入框",
+      "kind": "data",
+      "desc": "双向绑定 chatInput，需在 script 中初始化该响应式数据"
+    },
+    {
+      "file": "1-2.vue",
+      "boxId": "h9zq7",
+      "boxName": "发送按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleChatSend():发送对话内容"
+    },
+    {
+      "file": "2-2.vue",
+      "boxId": "pyhti",
+      "boxName": "历史对话下拉",
+      "kind": "event",
+      "desc": "绑定 change 事件 → handleChatGroupChange():切换历史会话后拉取对应记录"
+    },
+    {
+      "file": "2-2.vue",
+      "boxId": "bam51",
+      "boxName": "开启新对话按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleNewChat():开启新对话（清空上下文 / 新建会话）"
+    },
+    {
+      "file": "2-2.vue",
+      "boxId": "4snsv",
+      "boxName": "复制按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleCopyThink():复制思考内容"
+    },
+    {
+      "file": "2-2.vue",
+      "boxId": "t79f5",
+      "boxName": "截图按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleScreenshot():截图并回填输入框"
+    },
+    {
+      "file": "2-2.vue",
+      "boxId": "epmzn",
+      "boxName": "发送文件按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleSendFile():上传文件"
+    },
+    {
+      "file": "2-2.vue",
+      "boxId": "dxgtw",
+      "boxName": "输入框",
+      "kind": "data",
+      "desc": "双向绑定 chatInput，需在 script 中初始化该响应式数据"
+    },
+    {
+      "file": "2-2.vue",
+      "boxId": "geexz",
+      "boxName": "发送按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleChatSend():发送对话内容"
+    },
+    {
+      "file": "3-2.vue",
+      "boxId": "fe7so",
+      "boxName": "历史对话下拉",
+      "kind": "event",
+      "desc": "绑定 change 事件 → handleChatGroupChange():切换历史会话后拉取对应记录"
+    },
+    {
+      "file": "3-2.vue",
+      "boxId": "cpmpf",
+      "boxName": "开启新对话按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleNewChat():开启新对话（清空上下文 / 新建会话）"
+    },
+    {
+      "file": "3-2.vue",
+      "boxId": "6xlqe",
+      "boxName": "复制按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleCopyThink():复制思考内容"
+    },
+    {
+      "file": "3-2.vue",
+      "boxId": "zmzap",
+      "boxName": "截图按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleScreenshot():截图并回填输入框"
+    },
+    {
+      "file": "3-2.vue",
+      "boxId": "tc2tw",
+      "boxName": "发送文件按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleSendFile():上传文件"
+    },
+    {
+      "file": "3-2.vue",
+      "boxId": "d3w9x",
+      "boxName": "输入框",
+      "kind": "data",
+      "desc": "双向绑定 chatInput，需在 script 中初始化该响应式数据"
+    },
+    {
+      "file": "3-2.vue",
+      "boxId": "ltszz",
+      "boxName": "发送按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleChatSend():发送对话内容"
+    },
+    {
+      "file": "4-2.vue",
+      "boxId": "m0yk7",
+      "boxName": "历史对话下拉",
+      "kind": "event",
+      "desc": "绑定 change 事件 → handleChatGroupChange():切换历史会话后拉取对应记录"
+    },
+    {
+      "file": "4-2.vue",
+      "boxId": "v4c8m",
+      "boxName": "开启新对话按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleNewChat():开启新对话（清空上下文 / 新建会话）"
+    },
+    {
+      "file": "4-2.vue",
+      "boxId": "9ekyd",
+      "boxName": "复制按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleCopyThink():复制思考内容"
+    },
+    {
+      "file": "4-2.vue",
+      "boxId": "ug98j",
+      "boxName": "截图按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleScreenshot():截图并回填输入框"
+    },
+    {
+      "file": "4-2.vue",
+      "boxId": "64w47",
+      "boxName": "发送文件按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleSendFile():上传文件"
+    },
+    {
+      "file": "4-2.vue",
+      "boxId": "c5ylq",
+      "boxName": "输入框",
+      "kind": "data",
+      "desc": "双向绑定 chatInput，需在 script 中初始化该响应式数据"
+    },
+    {
+      "file": "4-2.vue",
+      "boxId": "0xx8a",
+      "boxName": "发送按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleChatSend():发送对话内容"
+    },
+    {
+      "file": "5-2.vue",
+      "boxId": "mkkmr",
+      "boxName": "历史对话下拉",
+      "kind": "event",
+      "desc": "绑定 change 事件 → handleChatGroupChange():切换历史会话后拉取对应记录"
+    },
+    {
+      "file": "5-2.vue",
+      "boxId": "hbeva",
+      "boxName": "开启新对话按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleNewChat():开启新对话（清空上下文 / 新建会话）"
+    },
+    {
+      "file": "5-2.vue",
+      "boxId": "12cb4",
+      "boxName": "复制按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleCopyThink():复制思考内容"
+    },
+    {
+      "file": "5-2.vue",
+      "boxId": "rjduq",
+      "boxName": "截图按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleScreenshot():截图并回填输入框"
+    },
+    {
+      "file": "5-2.vue",
+      "boxId": "cqawg",
+      "boxName": "发送文件按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleSendFile():上传文件"
+    },
+    {
+      "file": "5-2.vue",
+      "boxId": "sy4c1",
+      "boxName": "输入框",
+      "kind": "data",
+      "desc": "双向绑定 chatInput，需在 script 中初始化该响应式数据"
+    },
+    {
+      "file": "5-2.vue",
+      "boxId": "njf3c",
+      "boxName": "发送按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleChatSend():发送对话内容"
+    },
+    {
+      "file": "6-2.vue",
+      "boxId": "mr65n",
+      "boxName": "历史对话下拉",
+      "kind": "event",
+      "desc": "绑定 change 事件 → handleChatGroupChange():切换历史会话后拉取对应记录"
+    },
+    {
+      "file": "6-2.vue",
+      "boxId": "in86w",
+      "boxName": "开启新对话按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleNewChat():开启新对话（清空上下文 / 新建会话）"
+    },
+    {
+      "file": "6-2.vue",
+      "boxId": "nf3el",
+      "boxName": "复制按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleCopyThink():复制思考内容"
+    },
+    {
+      "file": "6-2.vue",
+      "boxId": "5sla5",
+      "boxName": "截图按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleScreenshot():截图并回填输入框"
+    },
+    {
+      "file": "6-2.vue",
+      "boxId": "1pmuc",
+      "boxName": "发送文件按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleSendFile():上传文件"
+    },
+    {
+      "file": "6-2.vue",
+      "boxId": "owhen",
+      "boxName": "输入框",
+      "kind": "data",
+      "desc": "双向绑定 chatInput，需在 script 中初始化该响应式数据"
+    },
+    {
+      "file": "6-2.vue",
+      "boxId": "dzn9r",
+      "boxName": "发送按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleChatSend():发送对话内容"
+    },
+    {
+      "file": "7-2.vue",
+      "boxId": "33uo5",
+      "boxName": "历史对话下拉",
+      "kind": "event",
+      "desc": "绑定 change 事件 → handleChatGroupChange():切换历史会话后拉取对应记录"
+    },
+    {
+      "file": "7-2.vue",
+      "boxId": "wl8i0",
+      "boxName": "开启新对话按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleNewChat():开启新对话（清空上下文 / 新建会话）"
+    },
+    {
+      "file": "7-2.vue",
+      "boxId": "dmm9i",
+      "boxName": "复制按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleCopyThink():复制思考内容"
+    },
+    {
+      "file": "7-2.vue",
+      "boxId": "nun3w",
+      "boxName": "截图按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleScreenshot():截图并回填输入框"
+    },
+    {
+      "file": "7-2.vue",
+      "boxId": "iden1",
+      "boxName": "发送文件按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleSendFile():上传文件"
+    },
+    {
+      "file": "7-2.vue",
+      "boxId": "1m2qb",
+      "boxName": "输入框",
+      "kind": "data",
+      "desc": "双向绑定 chatInput，需在 script 中初始化该响应式数据"
+    },
+    {
+      "file": "7-2.vue",
+      "boxId": "uzkcq",
+      "boxName": "发送按钮",
+      "kind": "event",
+      "desc": "绑定 click 事件 → handleChatSend():发送对话内容"
+    }
+  ]
+}

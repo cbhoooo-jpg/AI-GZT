@@ -1,11 +1,4 @@
 {
-    "model_provider": "模型厂商自行设置",
-    "api_url": "https://ark.cn-beijing.volces.com/api/v3",
-    "model_name": "doubao-seed-2-1-pro-260628",
-    "api_key": "",
-    "timeout": 200,
-    "stream_output": true,
-    "temperature": 0.5,
     "download_path": "",
     "max_parse_fail_count": 3,
     "repository_path": "",
@@ -24,7 +17,6 @@
         "project_root_absolute_path": ""
     },
     "show_debug_console": false,
-    "lastCloudProvider": "火山方舟",
     "plugin_market": {
         "enabled": true,
         "manifest_url": "https://gitee.com/chen-bohan3000/ai-gzt-plugins/raw/main/market_manifest.json"
@@ -41,6 +33,21 @@
         "aging_enabled": true,
         "aging_keep_rounds": 4,
         "aging_trigger_chars": 120000,
-        "aging_max_per_round": 3
+        "aging_max_per_round": 3,
+        "media_image_max_edge": 1568,
+        "media_image_max_size_mb": 1.0,
+        "media_image_quality_steps": [85, 75, 60, 45],
+        "media_total_max_mb": 2.0,
+        "video_window_seconds": 60,
+        "video_frame_interval": 10,
+        "video_max_frames": 8,
+        "video_frame_max_edge": 1024,
+        "video_frame_max_kb": 200,
+        "video_total_max_mb": 2.0,
+        "static_scan_fps": 1.0,
+        "static_mad_threshold": 2.0,
+        "static_min_duration": 3.0,
+        "smart_sampling": true,
+        "static_dominant_ratio": 0.95
     }
 }

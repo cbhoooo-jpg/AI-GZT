@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 项目手册管理核心模块
-功能特性：
+功能特性:
 1. 标准化项目手册模板生成
 2. Markdown表格解析与生成
-3. 正向同步：手册→项目文件自动生成
-4. 反向同步：项目文件→手册信息自动填充
-5. 异常容错：解析失败自动留空，不阻塞运行
-6. 自动备份：支持版本回滚
+3. 手册明细更新:项目文件变动 → 自动更新手册明细
+4. 异常容错:解析失败自动留空，不阻塞运行
+5. 自动备份:支持版本回滚
 """
 import os
 import sys
@@ -706,7 +705,7 @@ class ProjectManualManager:
     
     def update_manual_detail_table(self, manual_path: str) -> Dict:
         """
-        反向同步：自动更新手册的全项目文件明细清单
+        自动更新手册的全项目文件明细清单
         :param manual_path: 手册文件路径
         :return: 更新结果
         """
@@ -783,10 +782,10 @@ class ProjectManualManager:
                 meta = self.extract_code_metadata(os.path.relpath(os.path.join(project_root, file_path), REPOSITORY_PATH))
                 
                 if file_path in existing_rows:
-                    # 已有行：文件名列双向同步（保留手册修改的文件名），其余列单向从文件强制同步覆盖
+                    # 已有行:文件名列保留手册值，其余列从文件强制覆盖
                     row = existing_rows[file_path]
                     new_row = [
-                        row[0], # 第一列文件名保留，支持双向同步
+                        row[0], # 第一列文件名保留手册值
                         meta["module"],
                         meta["description"]
                     ]

@@ -32,17 +32,18 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 定义要打包的单文件数据
 data_files = [
-    'chat_float.html', 'chat_ui.html', 'file_editor.html', 'sample.html',
-    'web_backup.html', 'web_file_repo.html', 'web_log.html', 'web_plugin_market.html',
-    'web_scheduler.html', 'web_settings.html', 'web_workspace.html', 'web_about.html',
-    'config.example.json', 'memory_config.json', 'prompt_templates.json', 'requirements.txt',
+    # 注:12 个旧本地 html（chat_float / chat_ui / file_editor / sample / web_* 等）已随前端
+    # 整体迁移至 Vue 构建产物（AI-GZT-v2/dist，见下方 data_dirs），源文件已物理删除，
+    # 此处同步清理，防止 PyInstaller 因"找不到数据文件"直接中断打包。
+    'config.example.json', 'models_config.example.json', 'memory_config.json', 'prompt_templates.json', 'requirements.txt',
     'logo.png', 'app_icon.ico', 'editor_empty_bg.png',
     'AI_GZT_User_Guide.md', 'THIRD_PARTY_LICENSES.md'
 ]
 
 # 定义要打包的目录数据
 data_dirs = [
-    'static', 'plugins', 'plugin_templates', 'tools', 'gte-small-zh'
+    'static', 'plugins', 'plugin_templates', 'tools', 'gte-small-zh', 'bin',
+    'AI-GZT-v2/dist'  # 新前端构建产物（打包后落点: _internal/AI-GZT-v2/dist，与 api_server.py 的 _WEBAPP_DIST_DIR 一致，否则安装版 /webapp 挂载失败导致白屏）
 ]
 
 # 定义隐藏导入（项目本地模块 + 被exclude的第三方库依赖的标准库模块，不依赖PyInstaller自动扫描）
@@ -55,6 +56,10 @@ hidden_imports = [
     'command_runner',       # 长命令后台任务机制P0:进程树命令执行器（api_server顶层import，显式登记不依赖自动扫描）
     'background_task_manager',  # 长命令后台任务机制P1:后台任务管理器（api_server顶层import，显式登记不依赖自动扫描）
     'ast_symbol_index',     # 符号定位器（api_server顶层import，AST静态解析符号名->文件+行号+签名+源码，显式登记不依赖自动扫描）
+    'isolation_manager',    # 项目信息隔离核心模块（api_server顶层import并调用refresh_injection，显式登记不依赖自动扫描）
+    'model_registry',       # 多模型客户端注册表（阶段3新增:api_server/llm_client函数内延迟import，显式登记不依赖自动扫描，漏登记打包版必崩）
+    'orchestrator',         # 任务编排器（阶段4新增:api_server函数内延迟import，显式登记不依赖自动扫描，漏登记打包版必崩）
+    'media_reader',         # 媒体读取核心模块（阶段B新增:api_server/orchestrator函数内延迟import，显式登记不依赖自动扫描，漏登记则打包版读图/读视频必崩）
     # === FastAPI/Starlette/Web服务依赖的标准库模块（因第三方库被exclude，静态分析无法识别，强制收集） ===
     'http', 'http.cookies', 'http.client', 'http.server',
     'email', 'email.mime', 'email.mime.multipart', 'email.mime.text',
@@ -75,16 +80,28 @@ cmd = [
     '--icon=app_icon.ico',  # 自定义程序图标
 ]
 
-# 添加单文件数据
+# 添加单文件数据（存在性过滤:清单里条目已失效时跳过并告警，不再让 PyInstaller 中断打包）
+missing_data = []
 for f in data_files:
+    if not os.path.exists(os.path.join(BASE_DIR, f)):
+        missing_data.append(f)
+        print(f"⚠️ 跳过缺失的数据文件: {f}")
+        continue
     # Windows 使用 ; 作为分隔符，Linux/Mac 使用 :
     sep = ';' if sys.platform == 'win32' else ':'
     cmd.append(f'--add-data={f}{sep}.')
 
-# 添加目录数据
+# 添加目录数据（同样存在性过滤，防止目录改名/未构建导致中断）
 for d in data_dirs:
+    if not os.path.exists(os.path.join(BASE_DIR, d)):
+        missing_data.append(d)
+        print(f"⚠️ 跳过缺失的数据目录: {d}")
+        continue
     sep = ';' if sys.platform == 'win32' else ':'
     cmd.append(f'--add-data={d}{sep}{d}')
+
+if missing_data:
+    print(f"⚠️ 共跳过 {len(missing_data)} 项缺失数据（打包继续，建议同步清理打包清单）: {missing_data}")
 
 # 添加隐藏导入
 for mod in hidden_imports:
@@ -113,6 +130,8 @@ excludes = [
     'sentence_transformers', 'transformers', 'tensorflow', 'keras',
     'scipy', 'sklearn', 'scikit-learn', 'sentencepiece', 'safetensors',
     'faiss', 'faiss._swigfaiss', 'tokenizers', 'huggingface_hub', 'nltk', 'datasets',
+    # chardet:frozen 环境下其 fallback 相对路径模块 __file__ 为空会抛 SystemError，排除后改从本机 site-packages 加载
+    'chardet',
     ]
 
 for mod in excludes:
@@ -121,6 +140,31 @@ for mod in excludes:
 print("🚀 开始执行打包，可能需要几分钟时间，请耐心等待...")
 print(f"📦 执行命令: PyInstaller {' '.join(cmd)}")
 
+# === 显式收集 Tcl/Tk 数据目录 ===
+# PyInstaller 6.x 运行时钩子 pyi_rth__tkinter.py 强制要求 _internal/_tcl_data 与 _tk_data 存在，否则启动即崩。
+# 自动 hook 会受 TCL_LIBRARY 环境变量影响（指向错误路径则静默丢弃数据），此处显式收集根治。
+_tcl_root = os.path.join(sys.base_prefix, 'tcl')
+_tcl_src = _tk_src = None
+if os.path.isdir(_tcl_root):
+    for _n in sorted(os.listdir(_tcl_root)):
+        _p = os.path.join(_tcl_root, _n)
+        if not os.path.isdir(_p):
+            continue
+        if _n.startswith('tcl') and _n != 'tcl' and _tcl_src is None:
+            _tcl_src = _p
+        elif _n.startswith('tk') and _tk_src is None:
+            _tk_src = _p
+_tk_sep = ';' if sys.platform == 'win32' else ':'
+if _tcl_src:
+    cmd.append(f'--add-data={_tcl_src}{_tk_sep}_tcl_data')
+    print(f"✅ 收集 Tcl 数据目录: {_tcl_src} -> _tcl_data")
+else:
+    print("⚠️ 未找到 Tcl 数据目录，打包后可能缺 tcl 运行时数据")
+if _tk_src:
+    cmd.append(f'--add-data={_tk_src}{_tk_sep}_tk_data')
+    print(f"✅ 收集 Tk 数据目录: {_tk_src} -> _tk_data")
+else:
+    print("⚠️ 未找到 Tk 数据目录，打包后可能缺 tk 运行时数据")
 # 执行打包
 PyInstaller.__main__.run(cmd)
 
@@ -289,7 +333,7 @@ if iscc_path:
     setup_script = os.path.join(BASE_DIR, "setup.iss")
     result = subprocess.run([iscc_path, setup_script], cwd=BASE_DIR)
     if result.returncode == 0:
-        installer_path = os.path.join(BASE_DIR, "dist", "AI_GZT_Setup_v1.1.exe")
+        installer_path = os.path.join(BASE_DIR, "dist", "AI_GZT_Setup_V2.0.exe")
         print(f"✅ 安装包编译成功: {installer_path}")
     else:
         print("⚠️  安装包编译失败，请检查setup.iss脚本或Inno Setup安装是否正常")

@@ -205,7 +205,10 @@ class CodeRAGManager:
             # 索引载荷:IndexIDMap(支持按id精确删除) + 底层 IndexFlatIP(向量已L2归一化，内积即余弦相似度)，meta 为 id->切片 字典
             try:
                 if os.path.exists(INDEX_PATH) and os.path.exists(META_PATH):
-                    loaded_index = faiss.read_index(INDEX_PATH)
+                    # faiss 底层用 C++ fopen 打开文件，Windows 下不认中文路径（Illegal byte sequence），
+                    # 改由 Python open 读取字节流 + deserialize_index 还原，与 _save_index 的 serialize 配套
+                    with open(INDEX_PATH, "rb") as f:
+                        loaded_index = faiss.deserialize_index(np.frombuffer(f.read(), dtype=np.uint8))
                     with open(META_PATH, "r", encoding="utf-8") as f:
                         loaded_meta = json.load(f)
                     # 不再做旧格式判断:索引文件存在即直接加载，索引的清空/重建一律由用户在界面手动操作
@@ -233,7 +236,12 @@ class CodeRAGManager:
     
     def _save_index(self):
         """保存索引和元数据到本地"""
-        faiss.write_index(self.index, INDEX_PATH)
+        # faiss 不会自动创建目录:索引写入前确保 code_rag 目录存在，避免「No such file or directory」
+        os.makedirs(RAG_DIR, exist_ok=True)
+        # faiss 底层用 C++ fopen 打开文件，Windows 下不认中文路径（Illegal byte sequence），
+        # 改用 Python open 落盘 serialize_index 字节流，绕开该问题（读侧同步用 deserialize_index）
+        with open(INDEX_PATH, "wb") as f:
+            f.write(faiss.serialize_index(self.index).tobytes())
         with open(META_PATH, "w", encoding="utf-8") as f:
             json.dump(self.meta, f, ensure_ascii=False, indent=2)
     def _encode(self, texts: List[str], batch_size: int = None) -> np.ndarray:

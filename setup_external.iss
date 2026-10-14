@@ -1,22 +1,22 @@
 ; AI智能助手（全外置依赖版） Inno Setup 安装脚本
-; 版本 v1.1
+; 版本 V2.0
 ; 说明:本脚本与 setup.iss 完全隔离，安装目录/开始菜单组/产物名/快捷方式均独立，可与"开箱即用版"同机共存互不覆盖
 
 [Setup]
 ; 基础应用信息
 AppName=AI智能助手（全外置依赖版）
-AppVersion=1.1
+AppVersion=2.0
 AppPublisher=AI智能助手开发团队
-AppPublisherURL=https://github.com/
-AppSupportURL=https://github.com/
-AppUpdatesURL=https://github.com/
+AppPublisherURL=https://gitee.com/chen-bohan3000/ai-gzt
+AppSupportURL=https://gitee.com/chen-bohan3000/ai-gzt
+AppUpdatesURL=https://gitee.com/chen-bohan3000/ai-gzt
 
 ; 安装配置（与现有版隔离:独立安装目录、独立开始菜单组、独立产物名）
 DefaultDirName={localappdata}\Programs\AI_GZT_NoDeps
 DefaultGroupName=AI_GZT_NoDeps
 DisableProgramGroupPage=yes
 OutputDir=dist
-OutputBaseFilename=AI_GZT_NoDeps_Setup_v1.1
+OutputBaseFilename=AI_GZT_NoDeps_Setup_V2.0
 SetupIconFile=app_icon.ico
 Compression=lzma2/ultra
 SolidCompression=yes
@@ -29,7 +29,7 @@ ArchitecturesInstallIn64BitMode=x64
 
 ; 卸载配置
 UninstallDisplayIcon={app}\AI_GZT_NoDeps.exe
-UninstallDisplayName=AI智能助手（全外置依赖版） v1.1
+UninstallDisplayName=AI智能助手（全外置依赖版） V2.0
 CloseApplications=yes
 CloseApplicationsFilter=AI_GZT_NoDeps.exe
 

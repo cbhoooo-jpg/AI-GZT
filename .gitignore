@@ -96,3 +96,31 @@ AI智能助手项目手册.md
 /发布Release.bat
 /同步代码.bat
 /推送到GitHub.bat
+# ===== V2.0 入库前补全（2026-10-14） =====
+# 前端依赖目录（体积达数万文件，由 package-lock.json 重建，不进仓库）
+node_modules/
+# 前端构建产物（Vite 输出，源码可重建，不进仓库；根级 dist/ 不匹配本子目录，须显式声明）
+AI-GZT-v2/dist/
+# 模型运行时配置（含真实 api_url / slot / enabled_plugins 等敏感信息，仅提交 models_config.example.json）
+models_config.json
+# 会话数据（个人对话记录，运行时产生，不进仓库）
+sessions/
+# ffmpeg 二进制（体积大，不进仓库；README 已提供下载说明，需自行下载放入本目录）
+bin/
+# 运行时聊天历史（自动生成，不进仓库）
+latest_chat_history_*.json
+latest_secondary_history_*.json
+# 浏览器收藏（个人数据，不进仓库）
+browser_favorites.json
+# 定时任务运行时配置（本机数据，不进仓库）
+tasks_config.json
+
+# ===== 内部项目管理资料（整包忽略，仅放行 3 份对外开发者参考文档） =====
+# 内部方案/执行步骤/审查报告等管理资料，禁止同步到开源社区
+项目文档/*
+!项目文档/说明文档/
+项目文档/说明文档/*
+# 例外:放行 3 份对外开发者参考文档
+!项目文档/说明文档/AI智能助手功能清单.md
+!项目文档/说明文档/AI智能助手项目完整报告.md
+!项目文档/说明文档/AI智能助手-工作台架构说明（对外版）.md
