@@ -171,23 +171,31 @@ def _strip_naked_tool_json(text: str) -> str:
     背景:工具/插件模板会以「双下划线模板版本字段 + name + parameters」这种
     无中文标记的裸对象形态出现在模型输出里;现有净化只认「工具调用开始…结束」
     中文标记块 → 裸对象两头都抓不到,会被原样落盘、原样派发给次级对话。
-    实现:定位模板版本字段 → 向前取最近左花括号作为对象起点 → 向后逐字符做
-    括号配对(感知引号与反斜杠转义) → 整块删除;若未能配对完成则从起点截到
-    末尾兜底(防残留)。最后收敛多余空行,避免历史里出现大片空白。
-    本函数逐字复制自 api_server.py L714-762(主模型净化模板),两文件互不 import 耦合。
+    实现（2026-10-14 对齐主链路加固版，FIX-INTERRUPT-001-EXEC1）:
+      ① 定位模板版本字段 → 向前取最近左花括号作为候选对象起点；
+      ② 候选起点必须与字段同行且距离 ≤200 字符，跨行/过远一律视为正文引用 → 跳过不删；
+      ③ 向后逐字符做括号配对（感知引号与反斜杠转义）；
+      ④ 配对失败 → 跳过不删（旧实现此处从起点截到末尾，是"首轮之后内容全丢"的根因）；
+      ⑤ 待删区间若跨轮次/工具结果边界（含「第N轮交互」或「工具执行结果」）→ 跳过不删；
+      ⑥ 用 search_from 游标单调推进，跳过时不回头，避免死循环。
+    最后收敛多余空行，避免历史里出现大片空白。
+    本函数与 api_server.py 同名函数行为对齐（两文件互不 import 耦合）。
     """
     if not text:
         return text
     key = '"__template_version"'
     out = str(text)
+    search_from = 0   # 搜索游标:跳过时不回头，避免死循环
     guard = 0
-    while key in out and guard < 500:
+    while guard < 500:
         guard += 1
-        pos = out.find(key)
+        pos = out.find(key, search_from)
+        if pos < 0:
+            break
         start = out.rfind("{", 0, pos)
-        if start < 0:
-            # 只剩字段名没找到容器起点 → 仅删除该字段名,避免死循环
-            out = out[:pos] + out[pos + len(key):]
+        # 约束1:候选起点必须存在、与字段同行、且距离 ≤200 字符，否则视为正文引用 → 跳过不删
+        if start < 0 or "\n" in out[start:pos] or (pos - start) > 200:
+            search_from = pos + len(key)
             continue
         depth = 0
         in_str = False
@@ -212,11 +220,17 @@ def _strip_naked_tool_json(text: str) -> str:
                 if depth == 0:
                     end = i + 1
                     break
+        # 约束2:配对失败 → 跳过不删（宁可留残留，绝不截断后续内容）
         if end < 0:
-            # 未能配对完成 → 从对象起点截到末尾(防残留半截对象)
-            out = out[:start]
-        else:
-            out = out[:start] + out[end:]
+            search_from = pos + len(key)
+            continue
+        segment = out[start:end]
+        # 约束3:待删区间跨轮次/工具结果边界 → 说明锚定到了正文，跳过不删
+        if ("【第" in segment and "轮交互】" in segment) or "工具执行结果" in segment:
+            search_from = pos + len(key)
+            continue
+        out = out[:start] + out[end:]
+        search_from = start   # 删除成功后从删除点继续搜索后续残留
     while "\n\n\n" in out:
         out = out.replace("\n\n\n", "\n\n")
     return out.strip()

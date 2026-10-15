@@ -3254,10 +3254,14 @@ async def chat(req: ChatRequest):
     # [DISPATCH-DIAG] 临时诊断日志（定位"回复带 @角色却没派发"真因，定位后删除本段）
     try:
         _resp_txt = str(response or "")
-        # 【P2·根因修复】派发前净化:@角色识别仍用原文 _resp_txt（零影响），投递改用净化版
-        #   目的:避免"轮次标记 + 工具调用原文 + 前几轮全文"原样进入次级对话窗口
+        # 【P2·根因修复 + R7 口径统一】派发前净化:检测与投递均改用净化版 _resp_txt_clean；
+        #   目的:避免"轮次标记 + 工具调用原文 + 前几轮全文 + edit_file 可视化块"污染检测与次级对话窗口。
         import re as _re_disp
         _resp_txt_clean = _re_disp.sub(r'【第\d+轮交互】\s*\n?AI输出[::]\s*', '', _resp_txt)
+        # 【R8·根因修复】剥离 edit_file 可视化块（🔧 修改操作标记 + 其后被改内容），避免块内含「行首@角色」的正文被派发检测误判；
+        #   结束边界:下一个裸工具JSON块 / 下一可视化块 / 轮次标记 / 工具调用块 / 文末。
+        #   ⚠️ 冒号用正则 Unicode 转义 [\uFF1A:]（全角 U+FF1A + 半角 :）—— 规避编辑工具对全角字符的归一化，真实生产者 L2224 用全角「:」必命中。
+        _resp_txt_clean = _re_disp.sub(r'🔧 \*\*修改操作[\uFF1A:][^\n]*\*\*[\s\S]*?(?=\{\s*\n?\s*"(?:__template_version|name)"\s*:|🔧 \*\*修改操作[\uFF1A:]|【第\d+轮交互】|【工具调用|\Z)', '', _resp_txt_clean)
         _resp_txt_clean = _re_disp.sub(r'【工具调用[^\n]*】[\s\S]*?【工具调用[^\n]*】\s*', '', _resp_txt_clean)
         _resp_txt_clean = _re_disp.sub(r'\n{3,}', '\n\n', _resp_txt_clean).strip()
         # 【M3·根因修复】剥离"无标记包裹的裸工具调用对象"，避免其原样派发进次级对话窗口
@@ -3267,8 +3271,9 @@ async def chat(req: ChatRequest):
         if _resp_txt.strip():
             _pool = _orch.build_role_pool()
             print(f"[DISPATCH-DIAG] pool_len={len(_pool)} slots={[it.get('slot') for it in _pool]}")
-            _slot = _orch.extract_dispatch_mentions(_resp_txt, _pool)
-            print(f"[DISPATCH-DIAG] extract_slot={_slot} resp_head={_resp_txt[:200]!r}")
+            # 【R7·根因修复】派发检测改用净化版 _resp_txt_clean（与 :3275 投递口径统一）:块内@角色不再误命中；块外合法派发行净化后保留，不误伤。
+            _slot = _orch.extract_dispatch_mentions(_resp_txt_clean, _pool)
+            print(f"[DISPATCH-DIAG] extract_slot={_slot} resp_head={_resp_txt_clean[:200]!r}")
             if _slot is not None:
                 # 透传当前项目名，任务 meta 记录归属项目 → 次级对话按「项目 × 槽位」双维度隔离
                 # 【P2·根因修复】投递净化版文本（不含轮次标记与工具调用原文块），避免次级被主控中间态污染
